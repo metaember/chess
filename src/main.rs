@@ -1,4 +1,4 @@
-use std::iter;
+use std::{iter, ops::Index};
 
 const STARTING_POSITION_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
@@ -258,6 +258,20 @@ impl Piece {
     
 }
 
+/// Potential move, either valid, in which case has a bool inicating
+/// if it's a capture
+enum PotentialMove {
+    Valid { capture: bool },
+    Invalid
+}
+
+
+// struct Move {
+//  piece ?
+//     from: &Position,
+//     to: &Position,
+//     captured: Option<Piece>
+// }
 
 
 struct Board {
@@ -352,10 +366,78 @@ impl Board {
 
     fn get_valid_moves(&self, piece: &Piece) -> Vec<(Position, bool)> {
         match piece.piece_type {
+            PieceType::Pawn => self.get_valid_pawn_moves(piece),
             PieceType::Rook => self.get_valid_rook_moves(piece),
+            PieceType::Knight => self.get_valid_knight_moves(piece),
             PieceType::Bishop => self.get_valid_bishop_moves(piece),
-            _ => vec![]
+            PieceType::Queen => {
+                let mut bishop = self.get_valid_bishop_moves(piece);
+                let mut rook = self.get_valid_rook_moves(piece);
+                bishop.append(&mut rook);
+                bishop
+            }
+            PieceType::King => self.get_valid_king_moves(piece),
         }
+    }
+
+    fn get_valid_pawn_moves(&self, piece: &Piece) -> Vec<(Position, bool)> {
+        let mut moves: Vec<(Position, bool)> = vec![];
+        let pos = &piece.position;
+        
+        if (piece.color == Color::White && piece.position.rank >= 8) 
+            || (piece.color == Color::Black && piece.position.rank <= 1) {
+            panic!("Pawn is on a promotion square, should not move from here.")
+        }
+
+        // get the rank one step forwards, up the baord for white and down for black
+        let step_forward = |rank: u8| -> u8 {
+            match piece.color {
+                Color::White => rank + 1,
+                Color::Black => rank - 1
+            }
+        };
+        
+        /// Starting rank
+        fn pawn_starting_rank(color: &Color) -> u8 {
+            match color {
+                Color::White => 2,
+                Color::Black => 7
+            }
+        }
+
+        // move one square forward, requires no piece there
+        let one_step = step_forward(pos.rank);
+        if self.piece_at(one_step, pos.file).is_none() {
+            moves.push((Position{rank: one_step, file: pos.file}, false));
+
+            // if starting position for white and both squares in front free
+            let start_rank = pawn_starting_rank(&piece.color);
+            let two_step = step_forward(step_forward(start_rank));
+            if pos.rank == start_rank && self.piece_at(two_step, pos.file).is_none(){
+                moves.push((Position{rank: two_step, file: pos.file}, false));
+            }
+        }
+
+        // check diagonal captures
+        if pos.file >= 2 && match self.piece_at(one_step, pos.file - 1) {
+                Some(other_piece) => other_piece.color != piece.color,
+                None => false,
+        } {
+            moves.push((Position{rank: one_step, file: pos.file - 1}, true));
+        }
+        if pos.file <=7 && match self.piece_at(one_step, pos.file + 1) {
+                Some(other_piece) => other_piece.color != piece.color, // capture
+                None => false, // can't move if not piece to capture
+        } {
+            moves.push((Position{rank: one_step, file: pos.file + 1}, true));
+        }
+
+        // check en passant: should be a case of checking if one of the two captures squares
+        // is the en passant square saved in self
+         
+        // signal promotion ?
+        //
+        moves
     }
 
     
@@ -375,8 +457,6 @@ impl Board {
         } 
         // down
         for rank in (1..pos.rank).rev() {
-            println!("{:?} {}", &pos, rank);
-            println!("{:?}",  (1..(pos.rank - 1)).rev().collect::<Vec<_>>());
             let candidate = Position{rank, file: pos.file};
             let (valid, capture, proceed) = self.check_move_target(piece, &candidate);
             if valid {
@@ -445,6 +525,55 @@ impl Board {
         moves
     }
 
+    // TODO: add type annotations to make this only take knight pieces
+    // TODO: same for the other functions above
+    fn get_valid_knight_moves(&self, piece: &Piece) -> Vec<(Position, bool)> {
+        let mut moves: Vec<(Position, bool)> = vec![];
+
+        for (rank_delta, file_delta) in std::iter::zip(
+            [-2, -2, -1, -1, 1, 1, 2, 2],
+            [-1, 1, -2, 2, -2, 2, -1, 1]
+        ) {
+            let future_rank: i8 = piece.position.rank as i8 + rank_delta;
+            let future_file: i8 = piece.position.file as i8 + file_delta;
+            if future_rank >= 1 && future_rank <= 8 && future_file >= 1 && future_file <= 8 {
+                let future_rank = future_rank as u8;
+                let future_file = future_file as u8;
+                match self.piece_at(future_rank, future_file) {
+                Some(other_piece) => match piece.color == other_piece.color {
+                    true => continue, // same color, invalid move
+                    false => moves.push((Position { rank: future_rank, file: future_file}, true)),
+                },
+                None => moves.push((Position { rank: future_rank, file: future_file}, false)),
+                }
+            }
+        }
+        moves
+    }
+
+    fn get_valid_king_moves(&self, piece: &Piece) -> Vec<(Position, bool)> {
+        let mut moves: Vec<(Position, bool)> = vec![];
+
+        for (rank_delta, file_delta) in std::iter::zip(
+            [-1, -1, -1, 0, 0, 0, 1, 1, 1],
+            [-1, 0, 1, -1, 0, 1, -1, 0, 1]
+        ) {
+            let future_rank: i8 = piece.position.rank as i8 + rank_delta;
+            let future_file: i8 = piece.position.file as i8 + file_delta;
+            if future_rank >= 1 && future_rank <= 8 && future_file >= 1 && future_file <= 8 {
+                let is_capture = match self.piece_at(future_rank as u8, future_file as u8) {
+                    Some(other_piece) => match other_piece.color == piece.color {
+                        true => continue, // cannot move to square occupied by friendly
+                        false => true, // opposite color -> capture
+                    },
+                    None => false, // no piece there -> regular move
+                };
+                moves.push((Position { rank: future_rank as u8, file: future_file  as u8}, is_capture));
+            }
+        }
+        moves
+    }
+
     // This funciton will check if the `piece` can move to `candidate_pos`. If so, it returns
     // a bool indicating if it's valid, if it's a capture, and a bool indicating if further search along
     // this axis is required.
@@ -468,17 +597,27 @@ impl Board {
 
 
     fn display_piece_moves(&self, piece: &Piece) {
-        let moves: Vec<Position> = self.get_valid_moves(piece)
-            .into_iter()
-            .map(|move_cap| move_cap.0)
-            .collect();
+        // let moves: Vec<Position> = self.get_valid_moves(piece)
+        //     .into_iter()
+        //     .map(|move_cap| move_cap.0)
+        //     .collect();
+
+        let moves_and_cap = self.get_valid_moves(piece);
+        let moves: Vec<Position> = moves_and_cap.into_iter().map(|move_cap| move_cap.0).collect();
+        let moves_and_cap = self.get_valid_moves(piece);
+        let captures: Vec<bool> = moves_and_cap.into_iter().map(|move_cap| move_cap.1).collect();
         
         for r in (1..=8).rev() {
             for f in 1..9 {
                 if piece.position.rank ==r && piece.position.file == f {
                     print!("{} ", piece_to_str(piece))
                 } else if moves.contains(&&Position{rank:r, file:f}) {
-                    print!("X ")
+                    let move_idx = moves.iter().position(|m| m == &Position{rank:r, file:f}).unwrap();
+                    if captures[move_idx] {
+                       print!("X ");
+                    } else {
+                        print!("O ");
+                    }
                 } else {
                     print!(". ")
                 }
@@ -537,8 +676,13 @@ fn main() {
     b.draw_to_terminal();
 
     println!();
-    b.pieces.push(Piece{color: Color::White, piece_type: PieceType::Bishop, position: Position { rank: 4, file: 4 }});
-    b.display_piece_moves(&b.pieces.last().unwrap());
+
+    for piece_type in [PieceType::Pawn, PieceType::Rook, PieceType::Bishop, PieceType:: Knight, PieceType:: King, PieceType::Queen] {
+        println!("{:?}", &piece_type);
+        b.pieces.push(Piece{color: Color::White, piece_type: piece_type, position: Position { rank: 5, file: 6 }});
+        b.display_piece_moves(&b.pieces.last().unwrap());
+        println!("");
+    }
     // for p in b.pieces {
     //     println!("{:?}", p);
     //     p.display_piece_moves();
