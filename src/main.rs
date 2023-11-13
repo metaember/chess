@@ -1,3 +1,5 @@
+use std::iter;
+
 const STARTING_POSITION_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 #[derive(Debug, PartialEq, Eq)]
@@ -104,7 +106,7 @@ impl Piece {
 
     /// lists the possible moves, accounting for board edges but 
     /// not for piece occlusion or pins or checks.
-    fn theoretical_moves(&self) -> Vec<Position> {
+    fn candidate_moves(&self) -> Vec<Position> {
         // These are the possible moves, not accounting for the board edgegs
         let candidates = match self.piece_type {
             PieceType::Pawn => self.pawn_moves(),
@@ -137,6 +139,11 @@ impl Piece {
         moves 
     }
 
+    fn pawn_captures(&self) -> Vec<Position> {
+        vec![]
+    }
+
+
     fn rook_moves(&self) -> Vec<Position> {
         let mut moves: Vec<Position> = vec![];
         let mut vertical: Vec<Position> = (1u8..9)
@@ -156,16 +163,76 @@ impl Piece {
     }
     
     fn knight_moves(&self) -> Vec<Position> {
-        vec![]
+        let mut moves: Vec<Position> = vec![];
+
+        for (rank_delta, file_delta) in std::iter::zip(
+            [-2, -2, -1, -1, 1, 1, 2, 2],
+            [-1, 1, -2, 2, -2, 2, -1, 1]
+        ) {
+            let future_rank: i8 = self.position.rank as i8 + rank_delta;
+            let future_file: i8 = self.position.file as i8 + file_delta;
+            if future_rank >= 1 && future_rank <= 8 && future_file >= 1 && future_file <= 8 {
+                moves.push(Position { rank: future_rank as u8, file: future_file  as u8});
+            }
+        }
+        moves
     }
     
     fn bishop_moves(&self) -> Vec<Position> {
-        vec![]
+        let mut moves: Vec<Position> = vec![];
+
+        for i in 1u8..8 {
+            if self.position.rank + i <= 8 && self.position.file + i <= 8 {
+                moves.push(Position{rank: self.position.rank + i, file: self.position.file + i});
+                continue;
+            }
+            break;
+        }
+        for i in 1u8..8 {
+            if self.position.rank - i >= 1 && self.position.file - i >= 1 {
+                moves.push(Position{rank: self.position.rank - i, file: self.position.file - i});
+                continue;
+            }
+            break;
+        }
+
+        for i in 1u8..8 {
+            if self.position.rank + i <= 8 && self.position.file - i >= 1 {
+                moves.push(Position{rank: self.position.rank + i, file: self.position.file - i});
+                continue;
+            }
+            break;
+        }
+        for i in 1u8..8 {
+            if self.position.rank - i >= 1 && self.position.file + i <= 8 {
+                moves.push(Position{rank: self.position.rank - i, file: self.position.file + i});
+                continue;
+            }
+            break;
+        }
+        moves
     }
 
     fn king_moves(&self) -> Vec<Position> {
+        let mut moves: Vec<Position> = vec![];
+
+        for (rank_delta, file_delta) in std::iter::zip(
+            [-1, -1, -1, 0, 0, 0, 1, 1, 1],
+            [-1, 0, 1, -1, 0, 1, -1, 0, 1]
+        ) {
+            let future_rank: i8 = self.position.rank as i8 + rank_delta;
+            let future_file: i8 = self.position.file as i8 + file_delta;
+            if future_rank >= 1 && future_rank <= 8 && future_file >= 1 && future_file <= 8 {
+                moves.push(Position { rank: future_rank as u8, file: future_file  as u8});
+            }
+        }
+        moves
+    }
+
+    fn king_castles(&self)  -> Vec<Position> {
         vec![]
     }
+
 
     fn filter_moves_inside_board(squares: Vec<&Position>) -> Vec<&Position> {
         squares.into_iter()
@@ -173,6 +240,21 @@ impl Piece {
             .collect()
     }
     
+    fn display_piece_moves(&self) {
+        let moves = self.candidate_moves();
+        for r in (1..=8).rev() {
+            for f in 1..9 {
+                if self.position.rank ==r && self.position.file == f {
+                    print!("{} ", piece_to_str(self))
+                } else if moves.contains(&Position{rank:r, file:f}) {
+                    print!("X ")
+                } else {
+                    print!(". ")
+                }
+            }
+            println!("");
+        }
+    }
     
 }
 
@@ -259,6 +341,151 @@ impl Board {
             .next()
     }
 
+    fn piece_at_position(&self, pos: &Position) -> Option<&Piece> {
+        self.piece_at(pos.rank, pos.file)
+    }
+
+    fn piece_at_algebraic(&self, pos: &str) -> Option<&Piece> {
+        let pos = Position::from_algebraic(pos);
+        self.piece_at_position(&pos)
+    }
+
+    fn get_valid_moves(&self, piece: &Piece) -> Vec<(Position, bool)> {
+        match piece.piece_type {
+            PieceType::Rook => self.get_valid_rook_moves(piece),
+            PieceType::Bishop => self.get_valid_bishop_moves(piece),
+            _ => vec![]
+        }
+    }
+
+    
+    fn get_valid_rook_moves(&self, piece: &Piece) -> Vec<(Position, bool)> {
+        // vector of possible move, is_capture
+        let mut moves: Vec<(Position, bool)> = vec![];
+        let pos = &piece.position;
+
+        // up
+        for rank in (pos.rank + 1)..=8 {
+            let candidate = Position{rank, file: pos.file};
+            let (valid, capture, proceed) = self.check_move_target(piece, &candidate);
+            if valid {
+                moves.push((candidate, capture));
+            }
+            if !proceed {break;}
+        } 
+        // down
+        for rank in (1..pos.rank).rev() {
+            println!("{:?} {}", &pos, rank);
+            println!("{:?}",  (1..(pos.rank - 1)).rev().collect::<Vec<_>>());
+            let candidate = Position{rank, file: pos.file};
+            let (valid, capture, proceed) = self.check_move_target(piece, &candidate);
+            if valid {
+                moves.push((candidate, capture));
+            }
+            if !proceed {break;}
+        } 
+
+        // right
+        for file in (pos.file + 1)..=8 {
+            let candidate = Position{rank: pos.rank, file};
+            let (valid, capture, proceed) = self.check_move_target(piece, &candidate);
+            if valid {
+                moves.push((candidate, capture));
+            }
+            if !proceed {break;}
+        } 
+        // left
+        for file in (1..pos.file).rev() {
+            let candidate = Position{rank: pos.rank, file};
+            let (valid, capture, proceed) = self.check_move_target(piece, &candidate);
+            if valid {
+                moves.push((candidate, capture));
+            }
+            if !proceed {break;}
+        } 
+        moves
+    }
+
+
+    fn get_valid_bishop_moves(&self, piece: &Piece) -> Vec<(Position, bool)> {
+        // vector of possible move, is_capture
+        let mut moves: Vec<(Position, bool)> = vec![];
+        let pos = &piece.position;
+
+        // nice, clean code
+        let zips: [std::iter::Zip<_, _>; 4] = [
+            std::iter::zip(
+                ((pos.rank + 1)..9).collect::<Vec<_>>().into_iter(), 
+                ((pos.file + 1)..9).collect::<Vec<_>>().into_iter()
+            ),
+            std::iter::zip(
+                ((pos.rank + 1)..9).collect::<Vec<_>>().into_iter(),
+                (1..pos.file).rev().collect::<Vec<_>>().into_iter()
+            ),
+            std::iter::zip(
+                (1..pos.rank).rev().collect::<Vec<_>>().into_iter(), 
+                (pos.file + 1 ..9).collect::<Vec<_>>().into_iter()
+            ),
+            std::iter::zip(
+                (1..pos.rank).rev().collect::<Vec<_>>().into_iter(), 
+                (1..pos.file).rev().collect::<Vec<_>>().into_iter()
+            ),
+        ];
+
+        for direction in zips {
+            for (rank, file) in direction {
+                let candidate = Position{rank, file};
+                let (valid, capture, proceed) = self.check_move_target(piece, &candidate);
+                if valid {
+                    moves.push((candidate, capture));
+                }
+                if !proceed {break;}
+            } 
+        }
+        moves
+    }
+
+    // This funciton will check if the `piece` can move to `candidate_pos`. If so, it returns
+    // a bool indicating if it's valid, if it's a capture, and a bool indicating if further search along
+    // this axis is required.
+    fn check_move_target(&self, piece: &Piece, candidate_pos: &Position) -> (bool, bool, bool) {
+        match self.piece_at_position(candidate_pos) {
+            Some(other_piece) => {
+                if piece.color == other_piece.color {
+                    // this is not a valid move and no need to search further in this direction
+                    return (false, false, false);
+                } else {
+                    // this is a valid move, it's a capture! no need to look any further
+                    // though.
+                    return (true, true, false);
+                }
+            },
+            // no piece here, so it's a valid move (not a capture)
+            // and we can keep searching in this direction
+            None => return (true, false, true)
+        };
+    }
+
+
+    fn display_piece_moves(&self, piece: &Piece) {
+        let moves: Vec<Position> = self.get_valid_moves(piece)
+            .into_iter()
+            .map(|move_cap| move_cap.0)
+            .collect();
+        
+        for r in (1..=8).rev() {
+            for f in 1..9 {
+                if piece.position.rank ==r && piece.position.file == f {
+                    print!("{} ", piece_to_str(piece))
+                } else if moves.contains(&&Position{rank:r, file:f}) {
+                    print!("X ")
+                } else {
+                    print!(". ")
+                }
+            }
+            println!("");
+        }
+    }
 
     fn draw_to_terminal(&self) {
         for r in 1..9 {
@@ -266,12 +493,17 @@ impl Board {
                 let p = self.piece_at(r, f);
                 print!("{} ", match p {
                     Some(pp) => piece_to_str(pp),
-                    None => "."
+                None => "."
                 });
             }
             println!();
         }
     }
+
+    fn clear(&mut self) {
+        self.pieces.clear();
+    }
+
 
 }
 
@@ -287,9 +519,34 @@ fn piece_to_str(piece: &Piece) -> &str{
     }
 }
 
+
+/// Show an empty board with each piece at position `pos`, 
+/// showing which squares that piece can move to
+fn visualize_moves_from_position(pos: &Position) {
+    for piece_type in [PieceType::Pawn, PieceType::Rook, PieceType::Bishop, PieceType:: Knight, PieceType:: King, PieceType::Queen] {
+        let piece = Piece{color:Color::White, piece_type, position: Position{rank: pos.rank, file: pos.file}};
+        println!("{:?}", &piece);
+        piece.display_piece_moves();
+        println!();
+    }
+}
+
+
 fn main() {
-    let b = Board::from_fen(STARTING_POSITION_FEN);
+    let mut b = Board::from_fen(STARTING_POSITION_FEN);
     b.draw_to_terminal();
+
+    println!();
+    b.pieces.push(Piece{color: Color::White, piece_type: PieceType::Bishop, position: Position { rank: 4, file: 4 }});
+    b.display_piece_moves(&b.pieces.last().unwrap());
+    // for p in b.pieces {
+    //     println!("{:?}", p);
+    //     p.display_piece_moves();
+    //     println!();
+    // }
+
+    // visualize_moves_from_position(&Position{file: 4, rank: 4})
+
     // dbg!(b.pieces);
 }
 
