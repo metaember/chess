@@ -1,3 +1,5 @@
+use rand::prelude::*;
+
 const STARTING_POSITION_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 #[derive(Debug, PartialEq, Eq)]
@@ -25,6 +27,10 @@ impl Color {
             panic!("Color char must be either upper or lowercase.")
         }
     }
+
+    fn other_color(&self) -> Color {
+        if *self == Color::White {Color::Black} else {Color::White}
+    }
 }
 
 
@@ -48,6 +54,14 @@ impl PieceType {
             'q' => PieceType::Queen,
             'k' => PieceType::King,
             other => panic!("Unrecognized piece type {other}.")
+        }
+    }
+
+    /// Is the piece a sliding piece (one which can move multiple square in a given direction)
+    fn is_sliding(&self) -> bool {
+        match *self {
+            PieceType::Rook | PieceType::Bishop | PieceType::Queen => true,
+            _ => false,
         }
     }
 }
@@ -74,8 +88,6 @@ impl Position {
 
         Position {rank, file}
     }
-
-    
 }
 
 
@@ -356,6 +368,7 @@ impl Board {
     }
 
     fn piece_at(&self, rank: u8, file: u8) -> Option<&Piece>{
+        // TODO: speed this up by storing a board representation as well
         self.pieces
             .iter()
             .filter(|p| p.position.rank == rank && p.position.file == file)
@@ -374,6 +387,29 @@ impl Board {
     // fn get_all_valid_moves(&self, color: &Color) -> Vec<Move> {
     //
     // }
+    /// Get the valid moves for side `color`
+    fn get_all_valid_moves(&self, color: &Color) -> Vec<Move> {
+        let in_check = self.is_in_check(color);
+
+        let mut moves: Vec<Move> = vec![];
+        for piece in &self.pieces{
+            if piece.color == *color {
+                moves.append(&mut self.get_valid_moves(&piece))
+            }
+        }
+        moves
+    }
+
+    fn get_king_position(&self, color: &Color) -> Position {
+        // TODO: implement a data structure to make this lookup const time
+        for piece in self.pieces {
+            if piece.color == *color && piece.piece_type == PieceType::King {
+                return piece.position;
+            }
+        }
+        // king should always be on the board
+        panic!("King not found");
+    }
 
     fn get_valid_moves<'a>(&'a self, piece: &'a Piece) -> Vec<Move> {
         match piece.piece_type {
@@ -607,6 +643,14 @@ impl Board {
                         }
                     },
                 }
+                // For sliding pieces like bishop and rook and queen, to check for pins we can keep
+                // searching in the direction past the point were we would break, and count the
+                // number of pieces betweeen the target square and the opponenet king.
+                // if it's 2 or more, we can stop. If it's 1, that piece is pinned, we should
+                // return that info back up.
+                //
+                // A pinned piece can still move, but it's limited to the squares observed in this
+                // direction, up to an including capturing the pinning piece.
             } 
         }
         moves
