@@ -438,6 +438,7 @@ impl Board {
     ///              - find all opponenet moves from the current position, filter for
     ///                those captureing the king (only valid moves, no need to compute the legal
     ///                moves)
+    ///              - Filter out moves that cannot capture, like pawn pushes.
     ///              - we can also use this step to extend the search of sliding pieces
     ///                past the first occurance of one of our own pieces. If there is at most
     ///                one of our pieces between their sliding piece and our king, then this
