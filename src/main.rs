@@ -32,6 +32,13 @@ impl Color {
     fn other_color(&self) -> Color {
         if *self == Color::White {Color::Black} else {Color::White}
     }
+
+    fn to_human(&self) -> &str {
+        match self {
+            Self::White => "white",
+            Self::Black => "black"
+        }
+    }
 }
 
 
@@ -65,6 +72,17 @@ impl PieceType {
             _ => false,
         }
     }
+
+    fn to_human(&self) -> &str {
+        match self {
+            Self::Pawn => "pawn",
+            Self::Rook => "rook",
+            Self::Knight => "knight",
+            Self::Bishop => "bishop",
+            Self::Queen => "queen",
+            Self::King => "king",
+        }
+    }
 }
 
 
@@ -81,16 +99,22 @@ impl Position {
         }
 
         let mut char_iter = s.chars();
-        let rank_char = char_iter.next().unwrap();
         let file_char = char_iter.next().unwrap();
+        let rank_char = char_iter.next().unwrap();
 
-        let rank = 1 + rank_char as u8 - 'a' as u8;
-        let file = file_char as u8 - '0' as u8;
+        let file = 1 + file_char as u8 - 'a' as u8;
+        let rank = rank_char as u8 - '0' as u8;
 
         Position {rank, file}
     }
+
+    fn to_algebraic(&self) -> String {
+        format!("{}{}", (self.file -1 + 'a' as u8) as char, (self.rank + '0' as u8) as char)
+    }
     
     /// Ray of all the positions between self (inclusive) and the other piece (exclusive)
+    ///
+    /// TODO: Should this be implemented as ray in direction (cardinal direction?)
     fn ray_to(&self, other: &Self) -> Option<Vec<Position>> {
         let mut result: Vec<Position> = vec![];
         if self == other {
@@ -119,8 +143,8 @@ impl Position {
 
 }
 
-fn range(x1: u8, x2: u8) -> impl std::iter::Iterator<Item=u8> {
-    if x1 <= x2 {x1..x2} else {x2+1..x1+1}
+fn range(x1: u8, x2: u8) -> Vec<u8> {
+    if x1 <= x2 {(x1..x2).collect::<Vec<u8>>()} else {(x2+1..x1+1).rev().collect::<Vec<u8>>()}
 }
 
 
@@ -322,7 +346,7 @@ struct PinnedPiece {
 
 
 
-
+#[derive(Debug)]
 struct Move {
     piece: Piece,
     from: Position,
@@ -330,6 +354,12 @@ struct Move {
     captured: Option<Piece>
 }
 
+impl Move {
+    fn to_human(&self) -> String {
+        format!("{} moves {} from {} to {}", self.piece.color.to_human(), self.piece.piece_type.to_human(),
+            self.from.to_algebraic(), self.to.to_algebraic())
+    }
+}
 
 struct Board {
     pieces: Vec<Piece>,
@@ -422,9 +452,29 @@ impl Board {
         self.piece_at_position(&pos)
     }
 
-    // fn execute_move(&mut self, selected_move: &Move) {
-    //     selected_move.piece.position = selected_move.to;
-    // }
+    fn execute_move(&self, selected_move: &Move) -> Board {
+        let mut pieces = self.pieces.clone();
+        pieces = pieces
+            .into_iter()
+            .filter(|p| p != &selected_move.piece && match selected_move.captured {
+                Some(cap_piece) => p != &cap_piece,
+                None => true,
+            }).collect();
+
+        pieces.push(Piece {
+            position: selected_move.to,
+            .. selected_move.piece
+        });
+
+        // TODO: update the other states too
+        Board {
+            pieces,
+            active_color: self.active_color.other_color(),
+            fullmove_clock: self.fullmove_clock + if self.active_color == Color::Black {1} else {0},
+            .. *self
+        }
+    }
+
 
     /// Get the vector of all legal moves for side `color`. This accounts for checks, pins, etc.
     ///
@@ -518,13 +568,27 @@ impl Board {
         // 3: check all legal moves from the pieces we can legally move
         // first get all valid moves
         let mut my_possible_moves: Vec<_> = pieces_to_compute_moves_for.into_iter().map(|p| self.get_valid_moves(&p)).flatten().collect();
-        // filter out any moves that put the king in check
+        
+
+        // compute pins
+        let pins = self.get_pins(color);
+
+        // filter out any moves that put the king in check, and pinned moves
         my_possible_moves = my_possible_moves.into_iter().filter(|m| match m.piece.piece_type {
             // King cannot move into check
             PieceType::King => !opponent_potential_moves.iter().any(|om| om.to == m.to),
-            _ => match m {
-                // TODO here handle the pins
-                _ => true
+            _ => {
+                let mut can_move_to = true;
+                // here handle the pins
+                // we iterate over all the pinnied pieces
+                for PinnedPiece{piece: pinned_piece, valid_responses} in pins.iter() {
+                    // if the pinned piece is the one we're currently considering
+                    if *pinned_piece == m.piece {
+                        // check if the move is allowed by the pin
+                        can_move_to = valid_responses.iter().find(|&&x| x == m.to).is_some();
+                    }
+                }
+                can_move_to
             }, 
         }).collect();
 
@@ -542,35 +606,6 @@ impl Board {
         // king should always be on the board
         panic!("King not found");
     }
-
-    // fn get_pieces_between(&self, piece: &Piece, pos: &Position) {
-    //     // TODO
-    //     // this will be useful to efficicnetly compute if a piece is checking
-    // }
-
-    // fn move_is_check(&self, m: &Move) -> bool {
-    //     let color = m.piece.color;
-    //     let other_color = color.other_color();
-    //     let opposing_king_position = self.get_king_position(&other_color);
-    //     
-    //     // We don't need to search all the moves here. EG. 
-    //     //  - rook can only be checking if rank == king_rank or file == king_file
-    //     //  - bishop if it's on the same (r-f) or (f-r) or something
-    //     //
-    // }
-
-    // fn is_in_check(&self, color: &Color) -> Vec<&Move> {
-    //     let other_color = if *color == Color::White {Color::Black} else {Color::White};
-    //     let opponent_moves = self.get_all_valid_moves(&other_color);
-    //     let capturing_moves: Vec<&Move> = opponent_moves
-    //         .iter()
-    //         .filter(|m| match m.captured {
-    //             Some(piece) => piece.color == *color && piece.piece_type == PieceType::King,
-    //             None => false,
-    //         }).collect();
-    //
-    //     capturing_moves
-    // }
 
     fn get_all_valid_moves(&self, color:&Color) -> Vec<Move> {
         self.pieces.iter().filter(|p| p.color == *color).map(|p| self.get_valid_moves(p)).flatten().collect()
@@ -920,7 +955,82 @@ impl Board {
     }
 
 
+    /// Compute `color`'s pinned pieces, as well as the list of squares they can move to
+    fn get_pins(&self, color: &Color) -> Vec<PinnedPiece> {
+        let opponent_sliding_pieces: Vec<&Piece> = self.pieces
+            .iter()
+            .filter(|p| p.color == color.other_color() && p.piece_type.is_sliding())
+            .collect();
 
+        let king = self.get_king(color);
+        let mut pins: Vec<PinnedPiece> = vec![];
+
+        for piece in opponent_sliding_pieces {
+            match piece.piece_type {
+                PieceType::Rook => {
+                    if let Some(pin) = self.get_rook_pins(color, &king, piece) {
+                        pins.push(pin);                
+                    }
+                },
+                PieceType::Bishop => {
+                    if let Some(pin) = self.get_bishop_pins(color, &king, piece) {
+                        pins.push(pin);
+                    }
+                },
+                PieceType::Queen => {
+                    if let Some(pin) = self.get_rook_pins(color, &king, piece) {
+                        pins.push(pin);
+                        continue; // both axes can't be pinning
+                    }
+                    if let Some(pin) = self.get_bishop_pins(color, &king, piece) {
+                        pins.push(pin);
+                    }
+                },
+                _ => (),
+            }
+        };
+        pins
+    }
+
+
+    fn get_rook_pins(&self, color: &Color, king: &Piece, rook: &Piece) -> Option<PinnedPiece> {
+        if rook.position.rank == king.position.rank || rook.position.file == king.position.file {
+            let ray = rook.position.ray_to(&king.position);
+            if let Some(ray) = ray {
+                let cur_pins: Vec<&Piece> = ray
+                    .iter()
+                    .map(|pos| self.piece_at_position(pos))
+                    .filter(|p| p.is_some() && p.unwrap().color == *color)
+                    .map(|p| p.unwrap())
+                    .collect();
+
+                if cur_pins.len() == 1 {
+                    return Some(PinnedPiece { piece: *cur_pins[0], valid_responses: ray });
+                }
+            }
+        }
+        None
+    }
+
+
+    fn get_bishop_pins(&self, color: &Color, king: &Piece, bishop: &Piece) -> Option<PinnedPiece> {
+        if (bishop.position.rank as i8 - king.position.rank as i8) == (bishop.position.file as i8 - king.position.file as i8) {
+            let ray = bishop.position.ray_to(&king.position);
+            if let Some(ray) = ray {
+                let cur_pins: Vec<&Piece> = ray
+                    .iter()
+                    .map(|pos| self.piece_at_position(pos))
+                    .filter(|p| p.is_some() && p.unwrap().color == *color)
+                    .map(|p| p.unwrap())
+                    .collect();
+
+                if cur_pins.len() == 1 {
+                    return Some(PinnedPiece { piece: *cur_pins[0], valid_responses: ray });
+                }
+            }
+        }
+        None
+    }
 
     fn display_piece_moves(&self, piece: &Piece) {
         let moves = self.get_valid_moves(piece);
@@ -948,7 +1058,7 @@ impl Board {
     }
 
     fn draw_to_terminal(&self) {
-        for r in 1..9 {
+        for r in (1..9).rev() {
             for f in 1..9 {
                 let p = self.piece_at(r, f);
                 print!("{} ", match p {
@@ -959,12 +1069,6 @@ impl Board {
             println!();
         }
     }
-
-    fn clear(&mut self) {
-        self.pieces.clear();
-    }
-
-
 }
 
 fn piece_to_str(piece: &Piece) -> &str{
@@ -997,22 +1101,36 @@ fn main() {
 
     let mut b = Board::from_fen(STARTING_POSITION_FEN);
     b.draw_to_terminal();
-
     println!();
 
-    for piece_type in [PieceType::Pawn, PieceType::Rook, PieceType::Bishop, 
-                       PieceType:: Knight, PieceType:: King, PieceType::Queen] {
-        println!("{:?}", &piece_type);
-        b.pieces.push(Piece{
-                color: Color::White, 
-                piece_type, 
-                position: Position { rank: 6, file: 6 },
-        });
-        b.display_piece_moves(&b.pieces.last().unwrap());
-        println!("");
-    }
-    
 
+    const MAX_MOVES: i32 = 5;
+
+    for i in 1..=MAX_MOVES {
+        let legal_moves = b.get_legal_moves(&b.active_color);
+
+        let random_move = legal_moves.choose(&mut rng).expect("No moves!");
+        
+        println!("move {}: {}", (i+1) / 2, random_move.to_human());
+
+        b = b.execute_move(random_move);
+
+        b.draw_to_terminal();
+        println!();
+    } 
+
+    // for piece_type in [PieceType::Pawn, PieceType::Rook, PieceType::Bishop, 
+    //                    PieceType:: Knight, PieceType:: King, PieceType::Queen] {
+    //     println!("{:?}", &piece_type);
+    //     b.pieces.push(Piece{
+    //             color: Color::White, 
+    //             piece_type, 
+    //             position: Position { rank: 6, file: 6 },
+    //     });
+    //     b.display_piece_moves(&b.pieces.last().unwrap());
+    //     println!("");
+    // }
+    
 
     // for p in b.pieces {
     //     println!("{:?}", p);
@@ -1089,7 +1207,7 @@ mod tests {
     #[test]
     fn test_position_from_algebraic() {
         assert_eq!(Position::from_algebraic("a1"), Position{rank: 1, file: 1});
-        assert_eq!(Position::from_algebraic("h4"), Position{rank: 8, file: 4})
+        assert_eq!(Position::from_algebraic("h4"), Position{rank: 4, file: 8})
     }
 
     #[test]
@@ -1097,14 +1215,16 @@ mod tests {
         let pos = Position{rank: 1, file: 1};
 
         assert_eq!(pos.ray_to(&pos), Some(Vec::new()));
+
         assert_eq!(pos.ray_to(&Position{rank:1, file:3}), Some(vec![
             Position{rank:1, file:1},
             Position{rank:1, file:2},
         ]));
         assert_eq!(Position{rank:1, file:3}.ray_to(&pos), Some(vec![
-            Position{rank:1, file:2},
             Position{rank:1, file:3},
+            Position{rank:1, file:2},
         ]));
+
         assert_eq!(pos.ray_to(&Position{rank:5, file:1}), Some(vec![
             Position{rank:1, file:1},
             Position{rank:2, file:1},
@@ -1112,15 +1232,45 @@ mod tests {
             Position{rank:4, file:1},
         ]));
         assert_eq!(Position{rank:5, file:1}.ray_to(&pos), Some(vec![
-            Position{rank:2, file:1},
-            Position{rank:3, file:1},
-            Position{rank:4, file:1},
             Position{rank:5, file:1},
+            Position{rank:4, file:1},
+            Position{rank:3, file:1},
+            Position{rank:2, file:1},
         ]));
 
-        // TODO : test diagonal case in all directions
+        // diagonal y=x
+        assert_eq!(pos.ray_to(&Position{rank:5, file:5}), Some(vec![
+            Position{rank:1, file:1},
+            Position{rank:2, file:2},
+            Position{rank:3, file:3},
+            Position{rank:4, file:4},
+        ]));
+        
+        assert_eq!(Position{rank:5, file:5}.ray_to(&pos), Some(vec![
+            Position{rank:5, file:5},
+            Position{rank:4, file:4},
+            Position{rank:3, file:3},
+            Position{rank:2, file:2},
+        ]));
+
+        // diagonal y=-x+b
+        let pos2 = Position{rank: 8, file: 2};
+        assert_eq!(pos2.ray_to(&Position{rank:4, file:6}), Some(vec![
+            Position{rank:8, file:2},
+            Position{rank:7, file:3},
+            Position{rank:6, file:4},
+            Position{rank:5, file:5},
+        ]));
+        
+        assert_eq!(Position{rank:4, file:6}.ray_to(&pos2), Some(vec![
+            Position{rank:4, file:6},
+            Position{rank:5, file:5},
+            Position{rank:6, file:4},
+            Position{rank:7, file:3},
+        ]));
         //
         // TODO test None
+        assert!(pos.ray_to(&Position { rank: 3, file: 2 }).is_none());
     }
 
     #[test]
