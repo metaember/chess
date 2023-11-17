@@ -1,6 +1,9 @@
+use rand::prelude::*;
+use std::cmp::{min, max};
+
 const STARTING_POSITION_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum Color {
     White,
     Black
@@ -25,10 +28,21 @@ impl Color {
             panic!("Color char must be either upper or lowercase.")
         }
     }
+
+    fn other_color(&self) -> Color {
+        if *self == Color::White {Color::Black} else {Color::White}
+    }
+
+    fn to_human(&self) -> &str {
+        match self {
+            Self::White => "white",
+            Self::Black => "black"
+        }
+    }
 }
 
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum PieceType {
     Pawn,
     Rook,
@@ -50,10 +64,29 @@ impl PieceType {
             other => panic!("Unrecognized piece type {other}.")
         }
     }
+
+    /// Is the piece a sliding piece (one which can move multiple square in a given direction)
+    fn is_sliding(&self) -> bool {
+        match *self {
+            PieceType::Rook | PieceType::Bishop | PieceType::Queen => true,
+            _ => false,
+        }
+    }
+
+    fn to_human(&self) -> &str {
+        match self {
+            Self::Pawn => "pawn",
+            Self::Rook => "rook",
+            Self::Knight => "knight",
+            Self::Bishop => "bishop",
+            Self::Queen => "queen",
+            Self::King => "king",
+        }
+    }
 }
 
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 struct Position {
     rank: u8, // row, 1 is start
     file: u8, // col, 1 is start
@@ -66,20 +99,56 @@ impl Position {
         }
 
         let mut char_iter = s.chars();
-        let rank_char = char_iter.next().unwrap();
         let file_char = char_iter.next().unwrap();
+        let rank_char = char_iter.next().unwrap();
 
-        let rank = 1 + rank_char as u8 - 'a' as u8;
-        let file = file_char as u8 - '0' as u8;
+        let file = 1 + file_char as u8 - 'a' as u8;
+        let rank = rank_char as u8 - '0' as u8;
 
         Position {rank, file}
     }
 
+    fn to_algebraic(&self) -> String {
+        format!("{}{}", (self.file -1 + 'a' as u8) as char, (self.rank + '0' as u8) as char)
+    }
     
+    /// Ray of all the positions between self (inclusive) and the other piece (exclusive)
+    ///
+    /// TODO: Should this be implemented as ray in direction (cardinal direction?)
+    fn ray_to(&self, other: &Self) -> Option<Vec<Position>> {
+        let mut result: Vec<Position> = vec![];
+        if self == other {
+            return Some(result);
+        }
+        if self.rank == other.rank {
+            for file in range(self.file, other.file) {
+                result.push(Self{rank: self.rank, file});
+            };
+            return Some(result)
+        }
+        if self.file == other.file {
+            for rank in range(self.rank, other.rank) {
+                result.push(Self{rank, file: self.file})
+            };
+            return Some(result);
+        }
+        if max(self.file, other.file) - min(self.file, other.file) == max(self.rank, other.rank) - min(self.rank, other.rank){
+            for (rank, file) in std::iter::zip(range(self.rank, other.rank), range(self.file, other.file)) {
+                result.push(Self{rank, file})
+            };
+            return Some(result);
+        }
+        None
+     }
+
+}
+
+fn range(x1: u8, x2: u8) -> Vec<u8> {
+    if x1 <= x2 {(x1..x2).collect::<Vec<u8>>()} else {(x2+1..x1+1).rev().collect::<Vec<u8>>()}
 }
 
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 struct Piece {
     color: Color,
     piece_type: PieceType,
@@ -101,7 +170,6 @@ impl Piece {
             position: Position { rank, file }
         }
     }
-
     /// lists the possible moves, accounting for board edges but 
     /// not for piece occlusion or pins or checks.
     fn candidate_moves(&self) -> Vec<Position> {
@@ -231,12 +299,6 @@ impl Piece {
         vec![]
     }
 
-
-    fn filter_moves_inside_board(squares: Vec<&Position>) -> Vec<&Position> {
-        squares.into_iter()
-            .filter(|p| p.rank >= 1 && p.rank <= 8 && p.file >= 1 && p.file <= 8)
-            .collect()
-    }
     
     fn display_piece_moves(&self) {
         let moves = self.candidate_moves();
@@ -258,12 +320,12 @@ impl Piece {
 
 /// Potential move, either valid, in which case has a bool inicating
 /// if it's a capture
-enum PotentialMove<'a> {
-    Valid(Option<&'a Piece>),
+enum PotentialMove {
+    Valid(Option<Piece>),
     Invalid
 }
 
-impl<'a> PotentialMove<'a> {
+impl PotentialMove {
     fn continue_search_in_direction(&self) -> bool{
         match self {
             PotentialMove::Invalid => false,
@@ -273,13 +335,31 @@ impl<'a> PotentialMove<'a> {
     }
 }
 
-struct Move<'a> {
-    piece: &'a Piece,
-    from: &'a Position,
-    to: Position,
-    captured: Option<&'a Piece>
+/// This represents a pinned piece (to the king), as well as the valid moves it can have
+/// whilst staying between the king and the attacking piece.
+struct PinnedPiece {
+    /// The pinned piece
+    piece: Piece,
+    /// The positions in the ray between the attacking piece (inclusive) and the king (exclusive)
+    valid_responses: Vec<Position>
 }
 
+
+
+#[derive(Debug)]
+struct Move {
+    piece: Piece,
+    from: Position,
+    to: Position,
+    captured: Option<Piece>
+}
+
+impl Move {
+    fn to_human(&self) -> String {
+        format!("{} moves {} from {} to {}", self.piece.color.to_human(), self.piece.piece_type.to_human(),
+            self.from.to_algebraic(), self.to.to_algebraic())
+    }
+}
 
 struct Board {
     pieces: Vec<Piece>,
@@ -356,6 +436,7 @@ impl Board {
     }
 
     fn piece_at(&self, rank: u8, file: u8) -> Option<&Piece>{
+        // TODO: speed this up by storing a board representation as well
         self.pieces
             .iter()
             .filter(|p| p.position.rank == rank && p.position.file == file)
@@ -371,11 +452,171 @@ impl Board {
         self.piece_at_position(&pos)
     }
 
-    // fn get_all_valid_moves(&self, color: &Color) -> Vec<Move> {
-    //
-    // }
+    fn execute_move(&self, selected_move: &Move) -> Board {
+        let mut pieces = self.pieces.clone();
+        pieces = pieces
+            .into_iter()
+            .filter(|p| p != &selected_move.piece && match selected_move.captured {
+                Some(cap_piece) => p != &cap_piece,
+                None => true,
+            }).collect();
 
-    fn get_valid_moves<'a>(&'a self, piece: &'a Piece) -> Vec<Move> {
+        pieces.push(Piece {
+            position: selected_move.to,
+            .. selected_move.piece
+        });
+
+        // TODO: update the other states too
+        Board {
+            pieces,
+            active_color: self.active_color.other_color(),
+            fullmove_clock: self.fullmove_clock + if self.active_color == Color::Black {1} else {0},
+            .. *self
+        }
+    }
+
+
+    /// Get the vector of all legal moves for side `color`. This accounts for checks, pins, etc.
+    ///
+    /// stored state required
+    ///      - king positions for both sides (remember to update if the king moves)
+    ///      - 
+    /// 
+    ///
+    /// 1. Check for checks.
+    ///      - naive version: 
+    ///              - find all opponenet moves from the current position, filter for
+    ///                those captureing the king (only valid moves, no need to compute the legal
+    ///                moves)
+    ///              - Filter out moves that cannot capture, like pawn pushes.
+    ///              - we can also use this step to extend the search of sliding pieces
+    ///                past the first occurance of one of our own pieces. If there is at most
+    ///                one of our pieces between their sliding piece and our king, then this
+    ///                piece of ours is pinned. Save the pinning piece and the pinned piece.
+    ///              - we also keep a record of all the observed squares by the opponent
+    ///      - potentially more efficient:
+    ///              - keep all the possible moves the opponent had last turn, tracking pinned
+    ///                pieces and checks in that evaluation
+    ///              - we prune that list by removing the old position of the piece that did in
+    ///                fact move, and remove any observed squares that are now blocked by the
+    ///                new position of the piece that just moved
+    ///              - use that to find the checks and observed squares for the king moves and 
+    ///                to determine the pins
+    ///
+    /// 2. If in check, we can narrow down the subset of pieces we can legally move
+    ///      - if double check, king must move
+    ///      - if not, either:
+    ///              - king moves
+    ///              - checking piece is captured
+    ///              - own piece blocks the checking ray if its a sliding piece
+    ///      - if not in check, any of our pieces can potentially have valid moves.
+    ///
+    /// 
+    /// 3. For each piece we can legally move, we compute the possible moves
+    ///      - if the piece is not our king
+    ///              - check if the piece is pinned (we have the list of pinning pieces from
+    ///                step 1). If this is the case, we can only move the that piece along
+    ///                the pinning piece's ray, up to and including capturing the pinning piece
+    ///              - if it's not pinned, all valid moves are legal.
+    ///      - if the piece is our king
+    ///              - king cannot move into check, so we filter out any moves that would 
+    ///                land us on a square observed by our opponent.
+    ///
+    /// 4. If there are no valid moves, the game ends:
+    ///      - if we're in check, it's checkmate
+    ///      - if we're not, it's stalemate
+    ///
+    ///
+    /// 5. Make a move using minimax with alpha beta pruning
+    ///      - Check for no progress stalemate
+    ///          - if it's a reversible move, inrement the halfmove_clock
+    ///          - if not, reset the half move clock
+    ///          - if the halfmove_clock is over 50, game ends in stalemate
+    ///
+    ///      - Check for threefold repetition
+    ///          - if this is not a reversible move, clear the position cache and short circuit
+    ///            the rest of this block
+    ///          - otherwise, hash the current position
+    ///          - compare the hash against the list of hashes of all previous positions since
+    ///            last halfmove_clock half moves.
+    ///          - if the same hash appears twice in that list, it's a draw by threefold
+    ///            repetition
+    ///          - if not, append the current hash and continue
+    ///
+    ///     - update caslting rights
+    ///         - if the king moved, both casling options are dissallowed
+    ///         - if either rooks has moved, then that side is dissallowed.
+    fn get_legal_moves(&self, color: &Color) -> Vec<Move> {
+        // 1: get all valid opponent moves and compute pins
+        let opponent_potential_moves = self.get_all_valid_moves(&color.other_color());
+        
+        // TODO: compute pins
+
+        // 2: Compute checks, this subsets the possible pieces to move
+        let my_king = self.get_king(color);
+        let current_checks: Vec<&Move> = opponent_potential_moves.iter().filter(|m| m.to == my_king.position).collect();
+
+        let my_pieces: Vec<&Piece> = self.pieces.iter().filter(|p| p.color == *color).collect();
+        let pieces_to_compute_moves_for = match current_checks.len() {
+            0 => my_pieces,
+            // but only onto squares that block or capture the attacking piece, or king move
+            1 => my_pieces, 
+            // double check, only the king can move
+            _ => vec![&my_king],
+        };
+
+        // 3: check all legal moves from the pieces we can legally move
+        // first get all valid moves
+        let mut my_possible_moves: Vec<_> = pieces_to_compute_moves_for.into_iter().map(|p| self.get_valid_moves(&p)).flatten().collect();
+        
+
+        // compute pins
+        let pins = self.get_pins(color);
+
+        // filter out any moves that put the king in check, and pinned moves
+        my_possible_moves = my_possible_moves.into_iter().filter(|m| match m.piece.piece_type {
+            // King cannot move into check
+            PieceType::King => !opponent_potential_moves.iter().any(|om| om.to == m.to),
+            _ => {
+                let mut can_move_to = true;
+                // here handle the pins
+                // we iterate over all the pinnied pieces
+                for PinnedPiece{piece: pinned_piece, valid_responses} in pins.iter() {
+                    // if the pinned piece is the one we're currently considering
+                    if *pinned_piece == m.piece {
+                        // check if the move is allowed by the pin
+                        can_move_to = valid_responses.iter().find(|&&x| x == m.to).is_some();
+                    }
+                }
+                can_move_to
+            }, 
+        }).collect();
+
+
+        my_possible_moves
+    }
+
+    fn get_king(&self, color: &Color) -> Piece {
+        // TODO: implement a data structure to make this lookup const time
+        for piece in &self.pieces {
+            if piece.color == *color && piece.piece_type == PieceType::King {
+                return *piece;
+            }
+        }
+        // king should always be on the board
+        panic!("King not found");
+    }
+
+    fn get_all_valid_moves(&self, color:&Color) -> Vec<Move> {
+        self.pieces.iter().filter(|p| p.color == *color).map(|p| self.get_valid_moves(p)).flatten().collect()
+    }
+
+    /// Get a vector of valid moves for the piece `piece`.
+    ///
+    /// We define a valid move to be a move that obeys the piece move directions, 
+    /// stays on the board, does not skip over pieces, etc, but does not check for
+    /// checks, pins etc.
+    fn get_valid_moves(&self, piece: &Piece) -> Vec<Move> {
         match piece.piece_type {
             PieceType::Pawn => self.get_valid_pawn_moves(piece),
             PieceType::Rook => self.get_valid_rook_moves(piece),
@@ -391,7 +632,7 @@ impl Board {
         }
     }
 
-    fn get_valid_pawn_moves<'a>(&'a self, piece: &'a Piece) -> Vec<Move> {
+    fn get_valid_pawn_moves(&self, piece: &Piece) -> Vec<Move> {
         let mut moves: Vec<Move> = vec![];
         let pos = &piece.position;
         
@@ -420,8 +661,8 @@ impl Board {
         let one_step = step_forward(pos.rank);
         if self.piece_at(one_step, pos.file).is_none() {
             moves.push(Move{
-                piece,
-                from: &piece.position,
+                piece: *piece,
+                from: piece.position,
                 to: Position{rank: one_step, file: pos.file},
                 captured: None});
 
@@ -430,8 +671,8 @@ impl Board {
             let two_step = step_forward(step_forward(start_rank));
             if pos.rank == start_rank && self.piece_at(two_step, pos.file).is_none(){
                 moves.push(Move {
-                    piece, 
-                    from: &piece.position, 
+                    piece: *piece, 
+                    from: piece.position, 
                     to: Position{rank: two_step, file: pos.file}, 
                     captured: None
                 });
@@ -444,10 +685,10 @@ impl Board {
             match maybe_other_piece {
                 Some(other_piece) => if other_piece.color != piece.color {
                     moves.push(Move{
-                        piece,
-                        from: &piece.position,
+                        piece: *piece,
+                        from: piece.position,
                         to: Position{rank: one_step, file: pos.file - 1},
-                        captured: Some(other_piece)
+                        captured: Some(*other_piece)
                     });
                 },
                 None => (),
@@ -458,10 +699,10 @@ impl Board {
             match maybe_other_piece {
                 Some(other_piece) => if other_piece.color != piece.color {
                     moves.push(Move{
-                        piece,
-                        from: &piece.position,
+                        piece: *piece,
+                        from: piece.position,
                         to: Position{rank: one_step, file: pos.file + 1},
-                        captured: Some(other_piece)
+                        captured: Some(*other_piece)
                     });
                 },
                 None => (),
@@ -478,7 +719,7 @@ impl Board {
     }
 
     
-    fn get_valid_rook_moves<'a>(&'a self, piece: &'a Piece) -> Vec<Move> {
+    fn get_valid_rook_moves(&self, piece: &Piece) -> Vec<Move> {
         // vector of possible move, is_capture
         let mut moves: Vec<Move> = vec![];
         let pos = &piece.position;
@@ -491,8 +732,8 @@ impl Board {
                 PotentialMove::Invalid => break,
                 PotentialMove::Valid(maybe_other) => {
                     moves.push(Move{
-                        piece,
-                        from: &piece.position,
+                        piece: *piece,
+                        from: piece.position,
                         to: candidate, 
                         captured: maybe_other 
                     });
@@ -510,8 +751,8 @@ impl Board {
                 PotentialMove::Invalid => break,
                 PotentialMove::Valid(maybe_other) => {
                     moves.push(Move{
-                        piece,
-                        from: &piece.position,
+                        piece: *piece,
+                        from: piece.position,
                         to: candidate, 
                         captured: maybe_other 
                     });
@@ -530,8 +771,8 @@ impl Board {
                 PotentialMove::Invalid => break,
                 PotentialMove::Valid(maybe_other) => {
                     moves.push(Move{
-                        piece,
-                        from: &piece.position,
+                        piece: *piece,
+                        from: piece.position,
                         to: candidate, 
                         captured: maybe_other 
                     });
@@ -549,8 +790,8 @@ impl Board {
                 PotentialMove::Invalid => break,
                 PotentialMove::Valid(maybe_other) => {
                     moves.push(Move{
-                        piece,
-                        from: &piece.position,
+                        piece: *piece,
+                        from: piece.position,
                         to: candidate, 
                         captured: maybe_other 
                     });
@@ -597,8 +838,8 @@ impl Board {
                     PotentialMove::Invalid => break,
                     PotentialMove::Valid(maybe_other) => {
                         moves.push(Move{
-                            piece,
-                            from: &piece.position,
+                            piece: *piece,
+                            from: piece.position,
                             to: candidate,
                             captured: maybe_other,
                         });
@@ -607,6 +848,14 @@ impl Board {
                         }
                     },
                 }
+                // For sliding pieces like bishop and rook and queen, to check for pins we can keep
+                // searching in the direction past the point were we would break, and count the
+                // number of pieces betweeen the target square and the opponenet king.
+                // if it's 2 or more, we can stop. If it's 1, that piece is pinned, we should
+                // return that info back up.
+                //
+                // A pinned piece can still move, but it's limited to the squares observed in this
+                // direction, up to an including capturing the pinning piece.
             } 
         }
         moves
@@ -625,7 +874,7 @@ impl Board {
                 } else {
                     // this is a valid move, it's a capture! no need to look any further
                     // though.
-                    return PotentialMove::Valid(Some(other_piece));
+                    return PotentialMove::Valid(Some(*other_piece));
                 }
             },
             // no piece here, so it's a valid move (not a capture)
@@ -636,7 +885,7 @@ impl Board {
 
     // TODO: add type annotations to make this only take knight pieces
     // TODO: same for the other functions above
-    fn get_valid_knight_moves<'a>(&'a self, piece: &'a Piece) -> Vec<Move> {
+    fn get_valid_knight_moves(&self, piece: &Piece) -> Vec<Move> {
         let mut moves: Vec<Move> = vec![];
 
         for (rank_delta, file_delta) in std::iter::zip(
@@ -653,15 +902,15 @@ impl Board {
                     Some(other_piece) => match piece.color == other_piece.color {
                         true => continue, // same color, invalid move
                         false => moves.push(Move {
-                            piece,
-                            from: &piece.position,
+                            piece: *piece,
+                            from: piece.position,
                             to: Position { rank: future_rank, file: future_file},
-                            captured: Some(other_piece)
+                            captured: Some(*other_piece)
                         }),
                     },
                     None => moves.push(Move {
-                        piece,
-                        from: &piece.position,
+                        piece: *piece,
+                        from: piece.position,
                         to: Position { rank: future_rank, file: future_file},
                         captured: None
                     }),
@@ -671,7 +920,7 @@ impl Board {
         moves
     }
 
-    fn get_valid_king_moves<'a> (&'a self, piece: &'a Piece) -> Vec<Move> {
+    fn get_valid_king_moves(&self, piece: &Piece) -> Vec<Move> {
         let mut moves: Vec<Move> = vec![];
 
         for (rank_delta, file_delta) in std::iter::zip(
@@ -686,15 +935,15 @@ impl Board {
                     Some(other_piece) => match piece.color == other_piece.color {
                         true => continue, // same color, invalid move
                         false => moves.push(Move {
-                            piece,
-                            from: &piece.position,
+                            piece: *piece,
+                            from: piece.position,
                             to: Position { rank: future_rank as u8, file: future_file as u8},
-                            captured: Some(other_piece)
+                            captured: Some(*other_piece)
                         }),
                     },
                     None => moves.push(Move {
-                        piece,
-                        from: &piece.position,
+                        piece: *piece,
+                        from: piece.position,
                         to: Position { rank: future_rank as u8, file: future_file as u8},
                         captured: None
                     }),
@@ -706,18 +955,88 @@ impl Board {
     }
 
 
+    /// Compute `color`'s pinned pieces, as well as the list of squares they can move to
+    fn get_pins(&self, color: &Color) -> Vec<PinnedPiece> {
+        let opponent_sliding_pieces: Vec<&Piece> = self.pieces
+            .iter()
+            .filter(|p| p.color == color.other_color() && p.piece_type.is_sliding())
+            .collect();
 
+        let king = self.get_king(color);
+        let mut pins: Vec<PinnedPiece> = vec![];
+
+        for piece in opponent_sliding_pieces {
+            match piece.piece_type {
+                PieceType::Rook => {
+                    if let Some(pin) = self.get_rook_pins(color, &king, piece) {
+                        pins.push(pin);                
+                    }
+                },
+                PieceType::Bishop => {
+                    if let Some(pin) = self.get_bishop_pins(color, &king, piece) {
+                        pins.push(pin);
+                    }
+                },
+                PieceType::Queen => {
+                    if let Some(pin) = self.get_rook_pins(color, &king, piece) {
+                        pins.push(pin);
+                        continue; // both axes can't be pinning
+                    }
+                    if let Some(pin) = self.get_bishop_pins(color, &king, piece) {
+                        pins.push(pin);
+                    }
+                },
+                _ => (),
+            }
+        };
+        pins
+    }
+
+
+    fn get_rook_pins(&self, color: &Color, king: &Piece, rook: &Piece) -> Option<PinnedPiece> {
+        if rook.position.rank == king.position.rank || rook.position.file == king.position.file {
+            let ray = rook.position.ray_to(&king.position);
+            if let Some(ray) = ray {
+                let cur_pins: Vec<&Piece> = ray
+                    .iter()
+                    .map(|pos| self.piece_at_position(pos))
+                    .filter(|p| p.is_some() && p.unwrap().color == *color)
+                    .map(|p| p.unwrap())
+                    .collect();
+
+                if cur_pins.len() == 1 {
+                    return Some(PinnedPiece { piece: *cur_pins[0], valid_responses: ray });
+                }
+            }
+        }
+        None
+    }
+
+
+    fn get_bishop_pins(&self, color: &Color, king: &Piece, bishop: &Piece) -> Option<PinnedPiece> {
+        if (bishop.position.rank as i8 - king.position.rank as i8) == (bishop.position.file as i8 - king.position.file as i8) {
+            let ray = bishop.position.ray_to(&king.position);
+            if let Some(ray) = ray {
+                let cur_pins: Vec<&Piece> = ray
+                    .iter()
+                    .map(|pos| self.piece_at_position(pos))
+                    .filter(|p| p.is_some() && p.unwrap().color == *color)
+                    .map(|p| p.unwrap())
+                    .collect();
+
+                if cur_pins.len() == 1 {
+                    return Some(PinnedPiece { piece: *cur_pins[0], valid_responses: ray });
+                }
+            }
+        }
+        None
+    }
 
     fn display_piece_moves(&self, piece: &Piece) {
-        // let moves: Vec<Position> = self.get_valid_moves(piece)
-        //     .into_iter()
-        //     .map(|move_cap| move_cap.0)
-        //     .collect();
-
         let moves = self.get_valid_moves(piece);
         let destinations: Vec<&Position> = moves.iter().map(|move_cap| &move_cap.to).collect();
         let moves = self.get_valid_moves(piece);
-        let captures: Vec<Option<&Piece>> = moves.iter().map(|move_cap| move_cap.captured).collect();
+        let captures: Vec<Option<Piece>> = moves.iter().map(|move_cap| move_cap.captured).collect();
         
         for r in (1..=8).rev() {
             for f in 1..9 {
@@ -739,7 +1058,7 @@ impl Board {
     }
 
     fn draw_to_terminal(&self) {
-        for r in 1..9 {
+        for r in (1..9).rev() {
             for f in 1..9 {
                 let p = self.piece_at(r, f);
                 print!("{} ", match p {
@@ -750,12 +1069,6 @@ impl Board {
             println!();
         }
     }
-
-    fn clear(&mut self) {
-        self.pieces.clear();
-    }
-
-
 }
 
 fn piece_to_str(piece: &Piece) -> &str{
@@ -784,22 +1097,41 @@ fn visualize_moves_from_position(pos: &Position) {
 
 
 fn main() {
+    let mut rng = rand::thread_rng();
+
     let mut b = Board::from_fen(STARTING_POSITION_FEN);
     b.draw_to_terminal();
-
     println!();
 
-    for piece_type in [PieceType::Pawn, PieceType::Rook, PieceType::Bishop, 
-                       PieceType:: Knight, PieceType:: King, PieceType::Queen] {
-        println!("{:?}", &piece_type);
-        b.pieces.push(Piece{
-                color: Color::White, 
-                piece_type, 
-                position: Position { rank: 6, file: 6 },
-        });
-        b.display_piece_moves(&b.pieces.last().unwrap());
-        println!("");
-    }
+
+    const MAX_MOVES: i32 = 5;
+
+    for i in 1..=MAX_MOVES {
+        let legal_moves = b.get_legal_moves(&b.active_color);
+
+        let random_move = legal_moves.choose(&mut rng).expect("No moves!");
+        
+        println!("move {}: {}", (i+1) / 2, random_move.to_human());
+
+        b = b.execute_move(random_move);
+
+        b.draw_to_terminal();
+        println!();
+    } 
+
+    // for piece_type in [PieceType::Pawn, PieceType::Rook, PieceType::Bishop, 
+    //                    PieceType:: Knight, PieceType:: King, PieceType::Queen] {
+    //     println!("{:?}", &piece_type);
+    //     b.pieces.push(Piece{
+    //             color: Color::White, 
+    //             piece_type, 
+    //             position: Position { rank: 6, file: 6 },
+    //     });
+    //     b.display_piece_moves(&b.pieces.last().unwrap());
+    //     println!("");
+    // }
+    
+
     // for p in b.pieces {
     //     println!("{:?}", p);
     //     p.display_piece_moves();
@@ -839,6 +1171,12 @@ mod tests {
         Color::from_case('1');
     }
 
+    #[test]
+    fn test_other_color() {
+        assert_eq!(Color::White, Color::Black.other_color());
+        assert_eq!(Color::Black, Color::White.other_color());
+    }
+
 
     #[test]
     fn test_piece_type_from_char() {
@@ -857,9 +1195,82 @@ mod tests {
     }
 
     #[test]
+    fn test_is_sliding() {
+        assert!(!PieceType::Pawn.is_sliding());
+        assert!(PieceType::Rook.is_sliding());
+        assert!(PieceType::Bishop.is_sliding());
+        assert!(!PieceType::Knight.is_sliding());
+        assert!(PieceType::Queen.is_sliding());
+        assert!(!PieceType::King.is_sliding());
+    }
+
+    #[test]
     fn test_position_from_algebraic() {
         assert_eq!(Position::from_algebraic("a1"), Position{rank: 1, file: 1});
-        assert_eq!(Position::from_algebraic("h4"), Position{rank: 8, file: 4})
+        assert_eq!(Position::from_algebraic("h4"), Position{rank: 4, file: 8})
+    }
+
+    #[test]
+    fn test_ray_to() {
+        let pos = Position{rank: 1, file: 1};
+
+        assert_eq!(pos.ray_to(&pos), Some(Vec::new()));
+
+        assert_eq!(pos.ray_to(&Position{rank:1, file:3}), Some(vec![
+            Position{rank:1, file:1},
+            Position{rank:1, file:2},
+        ]));
+        assert_eq!(Position{rank:1, file:3}.ray_to(&pos), Some(vec![
+            Position{rank:1, file:3},
+            Position{rank:1, file:2},
+        ]));
+
+        assert_eq!(pos.ray_to(&Position{rank:5, file:1}), Some(vec![
+            Position{rank:1, file:1},
+            Position{rank:2, file:1},
+            Position{rank:3, file:1},
+            Position{rank:4, file:1},
+        ]));
+        assert_eq!(Position{rank:5, file:1}.ray_to(&pos), Some(vec![
+            Position{rank:5, file:1},
+            Position{rank:4, file:1},
+            Position{rank:3, file:1},
+            Position{rank:2, file:1},
+        ]));
+
+        // diagonal y=x
+        assert_eq!(pos.ray_to(&Position{rank:5, file:5}), Some(vec![
+            Position{rank:1, file:1},
+            Position{rank:2, file:2},
+            Position{rank:3, file:3},
+            Position{rank:4, file:4},
+        ]));
+        
+        assert_eq!(Position{rank:5, file:5}.ray_to(&pos), Some(vec![
+            Position{rank:5, file:5},
+            Position{rank:4, file:4},
+            Position{rank:3, file:3},
+            Position{rank:2, file:2},
+        ]));
+
+        // diagonal y=-x+b
+        let pos2 = Position{rank: 8, file: 2};
+        assert_eq!(pos2.ray_to(&Position{rank:4, file:6}), Some(vec![
+            Position{rank:8, file:2},
+            Position{rank:7, file:3},
+            Position{rank:6, file:4},
+            Position{rank:5, file:5},
+        ]));
+        
+        assert_eq!(Position{rank:4, file:6}.ray_to(&pos2), Some(vec![
+            Position{rank:4, file:6},
+            Position{rank:5, file:5},
+            Position{rank:6, file:4},
+            Position{rank:7, file:3},
+        ]));
+        //
+        // TODO test None
+        assert!(pos.ray_to(&Position { rank: 3, file: 2 }).is_none());
     }
 
     #[test]
@@ -936,5 +1347,6 @@ mod tests {
 
 
     }
+
 
 }
