@@ -236,6 +236,24 @@ impl Piece {
     }
 }
 
+
+/// Starting rank for pawns of given color
+fn pawn_starting_rank(color: &Color) -> u8 {
+    match color {
+        Color::White => 2,
+        Color::Black => 7,
+    }
+}
+
+/// Direction of pawn movement for given color
+fn pawn_step_forward(rank: u8, color: &Color) -> u8 {
+    match color {
+        Color::White => rank + 1,
+        Color::Black => rank -1,
+    }
+}
+
+
 /// Potential move, either valid, in which case has a bool inicating
 /// if it's a capture
 enum PotentialMove {
@@ -261,6 +279,16 @@ struct PinnedPiece {
     /// The positions in the ray between the attacking piece (inclusive) and the king (exclusive)
     valid_responses: Vec<Position>,
 }
+
+#[derive(Debug, PartialEq)]
+pub enum Status {
+    Checkmate(Color),
+    Stalemate,
+    ThreefoldRepetition,
+    FiftyMoveRule,
+    InsufficientMaterial,
+}
+
 
 #[derive(Debug)]
 pub struct Move {
@@ -371,6 +399,8 @@ impl Board {
         let pos = Position::from_algebraic(pos);
         self.piece_at_position(&pos)
     }
+
+    /// Get the color of the side to move
     pub fn get_active_color(&self) -> Color {
         self.active_color
     }
@@ -476,14 +506,13 @@ impl Board {
     ///     - update caslting rights
     ///         - if the king moved, both casling options are dissallowed
     ///         - if either rooks has moved, then that side is dissallowed.
-    pub fn get_legal_moves(&self, color: &Color) -> Vec<Move> {
+    pub fn get_legal_moves(&self, color: &Color) -> Result<Vec<Move>, Status> {
         // 1: get all valid opponent moves and compute pins
-        // We set `include_defenders` here because we need to check if an oppoenent piece is defended
-        // to know if we can capture it with out king.
-        // We also don't include the opponent king (that is our king in this context) because
-        // for sliding pieces, squares behind our king also constiture sqaures they could attack and
-        // therefore are invlaid moves for our king
-        let opponent_potential_moves = self.get_all_pseudo_moves(&color.other_color(), false, true);
+        // We set `observed_mode` here because we need to check if an oppoenent piece is defended
+        // to know if we can capture it with out king. This also does not include the opponent king (
+        // that is our king in this context) because or sliding pieces, squares behind our king also 
+        // constiture sqaures they could attack and therefore are invlaid moves for our king
+        let opponent_potential_moves = self.get_all_pseudo_moves(&color.other_color(), true);
 
         // 2: Compute checks, this subsets the possible pieces to move
         let my_king = self.get_king(color);
@@ -505,14 +534,14 @@ impl Board {
         // first get all valid moves
         let mut my_possible_moves: Vec<_> = pieces_to_compute_moves_for
             .into_iter()
-            .map(|p| self.get_pseudo_moves(&p, true, false))
+            .map(|p| self.get_pseudo_moves(&p, false))
             .flatten()
             .collect();
 
         // compute pins
         let pins = self.get_pins(color);
 
-        // filter out any moves that put the king in check, and pinned moves
+        // 4: filter out any moves that put the king in check, and pinned moves
         my_possible_moves = my_possible_moves
             .into_iter()
             .filter(|m| match m.piece.piece_type {
@@ -537,8 +566,16 @@ impl Board {
                 }
             })
             .collect();
-
-        my_possible_moves
+        
+        // 5: check for checkmate or stalemate
+        if my_possible_moves.len() == 0 {
+            if current_checks.len() > 0 {
+                return Err(Status::Checkmate(color.other_color()));
+            } else {
+                return Err(Status::Stalemate);
+            }
+        };
+       Ok(my_possible_moves)
     }
 
     fn get_king(&self, color: &Color) -> Piece {
@@ -560,13 +597,12 @@ impl Board {
     fn get_all_pseudo_moves(
         &self,
         color: &Color,
-        include_opponent_king: bool,
-        include_defenders: bool,
+        observed_mode: bool
     ) -> Vec<Move> {
         self.pieces
             .iter()
             .filter(|p| p.color == *color)
-            .map(|p| self.get_pseudo_moves(p, include_opponent_king, include_defenders))
+            .map(|p| self.get_pseudo_moves(p, observed_mode))
             .flatten()
             .collect()
     }
@@ -575,36 +611,38 @@ impl Board {
     fn get_pseudo_moves(
         &self,
         piece: &Piece,
-        include_opponent_king: bool,
-        include_defenders: bool,
+        observed_mode: bool,
     ) -> Vec<Move> {
         match piece.piece_type {
-            PieceType::Pawn => self.get_pseudo_pawn_moves(piece, include_defenders),
-            PieceType::Rook => {
-                self.get_pseudo_rook_moves(piece, include_opponent_king, include_defenders)
-            }
-            PieceType::Knight => self.get_pseudo_knight_moves(piece, include_defenders),
-            PieceType::Bishop => {
-                self.get_pseudo_bishop_moves(piece, include_opponent_king, include_defenders)
-            }
+            PieceType::Pawn => {
+                if observed_mode {
+                    self.get_pawn_observed_squares(piece)
+                } else {
+                    let mut pushes =
+                        self.get_pseudo_pawn_pushes(piece);
+                    let mut captures =
+                        self.get_pseudo_pawn_captures(piece);
+                    pushes.append(&mut captures);
+                    pushes
+                }
+            },
+            PieceType::Rook => self.get_pseudo_rook_moves(piece, observed_mode),
+            PieceType::Knight => self.get_pseudo_knight_moves(piece, observed_mode),
+            PieceType::Bishop => self.get_pseudo_bishop_moves(piece, observed_mode),
             PieceType::Queen => {
                 let mut bishop =
-                    self.get_pseudo_bishop_moves(piece, include_opponent_king, include_defenders);
+                    self.get_pseudo_bishop_moves(piece, observed_mode);
                 let mut rook =
-                    self.get_pseudo_rook_moves(piece, include_opponent_king, include_defenders);
+                    self.get_pseudo_rook_moves(piece, observed_mode);
                 bishop.append(&mut rook);
                 bishop
             }
-            PieceType::King => self.get_pseudo_king_moves(piece, include_defenders),
+            PieceType::King => self.get_pseudo_king_moves(piece, observed_mode),
         }
     }
 
-    /// get the valid moves for a pawn
-    ///
-    /// TODO: add en passant
-    /// TODO: add promotion
-    /// TODO: separate out the moves and the captures
-    fn get_pseudo_pawn_moves(&self, piece: &Piece, include_defenders: bool) -> Vec<Move> {
+    /// Squares the pawn *could* capture if there is a piece there
+    fn get_pawn_observed_squares(&self, piece: &Piece) -> Vec<Move> {
         let mut moves: Vec<Move> = vec![];
         let pos = &piece.position;
 
@@ -614,24 +652,59 @@ impl Board {
             panic!("Pawn is on a promotion square, should not move from here.")
         }
 
-        // get the rank one step forwards, up the baord for white and down for black
-        let step_forward = |rank: u8| -> u8 {
-            match piece.color {
-                Color::White => rank + 1,
-                Color::Black => rank - 1,
-            }
-        };
+        let next_rank = pawn_step_forward(pos.rank, &piece.color);
 
-        /// Starting rank
-        fn pawn_starting_rank(color: &Color) -> u8 {
-            match color {
-                Color::White => 2,
-                Color::Black => 7,
-            }
+        if pos.file >= 2 {
+            let maybe_other_piece = self.piece_at(next_rank, pos.file - 1);
+            moves.push(Move {
+                piece: *piece,
+                from: piece.position,
+                to: Position {
+                    rank: next_rank,
+                    file: pos.file - 1,
+                },
+                captured: maybe_other_piece.map(|p| *p),
+            });
+        }
+        if pos.file <= 7 {
+            let maybe_other_piece = self.piece_at(next_rank, pos.file + 1);
+            moves.push(Move {
+                piece: *piece,
+                from: piece.position,
+                to: Position {
+                    rank: next_rank,
+                    file: pos.file + 1,
+                },
+                captured: maybe_other_piece.map(|p| *p),
+            });
+        }
+        moves
+    }
+
+    /// Get the valid captures for a pawn
+    fn get_pseudo_pawn_captures(&self, piece: &Piece) -> Vec<Move> {
+        self.get_pawn_observed_squares(piece).into_iter()
+            .filter(|m| m.captured.map(|cp| cp.color != piece.color).unwrap_or(false))
+            .collect()
+    }
+
+    /// get the valid pushes for a pawn
+    ///
+    /// TODO: add en passant
+    /// TODO: add promotion
+    fn get_pseudo_pawn_pushes(&self, piece: &Piece) -> Vec<Move> {
+        let mut moves: Vec<Move> = vec![];
+        let pos = &piece.position;
+
+        if (piece.color == Color::White && piece.position.rank >= 8)
+            || (piece.color == Color::Black && piece.position.rank <= 1)
+        {
+            panic!("Pawn is on a promotion square, should not move from here.")
         }
 
         // move one square forward, requires no piece there
-        let one_step = step_forward(pos.rank);
+        let one_step = pawn_step_forward(pos.rank, &piece.color);
+
         if self.piece_at(one_step, pos.file).is_none() {
             moves.push(Move {
                 piece: *piece,
@@ -645,7 +718,7 @@ impl Board {
 
             // if starting position for white and both squares in front free
             let start_rank = pawn_starting_rank(&piece.color);
-            let two_step = step_forward(step_forward(start_rank));
+            let two_step = pawn_step_forward(pawn_step_forward(pos.rank, &piece.color), &piece.color);
             if pos.rank == start_rank && self.piece_at(two_step, pos.file).is_none() {
                 moves.push(Move {
                     piece: *piece,
@@ -657,61 +730,15 @@ impl Board {
                     captured: None,
                 });
             }
-        }
-
-        // check diagonal captures
-        if pos.file >= 2 {
-            let maybe_other_piece = self.piece_at(one_step, pos.file - 1);
-            match maybe_other_piece {
-                Some(other_piece) => {
-                    if other_piece.color != piece.color {
-                        moves.push(Move {
-                            piece: *piece,
-                            from: piece.position,
-                            to: Position {
-                                rank: one_step,
-                                file: pos.file - 1,
-                            },
-                            captured: Some(*other_piece),
-                        });
-                    }
-                }
-                None => (),
-            };
-        }
-        if pos.file <= 7 {
-            let maybe_other_piece = self.piece_at(one_step, pos.file + 1);
-            match maybe_other_piece {
-                Some(other_piece) => {
-                    if other_piece.color != piece.color {
-                        moves.push(Move {
-                            piece: *piece,
-                            from: piece.position,
-                            to: Position {
-                                rank: one_step,
-                                file: pos.file + 1,
-                            },
-                            captured: Some(*other_piece),
-                        });
-                    }
-                }
-                None => (),
-            };
-        }
-
-        // check en passant: should be a case of checking if one of the two captures squares
-        // is the en passant square saved in self
-
-        // signal promotion ?
-        //
+        };
         moves
     }
+
 
     fn get_pseudo_rook_moves(
         &self,
         piece: &Piece,
-        include_opponent_king: bool,
-        include_defenders: bool,
+        observed_mode: bool
     ) -> Vec<Move> {
         // vector of possible move, is_capture
         let mut moves: Vec<Move> = vec![];
@@ -724,7 +751,7 @@ impl Board {
                 file: pos.file,
             };
             let potential_move =
-                self.check_move_target(piece, &candidate, include_opponent_king, include_defenders);
+                self.check_move_target(piece, &candidate, observed_mode);
             match potential_move {
                 PotentialMove::Invalid => break,
                 PotentialMove::Valid(maybe_other) => {
@@ -747,7 +774,7 @@ impl Board {
                 file: pos.file,
             };
             let potential_move =
-                self.check_move_target(piece, &candidate, include_opponent_king, include_defenders);
+                self.check_move_target(piece, &candidate, observed_mode);
             match potential_move {
                 PotentialMove::Invalid => break,
                 PotentialMove::Valid(maybe_other) => {
@@ -771,7 +798,7 @@ impl Board {
                 file,
             };
             let potential_move =
-                self.check_move_target(piece, &candidate, include_opponent_king, include_defenders);
+                self.check_move_target(piece, &candidate, observed_mode);
             match potential_move {
                 PotentialMove::Invalid => break,
                 PotentialMove::Valid(maybe_other) => {
@@ -794,7 +821,7 @@ impl Board {
                 file,
             };
             let potential_move =
-                self.check_move_target(piece, &candidate, include_opponent_king, include_defenders);
+                self.check_move_target(piece, &candidate, observed_mode);
             match potential_move {
                 PotentialMove::Invalid => break,
                 PotentialMove::Valid(maybe_other) => {
@@ -813,11 +840,10 @@ impl Board {
         moves
     }
 
-    fn get_pseudo_bishop_moves<'a>(
-        &'a self,
-        piece: &'a Piece,
-        include_opponent_king: bool,
-        include_defenders: bool,
+    fn get_pseudo_bishop_moves(
+        &self,
+        piece: &Piece,
+        observed_mode: bool
     ) -> Vec<Move> {
         // vector of possible move, is_capture
         let mut moves: Vec<Move> = vec![];
@@ -849,8 +875,7 @@ impl Board {
                 let potential_move = self.check_move_target(
                     piece,
                     &candidate,
-                    include_opponent_king,
-                    include_defenders,
+                    observed_mode,
                 );
                 match potential_move {
                     PotentialMove::Invalid => break,
@@ -886,15 +911,14 @@ impl Board {
         &self,
         piece: &Piece,
         candidate_pos: &Position,
-        include_opponent_king: bool,
-        include_defenders: bool,
+        observed_mode: bool,
     ) -> PotentialMove {
         match self.piece_at_position(candidate_pos) {
             Some(other_piece) => {
                 if piece.color == other_piece.color {
                     // this is not a valid move and no need to search further in this direction
-                    if include_defenders {
-                        // this is not a legal move, we return it when `include_defenders` is true
+                    if observed_mode {
+                        // this is not a legal move, we return it when `observed_mode` is true
                         // to allow us to check if a friendly piece is protected.
                         return PotentialMove::Valid(Some(*other_piece));
                     } else {
@@ -902,7 +926,7 @@ impl Board {
                     }
                 } else {
                     // this is a valid move, it's a capture! no need to look any further
-                    if !include_opponent_king && other_piece.piece_type == PieceType::King {
+                    if observed_mode && other_piece.piece_type == PieceType::King {
                         // except if we don't want to include the opponent king
                         return PotentialMove::Valid(None);
                     }
@@ -917,7 +941,7 @@ impl Board {
 
     // TODO: add type annotations to make this only take knight pieces
     // TODO: same for the other functions above
-    fn get_pseudo_knight_moves(&self, piece: &Piece, include_defenders: bool) -> Vec<Move> {
+    fn get_pseudo_knight_moves(&self, piece: &Piece, observed_mode: bool) -> Vec<Move> {
         let mut moves: Vec<Move> = vec![];
 
         for (rank_delta, file_delta) in
@@ -929,52 +953,26 @@ impl Board {
                 let future_rank = future_rank as u8;
                 let future_file = future_file as u8;
                 let maybe_other_piece = self.piece_at(future_rank, future_file);
-                match maybe_other_piece {
-                    Some(other_piece) => match piece.color == other_piece.color {
-                        true => {
-                            // same color, invalid move
-                            if include_defenders {
-                                // this is not a legal move, we return it when `include_defenders` is true
-                                // to allow us to check if a friendly piece is protected.
-                                moves.push(Move {
-                                    piece: *piece,
-                                    from: piece.position,
-                                    to: Position {
-                                        rank: future_rank,
-                                        file: future_file,
-                                    },
-                                    captured: Some(*other_piece),
-                                });
-                            } else {
-                                continue;
-                            }
-                        }
-                        false => moves.push(Move {
-                            piece: *piece,
-                            from: piece.position,
-                            to: Position {
-                                rank: future_rank,
-                                file: future_file,
-                            },
-                            captured: Some(*other_piece),
-                        }),
-                    },
-                    None => moves.push(Move {
+                if maybe_other_piece.is_some_and(|p| p.color == piece.color && !observed_mode) {
+                    continue;
+                }
+                else {
+                    moves.push(Move {
                         piece: *piece,
                         from: piece.position,
                         to: Position {
                             rank: future_rank,
                             file: future_file,
                         },
-                        captured: None,
-                    }),
+                        captured: maybe_other_piece.map(|p| *p),
+                    })
                 }
             }
-        }
+        }   
         moves
     }
 
-    fn get_pseudo_king_moves(&self, piece: &Piece, include_defenders: bool) -> Vec<Move> {
+    fn get_pseudo_king_moves(&self, piece: &Piece, observed_mode: bool) -> Vec<Move> {
         let mut moves: Vec<Move> = vec![];
 
         for (rank_delta, file_delta) in std::iter::zip(
@@ -989,8 +987,8 @@ impl Board {
                     Some(other_piece) => match piece.color == other_piece.color {
                         true => {
                             // same color, invalid move
-                            if include_defenders {
-                                // this is not a legal move, we return it when `include_defenders` is true
+                            if observed_mode {
+                                // this is not a legal move, we return it when `observed_mode` is true
                                 // to allow us to check if a friendly piece is protected.
                                 moves.push(Move {
                                     piece: *piece,
@@ -1115,9 +1113,9 @@ impl Board {
     }
 
     fn display_piece_moves(&self, piece: &Piece) {
-        let moves = self.get_pseudo_moves(piece, true, false);
+        let moves = self.get_pseudo_moves(piece, false);
         let destinations: Vec<&Position> = moves.iter().map(|move_cap| &move_cap.to).collect();
-        let moves = self.get_pseudo_moves(piece, true, false);
+        let moves = self.get_pseudo_moves(piece, false);
         let captures: Vec<Option<Piece>> = moves.iter().map(|move_cap| move_cap.captured).collect();
 
         for r in (1..=8).rev() {
@@ -1315,8 +1313,6 @@ mod tests {
                 Position { rank: 7, file: 3 },
             ])
         );
-        //
-        // TODO test None
         assert!(pos.ray_to(&Position { rank: 3, file: 2 }).is_none());
     }
 
@@ -1394,7 +1390,7 @@ mod tests {
     fn count_legal_moves_from_start_position() {
         let b = Board::from_fen(STARTING_POSITION_FEN);
         let legal_moves = b.get_legal_moves(&b.active_color);
-        assert_eq!(legal_moves.len(), 20); // 8*2 pawn moves, 2*2 knight moves
+        assert_eq!(legal_moves.unwrap().len(), 20); // 8*2 pawn moves, 2*2 knight moves
     }
 
     #[test]
@@ -1413,7 +1409,7 @@ mod tests {
         let b = Board::from_fen(fen);
         b.draw_to_terminal();
         assert_eq!(b.active_color, Color::Black);
-        let legal_moves = b.get_legal_moves(&b.active_color);
+        let legal_moves = b.get_legal_moves(&b.active_color).unwrap();
 
         assert_eq!(legal_moves.len(), 1);
 
@@ -1439,7 +1435,7 @@ mod tests {
         let b = Board::from_fen(fen);
         b.draw_to_terminal();
         assert_eq!(b.active_color, Color::Black);
-        let legal_moves = b.get_legal_moves(&b.active_color);
+        let legal_moves = b.get_legal_moves(&b.active_color).unwrap();
 
         assert_eq!(legal_moves.len(), 1);
 
@@ -1448,6 +1444,82 @@ mod tests {
         assert_eq!(only_move.from, Position { rank: 1, file: 2 });
         assert_eq!(only_move.to, Position { rank: 1, file: 1 });
         assert!(only_move.captured.is_none());
+    }
+
+    #[test]
+    fn test_checkmate_1() {
+        // No moves: checkmate!
+        // . . . . . . . . 
+        // . . . . . . . . 
+        // . . . . . . . . 
+        // . . . . . . . . 
+        // . . . . . . . . 
+        // . . ♔ . . . . . 
+        // . ♕ . . . . . . 
+        // . ♚ . . . . . . 
+        let fen = "8/8/8/8/8/2K5/1Q6/1k6 b - - 0 1";
+        let b = Board::from_fen(fen);
+        b.draw_to_terminal();
+        assert_eq!(b.active_color, Color::Black);
+        let legal_moves = b.get_legal_moves(&b.active_color);
+        assert_eq!(legal_moves.unwrap_err(), Status::Checkmate(Color::White));
+    }
+
+    #[test]
+    fn test_stalemate_1() {
+        // Black is in stalemate, no legal moves
+        // . . . . . . . ♔ 
+        // . . . . . . . . 
+        // . . . . . . . . 
+        // . . . . . . . . 
+        // . . . . . . . . 
+        // . . . . . . . . 
+        // . . ♕ . . . . . 
+        // ♚ . . . . . . . 
+        let fen = "7K/8/8/8/8/8/2Q5/k7 b - - 0 1";
+        let b = Board::from_fen(fen);
+        b.draw_to_terminal();
+        assert_eq!(b.active_color, Color::Black);
+        let legal_moves = b.get_legal_moves(&b.active_color);
+        assert_eq!(legal_moves.unwrap_err(), Status::Stalemate);
+    }
+
+    #[test]
+    fn test_stalemate_with_pawn() {
+        // White is in stalemate, no legal moves
+        // . . . . . . . . 
+        // . . . . . . . . 
+        // . . . . . . . . 
+        // . . . . . . . . 
+        // . . . . . . . . 
+        // . . . . . . ♚ . 
+        // . . . . . . . ♟︎ 
+        // . . . . . . . ♔ 
+        let fen = "8/8/8/8/8/6k1/7p/7K w - - 0 1";
+        let b = Board::from_fen(fen);
+        b.draw_to_terminal();
+        assert_eq!(b.active_color, Color::White);
+        let legal_moves = b.get_legal_moves(&b.active_color);
+        assert_eq!(legal_moves.unwrap_err(), Status::Stalemate);
+    }
+
+    #[test]
+    fn test_checkmate_with_pawn() {
+        // White is in checkmate, no legal moves
+        // . . . . . . . . 
+        // . . . . . . . . 
+        // . . . . . . . . 
+        // . . . . . . . . 
+        // . . . . . . . . 
+        // . . . . . . ♚ . 
+        // . . . . . . ♟︎ ♟︎ 
+        // . . . . . . . ♔ 
+        let fen = "8/8/8/8/8/6k1/6pp/7K w - - 0 1";
+        let b = Board::from_fen(fen);
+        b.draw_to_terminal();
+        assert_eq!(b.active_color, Color::White);
+        let legal_moves = b.get_legal_moves(&b.active_color);
+        assert_eq!(legal_moves.unwrap_err(), Status::Checkmate(Color::Black));
     }
 
     #[test]
@@ -1466,7 +1538,7 @@ mod tests {
         let b = Board::from_fen(fen);
         b.draw_to_terminal();
         assert_eq!(b.active_color, Color::Black);
-        let legal_moves = b.get_legal_moves(&b.active_color);
+        let legal_moves = b.get_legal_moves(&b.active_color).unwrap();
 
         assert_eq!(legal_moves.len(), 2);
 
