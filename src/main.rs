@@ -1,10 +1,8 @@
 mod board;
-use crate::board::*;
 mod evaluate;
-use crate::evaluate::*;
 mod search;
-use crate::search::*;
 mod game;
+
 use crate::game::*;
 
 

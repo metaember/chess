@@ -50,6 +50,9 @@ impl Game {
         pgn.push_str("[White \"Charles's Bot\"]\n");
         pgn.push_str("[Black \"Charles's Bot\"]\n");
         pgn.push_str("[Black \"*\"]\n");
+        if self.start_fen != STARTING_POSITION_FEN {
+            pgn.push_str(format!("[FEN \"{}\"]\n", self.start_fen).as_str());
+        }
         pgn.push_str("\n");
 
         for (i, m) in self.moves.iter().enumerate() {

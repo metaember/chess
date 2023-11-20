@@ -1,4 +1,4 @@
-use std::{cmp::{max, min}, string};
+use std::cmp::{max, min};
 
 pub const STARTING_POSITION_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
@@ -526,6 +526,45 @@ impl Board {
 
         // self.check_for_insufficient_material();
 
+        // update castling rights
+        let mut castle_kingside_white = true;
+        let mut castle_queenside_white = true;
+        let mut castle_kingside_black = true;
+        let mut castle_queenside_black = true;
+
+        if selected_move.piece.piece_type == PieceType::King{
+            match selected_move.piece.color {
+                Color::White => {
+                    castle_kingside_white = false;
+                    castle_queenside_white = false;
+                },
+                Color::Black => {
+                    castle_kingside_black = false;
+                    castle_queenside_black = false;
+                }
+            }
+        }
+        else if selected_move.piece.piece_type == PieceType::Rook {
+            match selected_move.piece.color {
+                Color::White => {
+                    if selected_move.from.rank == 1 && selected_move.from.file == 1 {
+                        castle_queenside_white = false;
+                    }
+                    if selected_move.from.rank == 1 && selected_move.from.file == 8 {
+                        castle_kingside_white = false;
+                    }
+                },
+                Color::Black => {
+                    if selected_move.from.rank == 8 && selected_move.from.file == 1 {
+                        castle_queenside_black = false;
+                    }
+                    if selected_move.from.rank == 8 && selected_move.from.file == 8 {
+                        castle_kingside_black = false;
+                    }
+                }
+            }
+        }
+
         // TODO: update the other states too
         Board {
             pieces,
@@ -533,6 +572,10 @@ impl Board {
             halfmove_clock: if selected_move.captured.is_some() || selected_move.piece.piece_type == PieceType::Pawn {
                 0} else {self.halfmove_clock + 1},
             fullmove_clock: self.fullmove_clock + if self.active_color == Color::Black {1} else {0},
+            castle_kingside_white: self.castle_kingside_white && castle_kingside_white,
+            castle_queenside_white: self.castle_queenside_white && castle_queenside_white,
+            castle_kingside_black: self.castle_kingside_black && castle_kingside_black,
+            castle_queenside_black: self.castle_queenside_black && castle_queenside_black,
             ..*self
         }
     }

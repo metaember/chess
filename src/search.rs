@@ -1,9 +1,11 @@
 use rand::prelude::*;
-use crate::board::*; 
+use crate::board::*;
 use crate::evaluate::*;
 
 const MAX_SCORE: f32 = 99999.0;
 const MIN_SCORE: f32 = -99999.0;
+
+const DEBUG: bool = false;
 
 pub fn search(max_depth: u8, board: &Board) -> Move {
     minimax(max_depth, board).0.expect("No move found")
@@ -46,7 +48,10 @@ pub fn minimax_helper(max_depth: u8, board: &Board) -> f32 {
         _ => panic!("No legal moves, not a stalemate or a checkmate"),
     };
 
-    let board_str = board.draw_board();  // for debugging
+    if DEBUG {
+        let _board_str = board.draw_board();
+    }
+     // for debugging
 
     let mut best_score = -99999.0;
 
@@ -66,6 +71,6 @@ pub fn minimax_helper(max_depth: u8, board: &Board) -> f32 {
 //     let mut rng = rand::thread_rng();
 
 //     let legal_moves = board.get_legal_moves(&board.get_active_color()).expect(&"No legal moves");
-    
+
 //     *legal_moves.choose(&mut rng).expect("No moves!")
 // }
