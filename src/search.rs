@@ -24,11 +24,7 @@ pub fn search(max_depth: u8, board: &Board) -> Move {
 pub fn minimax(max_depth: u8, board: &Board) -> SearchResult {
     let legal_moves = match board.get_legal_moves(&board.get_active_color()) {
         Ok(moves) => moves,
-        Err(Status::Checkmate(color)) => return if color == Color::White {
-            SearchResult{best_move: None, best_score: MAX_SCORE, nodes_searched: 0}
-        } else {
-            SearchResult{best_move: None, best_score: MIN_SCORE, nodes_searched: 0}
-        },
+        Err(Status::Checkmate(_)) => return SearchResult{best_move: None, best_score: MIN_SCORE, nodes_searched: 0},
         Err(Status::Stalemate) => return SearchResult{best_move: None, best_score: 0, nodes_searched: 0},
         _ => panic!("No legal moves, not a stalemate or a checkmate"),
     };
@@ -48,7 +44,7 @@ pub fn minimax(max_depth: u8, board: &Board) -> SearchResult {
             best_move = m;
         }
     };
-    SearchResult {best_move: Some(*best_move), best_score: best_score, nodes_searched: total_nodes_searched }
+    SearchResult {best_move: Some(*best_move), best_score, nodes_searched: total_nodes_searched }
 }
 
 pub fn minimax_helper(max_depth: u8, board: &Board) -> (i32, i32) {
@@ -59,15 +55,15 @@ pub fn minimax_helper(max_depth: u8, board: &Board) -> (i32, i32) {
 
     let legal_moves = match board.get_legal_moves(&board.get_active_color()) {
         Ok(moves) => moves,
-        Err(Status::Checkmate(color)) => return if color == Color::White { (MAX_SCORE, 0) } else { (MIN_SCORE, 0) },
+        Err(Status::Checkmate(_)) => return (MIN_SCORE, 0),
         Err(Status::Stalemate) => return (0, 0),
         _ => panic!("No legal moves, not a stalemate or a checkmate"),
     };
 
     if DEBUG {
+        // for debugging
         let _board_str = board.draw_board();
     }
-     // for debugging
 
     let mut best_score = MIN_SCORE;
     let mut total_nodes_searched = 0;
@@ -117,4 +113,123 @@ mod test {
         assert!(m.piece == Piece::from_algebraic('N', "e4"));
         assert!(false);
     }
+
+    #[test]
+    fn mate_in_two_1() {
+        // https://wtharvey.com/m8n2.txt
+        // Magnus Carlsen vs Helgi Gretarsson, Rethymnon, 2003
+        // r5q1/pp1b1kr1/2p2p2/2Q5/2PpB3/1P4NP/P4P2/4RK2 w - - 1 0
+        // 1. Bg6+ Kxg6 2. Qh5#
+        let fen = "r5q1/pp1b1kr1/2p2p2/2Q5/2PpB3/1P4NP/P4P2/4RK2 w - - 1 0";
+        let b = Board::from_fen(fen);
+        b.draw_to_terminal();
+        let m = search(4, &b);
+        print!("{} {}", m.to_human(), m.to_algebraic());
+        assert_eq!(m.piece, Piece::from_algebraic('B', "e4"));
+        assert_eq!(m.to, Position::from_algebraic("g6"));
+    }
+
+    #[test]
+    fn mate_in_two_2() {
+        // https://wtharvey.com/m8n2.txt
+        // Jon Hammer vs Magnus Carlsen, Halkidiki, 2003
+        // 5rk1/ppp2pbp/3p2p1/1q6/4r1P1/1NP1B3/PP2nPP1/R2QR2K b - - 0 1
+        // 1... Qh5+ 2. gxh5 Rh4#
+        let fen = "5rk1/ppp2pbp/3p2p1/1q6/4r1P1/1NP1B3/PP2nPP1/R2QR2K b - - 0 1";
+        let b = Board::from_fen(fen);
+        b.draw_to_terminal();
+
+        let m = search(4, &b);
+        print!("{} {}", m.to_human(), m.to_algebraic());
+        assert_eq!(m.piece, Piece::from_algebraic('q', "b5"));
+        assert_eq!(m.to, Position::from_algebraic("h5"));
+
+        let m = search(4, &b);
+        print!("{} {}", m.to_human(), m.to_algebraic());
+        assert_eq!(m.piece, Piece::from_algebraic('P', "g4"));
+        assert_eq!(m.to, Position::from_algebraic("h5"));
+        assert!(m.captured.is_some_and(|p| p == Piece::from_algebraic('q', "h5")));
+
+        let m = search(4, &b);
+        print!("{} {}", m.to_human(), m.to_algebraic());
+        assert_eq!(m.piece, Piece::from_algebraic('r', "e4"));
+        assert_eq!(m.to, Position::from_algebraic("h4"));
+    }
+
+    #[test]
+    fn mate_in_three_1() {
+        // https://wtharvey.com/m8n3.txt
+        // Madame de Remusat vs Napoleon I, Paris, 1802
+        // r1b1kb1r/pppp1ppp/5q2/4n3/3KP3/2N3PN/PPP4P/R1BQ1B1R b kq - 0 1
+        // 1... Bc5+ 2. Kxc5 Qb6+ 3. Kd5 Qd6#
+        let fen = "r1b1kb1r/pppp1ppp/5q2/4n3/3KP3/2N3PN/PPP4P/R1BQ1B1R b kq - 0 1";
+        let b = Board::from_fen(fen);
+        b.draw_to_terminal();
+
+        let m = search(5, &b);
+        print!("{} {}", m.to_human(), m.to_algebraic());
+        assert!(m.piece == Piece::from_algebraic('b', "f8"));
+        assert!(m.to == Position::from_algebraic("c5"));
+
+        let m = search(4, &b);
+        print!("{} {}", m.to_human(), m.to_algebraic());
+        assert!(m.piece == Piece::from_algebraic('K', "d4"));
+        assert!(m.to == Position::from_algebraic("c5"));
+
+        let m = search(4, &b);
+        print!("{} {}", m.to_human(), m.to_algebraic());
+        assert!(m.piece == Piece::from_algebraic('q', "f6"));
+        assert!(m.to == Position::from_algebraic("b6"));
+
+        let m = search(2, &b);
+        print!("{} {}", m.to_human(), m.to_algebraic());
+        assert!(m.piece == Piece::from_algebraic('K', "c5"));
+        assert!(m.to == Position::from_algebraic("d5"));
+
+        let m = search(2, &b);
+        print!("{} {}", m.to_human(), m.to_algebraic());
+        assert!(m.piece == Piece::from_algebraic('q', "b6"));
+        assert!(m.to == Position::from_algebraic("d6"));
+    }
+
+    #[test]
+    fn mate_in_three_2() {
+        // https://wtharvey.com/m8n3.txt
+        // Jean Netzer vs Maxime Vachier-Lagrave, Hyeres, 2002
+        // 5r2/6k1/p2p4/6n1/P3p3/8/5P2/2q2QKR b - - 0 1
+        // 1... Nf3+ 2. Kg2 Qg5+ 3. Kh3 Rh8#
+        let fen = "5r2/6k1/p2p4/6n1/P3p3/8/5P2/2q2QKR b - - 0 1";
+        let b = Board::from_fen(fen);
+        b.draw_to_terminal();
+
+        let m = search(5, &b);  // this needs to be depth 5 to find the mate in 3
+        print!("{} {}", m.to_human(), m.to_algebraic());
+        assert_eq!(m.piece, Piece::from_algebraic('n', "g5"));
+        assert_eq!(m.to, Position::from_algebraic("f3"));
+
+        let b = b.execute_move(&m);
+        let m = search(4, &b);
+        print!("{} {}", m.to_human(), m.to_algebraic());
+        assert_eq!(m.piece, Piece::from_algebraic('K', "g1"));
+        assert_eq!(m.to, Position::from_algebraic("g2"));
+
+        let b = b.execute_move(&m);
+        let m = search(4, &b);
+        print!("{} {}", m.to_human(), m.to_algebraic());
+        assert_eq!(m.piece, Piece::from_algebraic('q', "c1"));
+        assert_eq!(m.to, Position::from_algebraic("g5"));
+
+        let b = b.execute_move(&m);
+        let m = search(2, &b);
+        print!("{} {}", m.to_human(), m.to_algebraic());
+        assert_eq!(m.piece, Piece::from_algebraic('K', "g2"));
+        assert_eq!(m.to, Position::from_algebraic("h3"));
+
+        let b = b.execute_move(&m);
+        let m = search(2, &b);
+        print!("{} {}", m.to_human(), m.to_algebraic());
+        assert_eq!(m.piece, Piece::from_algebraic('r', "f8"));
+        assert_eq!(m.to, Position::from_algebraic("h8"));
+    }
+
 }
