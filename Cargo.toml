@@ -7,4 +7,9 @@ edition = "2021"
 
 [dependencies]
 chrono = "0.4.31"
+clap = { version = "4.4.8", features = ["derive"] }
 rand = "0.8.5"
+
+[build]
+# mangle using newer version of symbol mangling
+rustflags = ["-C", "symbol-mangling-version=v0"]

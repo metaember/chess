@@ -85,27 +85,16 @@ impl PieceType {
             Self::King => "king",
         }
     }
-
-    pub fn to_material(&self) -> i32 {
-        match self {
-            Self::Pawn => 1,
-            Self::Rook => 5,
-            Self::Knight => 3,
-            Self::Bishop => 3,
-            Self::Queen => 9,
-            Self::King => 90,
-        }
-    }
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Position {
-    rank: u8, // row, 1 is start
-    file: u8, // col, 1 is start
+    pub rank: u8, // row, 1 is start
+    pub file: u8, // col, 1 is start
 }
 
 impl Position {
-    fn from_algebraic(s: &str) -> Position {
+    pub fn from_algebraic(s: &str) -> Position {
         if s.len() != 2 {
             panic!("Algebraic notation must be of length 2.")
         }
@@ -184,7 +173,7 @@ pub struct Piece {
 }
 
 impl Piece {
-    fn from_algebraic(piece: char, position: &str) -> Piece {
+    pub fn from_algebraic(piece: char, position: &str) -> Piece {
         Piece {
             color: Color::from_case(piece),
             piece_type: PieceType::from_char(piece),
@@ -329,10 +318,10 @@ pub enum Status {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Move {
-    piece: Piece,
-    from: Position,
-    to: Position,
-    captured: Option<Piece>,
+    pub piece: Piece,
+    pub from: Position,
+    pub to: Position,
+    pub captured: Option<Piece>,
 }
 
 impl Move {
