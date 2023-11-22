@@ -10,9 +10,9 @@ pub fn evaluate_board(board: &Board) -> i32 {
     let material = sum_material(board);
     let mut score = material.white - material.black;
 
-    if board.get_active_color() == Color::Black {
-        score *= -1;
-    };
+    // if board.get_active_color() == Color::Black {
+    //     score *= -1;
+    // };
     score
 }
 

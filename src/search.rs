@@ -1,10 +1,12 @@
 use std::result;
+use std::u128::MIN;
 
 use crate::board::*;
 use crate::evaluate::*;
 use rand::prelude::*;
 
-const MIN_SCORE: i32 = -99999;
+const MIN_SCORE: i32 = i32::MIN;
+const MAX_SCORE: i32 = i32::MAX;
 
 const DEBUG: bool = false;
 
@@ -19,7 +21,8 @@ pub struct SearchResult {
 }
 
 pub fn search(max_depth: u8, board: &Board) -> Move {
-    let result = minimax(max_depth, board);
+    let maximizing_player = if board.get_active_color() == Color::White { true } else { false };
+    let result = minimax(max_depth, board, maximizing_player);
     if result.is_err() {
         let moves = result.err().unwrap();
         panic!(
@@ -38,7 +41,7 @@ pub fn search(max_depth: u8, board: &Board) -> Move {
     result.best_move.expect("No move found")
 }
 
-pub fn minimax(max_depth: u8, board: &Board) -> Result<SearchResult, Vec<Move>> {
+pub fn minimax(max_depth: u8, board: &Board, is_maximizing_player: bool) -> Result<SearchResult, Vec<Move>> {
     if max_depth == 0 {
         // If we've reached the maximum depth, evaluate the board naively
         let score = evaluate_board(board);
@@ -51,12 +54,14 @@ pub fn minimax(max_depth: u8, board: &Board) -> Result<SearchResult, Vec<Move>> 
         });
     }
 
+    let worst_score = if is_maximizing_player {MIN_SCORE} else {MAX_SCORE};
+
     let legal_moves = match board.get_legal_moves(&board.get_active_color()) {
         Ok(moves) => moves,
         Err(Status::Checkmate(_)) => {
             return Ok(SearchResult {
                 best_move: None,
-                best_score: MIN_SCORE,
+                best_score: worst_score,
                 nodes_searched: 0,
                 moves: vec![],
                 scores: vec![],
@@ -75,7 +80,7 @@ pub fn minimax(max_depth: u8, board: &Board) -> Result<SearchResult, Vec<Move>> 
     };
 
     let mut current_best_move = &legal_moves[0];
-    let mut current_best_score = MIN_SCORE;
+    let mut current_best_score = worst_score;
     let mut total_nodes_searched = 0;
     let mut current_moves = vec![];
     let mut current_scores = vec![];
@@ -89,7 +94,7 @@ pub fn minimax(max_depth: u8, board: &Board) -> Result<SearchResult, Vec<Move>> 
             }
         }
         let b = board.execute_move(&m);
-        let res = minimax(max_depth - 1, &b);
+        let res = minimax(max_depth - 1, &b, !is_maximizing_player);
         match res {
             Ok(SearchResult {
                 best_move,
@@ -100,9 +105,9 @@ pub fn minimax(max_depth: u8, board: &Board) -> Result<SearchResult, Vec<Move>> 
             }) => {
                 total_nodes_searched += nodes_searched;
 
-                let score = best_score * -1;
-                if score > current_best_score {
-                    current_best_score = score;
+                if is_maximizing_player && best_score > current_best_score
+                    || !is_maximizing_player && best_score < current_best_score {
+                    current_best_score = best_score;
                     current_best_move = m;
                     current_moves = moves;
                     current_scores = scores;
@@ -232,15 +237,49 @@ mod test {
         assert!(capture_knight_move.captured.is_some_and(|p| p == Piece::from_algebraic('N', "e4")));
         // ok so white should know black can capture the knight
 
+        // check the eval before and after the blunder
+        let eval_before_blunder = evaluate_board(&b);
+        let eval_after_blunder = evaluate_board(&b_after_blunder);
+        println!("Eval before blunder: {}", eval_before_blunder);
+        println!("Eval after blunder: {}\n", eval_after_blunder);
+        assert!(eval_before_blunder - 150 < eval_before_blunder);
+
+        let after_recapture = b_after_blunder.execute_move(&capture_knight_move);
+        println!("After recapture:");
+        after_recapture.draw_to_terminal();
+        let eval_after_recapture = evaluate_board(&after_recapture);
+        println!("Eval after recapture: {}\n", eval_after_recapture);
 
 
-        let search_result = minimax(4, &b).unwrap();
-        println!("{} {}", search_result.best_move.unwrap().to_human(), search_result.best_score);
+        // ok so going back to before the blunder
+        println!("Search before blunder: 4 moves deep");
+        assert!(b.get_active_color() == Color::White);
+        let search_result = minimax(4, &b, true).unwrap();
+        println!("search result: {} {}", search_result.best_move.unwrap().to_human(), search_result.best_score);
         search_result.moves.iter().for_each(|m| println!("{} {}", m.to_algebraic(), m.to_human()));
         search_result.scores.iter().for_each(|s| println!("{}", s));
 
+        // search 2 moves deep
+        println!("Search before blunder: 2 moves deep");
+        assert!(b.get_active_color() == Color::White);
+        let search_result = minimax(2, &b, true).unwrap();
+        println!("search result: {} {}", search_result.best_move.unwrap().to_human(), search_result.best_score);
+        search_result.moves.iter().for_each(|m| println!("{} {}", m.to_algebraic(), m.to_human()));
+        search_result.scores.iter().for_each(|s| println!("{}", s));
+        assert!(search_result.best_move.unwrap().piece == Piece::from_algebraic('N', "e4"));
+
+        // search 5 moves deep
+        println!("Search before blunder: 5 moves deep");
+        assert!(b.get_active_color() == Color::White);
+        let search_result = minimax(5, &b, true).unwrap();
+        println!("search result: {} {}", search_result.best_move.unwrap().to_human(), search_result.best_score);
+        search_result.moves.iter().for_each(|m| println!("{} {}", m.to_algebraic(), m.to_human()));
+        search_result.scores.iter().for_each(|s| println!("{}", s));
+        assert!(search_result.best_move.unwrap().piece == Piece::from_algebraic('N', "e4"));
+
+
         let m = search(4, &b);
-        print!("{} {}", m.to_human(), m.to_algebraic());
+        print!("best move: {} {}", m.to_human(), m.to_algebraic());
         // Move the knight, it's under attacj by a pawn!
         assert!(m.piece == Piece::from_algebraic('N', "e4"));
 
@@ -449,9 +488,9 @@ mod test {
     #[test]
     fn perft_2() {
         let b = Board::new();
-        assert_eq!(minimax(1, &b).unwrap().nodes_searched, 20);
-        assert_eq!(minimax(2, &b).unwrap().nodes_searched, 400);
-        assert_eq!(minimax(3, &b).unwrap().nodes_searched, 8902);
-        assert_eq!(minimax(4, &b).unwrap().nodes_searched, 197281);
+        assert_eq!(minimax(1, &b, true).unwrap().nodes_searched, 20);
+        assert_eq!(minimax(2, &b, true).unwrap().nodes_searched, 400);
+        assert_eq!(minimax(3, &b, true).unwrap().nodes_searched, 8902);
+        assert_eq!(minimax(4, &b, true).unwrap().nodes_searched, 197281);
     }
 }
