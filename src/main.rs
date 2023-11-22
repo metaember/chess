@@ -1,4 +1,5 @@
 use clap::Parser;
+use color_eyre::eyre::Result;
 
 mod board;
 mod evaluate;
@@ -23,9 +24,14 @@ struct Args {
 }
 
 
-fn main() {
+
+fn main() -> Result<()> {
+    color_eyre::install()?;
+
     let args = Args::parse();
     let mut game = Game::new(args.depth);
     game.play(args.count as i32);
     println!("{}", game.to_pgn());
+
+    Ok(())
 }

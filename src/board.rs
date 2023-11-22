@@ -1,5 +1,7 @@
 use std::cmp::{max, min};
 
+use crate::board;
+
 pub const STARTING_POSITION_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -316,7 +318,7 @@ pub enum Status {
 }
 
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Move {
     pub piece: Piece,
     pub from: Position,
@@ -348,7 +350,19 @@ impl Move {
             }
         )
     }
+
+    pub fn from_algebraic(board: &Board, from_str: &str, to_str: &str) -> Self {
+        let from = Position::from_algebraic(from_str);
+        let to = Position::from_algebraic(to_str);
+        Move {
+            piece: board.piece_at_position(&from).unwrap().clone(),
+            from,
+            to,
+            captured: board.piece_at_position(&to).cloned().to_owned(),
+        }
+    }
 }
+
 
 pub struct Board {
     pub pieces: Vec<Piece>,
@@ -363,6 +377,7 @@ pub struct Board {
     halfmove_clock: u32,
     // number of full moves. Starts at 1, and gets incremented after every black move
     fullmove_clock: u32,
+    board_to_piece: [[Option<Piece>; 8]; 8],
 }
 
 impl Board {
@@ -373,6 +388,7 @@ impl Board {
         let parts: Vec<&str> = fen_string.splitn(6, " ").collect();
 
         assert!(parts.len() == 6);
+        let mut board_to_piece: [[Option<Piece>; 8]; 8] = [[None; 8]; 8];
 
         let piece_data = parts[0];
         let mut pieces: Vec<Piece> = vec![];
@@ -380,7 +396,9 @@ impl Board {
         let mut file = 1;
         for piece_char in piece_data.chars() {
             if piece_char.is_alphabetic() {
-                pieces.push(Piece::from_rank_file(piece_char, rank, file));
+                let p = Piece::from_rank_file(piece_char, rank, file);
+                pieces.push(p);
+                board_to_piece[(rank - 1) as usize][(file - 1) as usize] = Some(p);
                 file += 1;
             } else if piece_char.is_numeric() {
                 file += piece_char as u8 - '0' as u8;
@@ -420,19 +438,22 @@ impl Board {
             en_passant_target,
             halfmove_clock,
             fullmove_clock,
+            board_to_piece,
         }
+    }
+
+    pub fn new() -> Board {
+        Board::from_fen(STARTING_POSITION_FEN)
     }
 
     fn piece_at(&self, rank: u8, file: u8) -> Option<&Piece> {
         // TODO: speed this up by storing a board representation as well
-        self.pieces
-            .iter()
-            .filter(|p| p.position.rank == rank && p.position.file == file)
-            .next()
+        self.board_to_piece[(rank - 1) as usize][(file - 1) as usize].as_ref()
     }
 
     fn piece_at_position(&self, pos: &Position) -> Option<&Piece> {
-        self.piece_at(pos.rank, pos.file)
+        // self.piece_at(pos.rank, pos.file)
+        self.board_to_piece[(pos.rank - 1) as usize][(pos.file - 1) as usize].as_ref()
     }
 
     fn piece_at_algebraic(&self, pos: &str) -> Option<&Piece> {
@@ -489,6 +510,11 @@ impl Board {
     }
 
     pub fn execute_move(&self, selected_move: &Move) -> Board {
+        if selected_move.captured.is_some_and(|p| p.piece_type == PieceType::King) {
+            self.draw_to_terminal();
+            panic!("King cannot be captured, something is amiss. Move was {}", selected_move.to_human());
+        }
+
         let mut pieces = self.pieces.clone();
         pieces = pieces
             .into_iter()
@@ -503,15 +529,19 @@ impl Board {
 
         // .. and add the piece that moved back in the new position
         // TODO: handle promotion
-        pieces.push(Piece {
+        let new_piece = Piece {
             position: selected_move.to,
             ..selected_move.piece
-        });
+        };
+        pieces.push(new_piece);
 
-        if selected_move.captured.is_some_and(|p| p.piece_type == PieceType::King) {
-            self.draw_to_terminal();
-            panic!("King cannot be captured, something is amiss")
+        let mut board_to_piece = self.board_to_piece.clone();
+        board_to_piece[(selected_move.from.rank - 1) as usize][(selected_move.from.file - 1) as usize] = None;
+        if let Some(captured) = selected_move.captured {
+            // In the case of en passant, the captures sqaure is not the target square of the move
+            board_to_piece[(captured.position.rank - 1) as usize][(captured.position.file - 1) as usize] = None;
         }
+        board_to_piece[(selected_move.to.rank - 1) as usize][(selected_move.to.file - 1) as usize] = Some(new_piece);
 
         // self.check_for_insufficient_material();
 
@@ -565,6 +595,7 @@ impl Board {
             castle_queenside_white: self.castle_queenside_white && castle_queenside_white,
             castle_kingside_black: self.castle_kingside_black && castle_kingside_black,
             castle_queenside_black: self.castle_queenside_black && castle_queenside_black,
+            board_to_piece,
             ..*self
         }
     }
@@ -762,7 +793,7 @@ impl Board {
     ///  We define a pseudo valid move to be a move that obeys the piece move directions,
     /// stays on the board, does not skip over pieces, etc, but does not check for
     /// checks, pins etc.
-    fn get_all_pseudo_moves(
+    pub fn get_all_pseudo_moves(
         &self,
         color: &Color,
         observed_mode: bool
@@ -1828,6 +1859,101 @@ mod tests {
         for pos in vec!["g2", "h1"] {
             assert!(pins[0].valid_responses.contains(&Position::from_algebraic(pos)));
         }
+    }
+
+    #[test]
+    fn test_pin_fail_1() {
+        let b = Board::from_fen("rnbqkbnr/p1pppppp/8/1B6/8/4P3/PPPP1PPP/RNBQK1NR b KQkq - 0 2");
+        b.draw_to_terminal();
+        let pins = b.get_pins(&Color::Black);
+        assert_eq!(pins.len(), 1);
+        pins[0].valid_responses.iter().for_each(|p| println!("{}", p.to_algebraic()));
+        assert_eq!(pins[0].piece, Piece::from_algebraic('p', "d7"));
+
+        let legal_moves = b.get_legal_moves(&b.active_color).unwrap();
+        legal_moves.iter().for_each(|m| println!("{} {}", m.to_algebraic(), m.to_human()));
+        assert!(!legal_moves.iter().any(|m| m.piece == Piece::from_algebraic('p', "d7")));
+    }
+
+    #[test]
+    fn test_pin_fail_1_from_start() {
+        let b = Board::new();
+
+        // white moves pawn from e2 to e3
+        // black moves pawn from b7 to b5
+        // white moves bishop from f1 to b5 capturing black pawn at b5
+        // black moves pawn from d7 to d6
+        // white moves bishop from b5 to e8 capturing black king at e8
+        let m = &Move {
+            piece: Piece::from_algebraic('P', "e2"),
+            from: Position { rank: 2, file: 5 },
+            to: Position::from_algebraic("e3"),
+            captured: None,
+        };
+        let legal_moves = b.get_legal_moves(&b.active_color).unwrap();
+        assert!(legal_moves.iter().any(|mm| mm == m));
+        let b = b.execute_move(m);
+
+        let m = &Move {
+            piece: Piece::from_algebraic('p', "b7"),
+            from: Position { rank: 7, file: 2 },
+            to: Position { rank: 5, file: 2 },
+            captured: None,
+        };
+        let legal_moves = b.get_legal_moves(&b.active_color).unwrap();
+        assert!(legal_moves.iter().any(|mm| mm == m));
+        let b = b.execute_move(m);
+
+
+        b.draw_to_terminal();
+
+        let m = &Move {
+            piece: Piece::from_algebraic('B', "f1"),
+            from: Position { rank: 1, file: 6 },
+            to: Position { rank: 5, file: 2 },
+            captured: Some(Piece::from_algebraic('p', "b5")),
+        };
+        let legal_moves = b.get_legal_moves(&b.active_color).unwrap();
+        legal_moves.iter().for_each(|m| println!("{} {}", m.to_algebraic(), m.to_human()));
+        assert!(legal_moves.iter().any(|mm| mm == m));
+        let b = b.execute_move(m);
+        b.draw_to_terminal();
+
+        assert!(b.piece_at_position(&Position::from_algebraic("b5")).is_some());
+        assert_eq!(b.piece_at_position(&Position::from_algebraic("b5")).unwrap(), &Piece::from_algebraic('B', "b5"));
+
+
+        let pins = b.get_pins(&Color::Black);
+        assert_eq!(pins.len(), 1);
+        pins[0].valid_responses.iter().for_each(|p| println!("{}", p.to_algebraic()));
+        assert_eq!(pins[0].piece, Piece::from_algebraic('p', "d7"));
+
+
+
+        let legal_moves = b.get_legal_moves(&b.active_color).unwrap();
+        legal_moves.iter().for_each(|m| println!("{} {}", m.to_algebraic(), m.to_human()));
+        assert!(!legal_moves.iter().any(|m| m.piece == Piece::from_algebraic('p', "d7")));
+    }
+
+    #[test]
+    fn test_execute_move() {
+        let b = Board::new();
+        let p = Piece::from_algebraic('p', "e2");
+        let m = Move {
+            piece: p,
+            from: p.position,
+            to: Position { rank: 4, file: 5 },
+            captured: None,
+        };
+        let new_b = b.execute_move(&m);
+        new_b.draw_to_terminal();
+        assert_eq!(*new_b.piece_at(4, 5).unwrap(), Piece::from_algebraic('p', "e4"));
+        assert!(new_b.piece_at_position(&p.position).is_none());
+    }
+
+    #[test]
+    fn execute_capture() {
+        todo!("implement");
     }
 
     #[test]

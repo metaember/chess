@@ -8,8 +8,16 @@ edition = "2021"
 [dependencies]
 chrono = "0.4.31"
 clap = { version = "4.4.8", features = ["derive"] }
+color-eyre = "0.6.2"
 rand = "0.8.5"
 
 [build]
 # mangle using newer version of symbol mangling
 rustflags = ["-C", "symbol-mangling-version=v0"]
+
+[dev-dependencies]
+criterion = { version = "0.4", features = ["html_reports"] }
+
+[[bench]]
+name = "benchmarks"
+harness = false
