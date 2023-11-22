@@ -43,15 +43,22 @@ impl Game {
         Game::new_from_fen_silent(max_depth, STARTING_POSITION_FEN.to_string())
     }
 
-    pub fn play(&mut self, max_moves: i32) {
+    pub fn play(&mut self, max_moves: i32, print_search: bool) {
         let max_moves_in_ply = 2 * max_moves;
 
         for i in 1..=max_moves_in_ply {
             let now = Instant::now();
-            let selected_move = search(self.max_depth, &self.board);
+            // let selected_move = search(self.max_depth, &self.board);
+            let search_result = minimax(self.max_depth, &self.board).unwrap();
+
+            let selected_move = search_result.best_move.unwrap();
+            if !self.silent && print_search {
+                search_result.print();
+            }
             let elaped = now.elapsed().as_secs_f32();
             if !self.silent {
-                println!("move {}: {} ({} - elapsed: {:.6}s)", (i + 1) / 2, selected_move.to_human(), selected_move.to_algebraic(), elaped);
+                println!("move {}: {} ({} - elapsed: {:.6}s)", (i + 1) / 2,
+                    selected_move.to_human(), selected_move.to_algebraic(), elaped);
             };
             self.board = self.board.execute_move(&selected_move);
             self.moves.push(selected_move);
@@ -94,7 +101,7 @@ mod tests {
     #[test]
     fn test_game() {
         let mut game = Game::new(1);
-        game.play(3);
+        game.play(3, false);
         game.to_pgn();
     }
 }

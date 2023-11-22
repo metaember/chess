@@ -1,14 +1,8 @@
-use std::result;
-use std::u128::MIN;
-
 use crate::board::*;
 use crate::evaluate::*;
-use rand::prelude::*;
 
 const MIN_SCORE: i32 = i32::MIN;
 const MAX_SCORE: i32 = i32::MAX;
-
-const DEBUG: bool = false;
 
 #[derive(Debug)]
 pub struct SearchResult {
@@ -18,6 +12,13 @@ pub struct SearchResult {
     // TODO remove these two fields in prod for speed reasons
     pub moves: Vec<Move>, // path of moves down the tree
     pub scores: Vec<i32>,
+}
+
+impl SearchResult {
+    pub fn print(&self) {
+        self.moves.iter().for_each(|m| println!("{} {}", m.to_algebraic(), m.to_human()));
+        self.scores.iter().for_each(|s| println!("{}", s));
+    }
 }
 
 pub fn search(max_depth: u8, board: &Board) -> Move {
@@ -134,7 +135,7 @@ pub fn minimax_helper(max_depth: u8, board: &Board, is_maximizing_player: bool, 
             use_ab_pruning, use_move_ordering);
         match res {
             Ok(SearchResult {
-                best_move,
+                best_move: _,  // best_move from prev iteration
                 best_score,
                 nodes_searched,
                 moves,

@@ -21,6 +21,10 @@ struct Args {
     /// Number of moves to play
     #[arg(short, long, default_value_t = 20)]
     count: u32,
+
+    /// Print the search results at each move
+    #[arg(short, long, default_value_t = false)]
+    print_search: bool,
 }
 
 
@@ -30,7 +34,7 @@ fn main() -> Result<()> {
 
     let args = Args::parse();
     let mut game = Game::new(args.depth);
-    game.play(args.count as i32);
+    game.play(args.count as i32, args.print_search);
     println!("{}", game.to_pgn());
 
     Ok(())
