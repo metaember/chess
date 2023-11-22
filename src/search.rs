@@ -21,8 +21,7 @@ pub struct SearchResult {
 }
 
 pub fn search(max_depth: u8, board: &Board) -> Move {
-    let maximizing_player = if board.get_active_color() == Color::White { true } else { false };
-    let result = minimax(max_depth, board, maximizing_player);
+    let result = minimax(max_depth, board);
     if result.is_err() {
         let moves = result.err().unwrap();
         panic!(
@@ -41,7 +40,17 @@ pub fn search(max_depth: u8, board: &Board) -> Move {
     result.best_move.expect("No move found")
 }
 
-pub fn minimax(max_depth: u8, board: &Board, is_maximizing_player: bool) -> Result<SearchResult, Vec<Move>> {
+pub fn minimax(max_depth: u8, board: &Board) -> Result<SearchResult, Vec<Move>> {
+    let maximizing_player = if board.get_active_color() == Color::White { true } else { false };
+    minimax_helper(max_depth, board, maximizing_player, MIN_SCORE, MAX_SCORE, true)
+}
+
+pub fn minimax_no_pruning(max_depth: u8, board: &Board) -> Result<SearchResult, Vec<Move>> {
+    let maximizing_player = if board.get_active_color() == Color::White { true } else { false };
+    minimax_helper(max_depth, board, maximizing_player, MIN_SCORE, MAX_SCORE, false)
+}
+
+pub fn minimax_helper(max_depth: u8, board: &Board, is_maximizing_player: bool, alpha: i32, beta: i32, use_ab_pruning: bool) -> Result<SearchResult, Vec<Move>> {
     if max_depth == 0 {
         // If we've reached the maximum depth, evaluate the board naively
         let score = evaluate_board(board);
@@ -53,6 +62,10 @@ pub fn minimax(max_depth: u8, board: &Board, is_maximizing_player: bool) -> Resu
             scores: vec![score],
         });
     }
+
+    // for alpha-beta pruning
+    let mut alpha = alpha;
+    let mut beta = beta;
 
     let worst_score = if is_maximizing_player {MIN_SCORE} else {MAX_SCORE};
 
@@ -94,7 +107,7 @@ pub fn minimax(max_depth: u8, board: &Board, is_maximizing_player: bool) -> Resu
             }
         }
         let b = board.execute_move(&m);
-        let res = minimax(max_depth - 1, &b, !is_maximizing_player);
+        let res = minimax_helper(max_depth - 1, &b, !is_maximizing_player, alpha, beta, use_ab_pruning);
         match res {
             Ok(SearchResult {
                 best_move,
@@ -112,6 +125,19 @@ pub fn minimax(max_depth: u8, board: &Board, is_maximizing_player: bool) -> Resu
                     current_moves = moves;
                     current_scores = scores;
                 };
+                if use_ab_pruning {
+                    if is_maximizing_player {
+                        alpha = alpha.max(best_score);
+                        if beta <= alpha {
+                            break;
+                        }
+                    } else {
+                        beta = beta.min(best_score);
+                        if beta <= alpha {
+                            break;
+                        }
+                    }
+                }
             }
             Err(moves) => {
                 b.draw_to_terminal();
@@ -254,7 +280,7 @@ mod test {
         // ok so going back to before the blunder
         println!("Search before blunder: 4 moves deep");
         assert!(b.get_active_color() == Color::White);
-        let search_result = minimax(4, &b, true).unwrap();
+        let search_result = minimax(4, &b).unwrap();
         println!("search result: {} {}", search_result.best_move.unwrap().to_human(), search_result.best_score);
         search_result.moves.iter().for_each(|m| println!("{} {}", m.to_algebraic(), m.to_human()));
         search_result.scores.iter().for_each(|s| println!("{}", s));
@@ -262,7 +288,7 @@ mod test {
         // search 2 moves deep
         println!("Search before blunder: 2 moves deep");
         assert!(b.get_active_color() == Color::White);
-        let search_result = minimax(2, &b, true).unwrap();
+        let search_result = minimax(2, &b).unwrap();
         println!("search result: {} {}", search_result.best_move.unwrap().to_human(), search_result.best_score);
         search_result.moves.iter().for_each(|m| println!("{} {}", m.to_algebraic(), m.to_human()));
         search_result.scores.iter().for_each(|s| println!("{}", s));
@@ -271,7 +297,7 @@ mod test {
         // search 5 moves deep
         println!("Search before blunder: 5 moves deep");
         assert!(b.get_active_color() == Color::White);
-        let search_result = minimax(5, &b, true).unwrap();
+        let search_result = minimax(5, &b).unwrap();
         println!("search result: {} {}", search_result.best_move.unwrap().to_human(), search_result.best_score);
         search_result.moves.iter().for_each(|m| println!("{} {}", m.to_algebraic(), m.to_human()));
         search_result.scores.iter().for_each(|s| println!("{}", s));
@@ -488,9 +514,9 @@ mod test {
     #[test]
     fn perft_2() {
         let b = Board::new();
-        assert_eq!(minimax(1, &b, true).unwrap().nodes_searched, 20);
-        assert_eq!(minimax(2, &b, true).unwrap().nodes_searched, 400);
-        assert_eq!(minimax(3, &b, true).unwrap().nodes_searched, 8902);
-        assert_eq!(minimax(4, &b, true).unwrap().nodes_searched, 197281);
+        assert_eq!(minimax_no_pruning(1, &b).unwrap().nodes_searched, 20);
+        assert_eq!(minimax_no_pruning(2, &b).unwrap().nodes_searched, 400);
+        assert_eq!(minimax_no_pruning(3, &b).unwrap().nodes_searched, 8902);
+        assert_eq!(minimax_no_pruning(4, &b).unwrap().nodes_searched, 197281);
     }
 }
