@@ -10,6 +10,7 @@ pub struct Game {
     max_depth: u8,
     start_fen: String,
     game_start_time: DateTime<Local>,
+    silent: bool,
 }
 
 impl Game {
@@ -20,10 +21,26 @@ impl Game {
             max_depth,
             start_fen,
             game_start_time: Local::now(),
+            silent: false,
+        }
+    }
+
+    pub fn new_from_fen_silent(max_depth: u8, start_fen: String) -> Self {
+        Self {
+            board: Board::from_fen(start_fen.as_str()),
+            moves: Vec::new(),
+            max_depth,
+            start_fen,
+            game_start_time: Local::now(),
+            silent: true,
         }
     }
     pub fn new(max_depth: u8) -> Self {
         Game::new_from_fen(max_depth, STARTING_POSITION_FEN.to_string())
+    }
+
+    pub fn new_silent(max_depth: u8) -> Self {
+        Game::new_from_fen_silent(max_depth, STARTING_POSITION_FEN.to_string())
     }
 
     pub fn play(&mut self, max_moves: i32) {
@@ -33,11 +50,15 @@ impl Game {
             let now = Instant::now();
             let selected_move = search(self.max_depth, &self.board);
             let elaped = now.elapsed().as_secs_f32();
-            println!("move {}: {} ({} - elapsed: {:.6}s)", (i + 1) / 2, selected_move.to_human(), selected_move.to_algebraic(), elaped);
+            if !self.silent {
+                println!("move {}: {} ({} - elapsed: {:.6}s)", (i + 1) / 2, selected_move.to_human(), selected_move.to_algebraic(), elaped);
+            };
             self.board = self.board.execute_move(&selected_move);
             self.moves.push(selected_move);
-            self.board.draw_to_terminal();
-            println!();
+            if !self.silent {
+                self.board.draw_to_terminal();
+                println!();
+            };
         }
     }
 

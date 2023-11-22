@@ -529,9 +529,21 @@ impl Board {
 
         // .. and add the piece that moved back in the new position
         // TODO: handle promotion
-        let new_piece = Piece {
-            position: selected_move.to,
-            ..selected_move.piece
+
+        let is_promotion = selected_move.piece.piece_type == PieceType::Pawn
+            && (selected_move.to.rank == 8 || selected_move.to.rank == 1);
+
+        let new_piece = if !is_promotion {
+            Piece {
+                position: selected_move.to,
+                ..selected_move.piece
+            }
+        } else {
+            Piece {
+                position: selected_move.to,
+                piece_type: PieceType::Queen,
+                ..selected_move.piece
+            }
         };
         pieces.push(new_piece);
 
@@ -1953,6 +1965,17 @@ mod tests {
 
     #[test]
     fn execute_capture() {
+        todo!("implement");
+    }
+
+    #[test]
+    fn execute_move_with_promotion() {
+        todo!("implement");
+    }
+
+
+    #[test]
+    fn execute_move_with_castle() {
         todo!("implement");
     }
 

@@ -42,15 +42,22 @@ pub fn search(max_depth: u8, board: &Board) -> Move {
 
 pub fn minimax(max_depth: u8, board: &Board) -> Result<SearchResult, Vec<Move>> {
     let maximizing_player = if board.get_active_color() == Color::White { true } else { false };
-    minimax_helper(max_depth, board, maximizing_player, MIN_SCORE, MAX_SCORE, true)
+    minimax_helper(max_depth, board, maximizing_player, MIN_SCORE, MAX_SCORE, true, true)
 }
+
+pub fn minimax_no_ordering(max_depth: u8, board: &Board) -> Result<SearchResult, Vec<Move>> {
+    let maximizing_player = if board.get_active_color() == Color::White { true } else { false };
+    minimax_helper(max_depth, board, maximizing_player, MIN_SCORE, MAX_SCORE, true, false)
+}
+
 
 pub fn minimax_no_pruning(max_depth: u8, board: &Board) -> Result<SearchResult, Vec<Move>> {
     let maximizing_player = if board.get_active_color() == Color::White { true } else { false };
-    minimax_helper(max_depth, board, maximizing_player, MIN_SCORE, MAX_SCORE, false)
+    minimax_helper(max_depth, board, maximizing_player, MIN_SCORE, MAX_SCORE, false, false)
 }
 
-pub fn minimax_helper(max_depth: u8, board: &Board, is_maximizing_player: bool, alpha: i32, beta: i32, use_ab_pruning: bool) -> Result<SearchResult, Vec<Move>> {
+pub fn minimax_helper(max_depth: u8, board: &Board, is_maximizing_player: bool, alpha: i32, beta: i32,
+        use_ab_pruning: bool, use_move_ordering: bool) -> Result<SearchResult, Vec<Move>> {
     if max_depth == 0 {
         // If we've reached the maximum depth, evaluate the board naively
         let score = evaluate_board(board);
@@ -92,6 +99,21 @@ pub fn minimax_helper(max_depth: u8, board: &Board, is_maximizing_player: bool, 
         _ => panic!("No legal moves, not a stalemate or a checkmate"),
     };
 
+    let legal_moves = if use_move_ordering {
+        let mut moves_and_scores = legal_moves
+            .iter()
+            .map(|m| (m, guess_move_value(board, m)))
+            .collect::<Vec<(&Move, i32)>>();
+
+        moves_and_scores.sort_by(|a, b| b.1.cmp(&a.1));
+        moves_and_scores
+            .iter()
+            .map(|(m, _)| **m)
+            .collect::<Vec<Move>>()
+    } else {
+        legal_moves
+    };
+
     let mut current_best_move = &legal_moves[0];
     let mut current_best_score = worst_score;
     let mut total_nodes_searched = 0;
@@ -100,6 +122,7 @@ pub fn minimax_helper(max_depth: u8, board: &Board, is_maximizing_player: bool, 
 
     // TODO: maybe discount further moves by a tiny bit to favor short mating sequences
 
+
     for m in &legal_moves {
         if let Some(captured) = m.captured {
             if captured.piece_type == PieceType::King {
@@ -107,7 +130,8 @@ pub fn minimax_helper(max_depth: u8, board: &Board, is_maximizing_player: bool, 
             }
         }
         let b = board.execute_move(&m);
-        let res = minimax_helper(max_depth - 1, &b, !is_maximizing_player, alpha, beta, use_ab_pruning);
+        let res = minimax_helper(max_depth - 1, &b, !is_maximizing_player, alpha, beta,
+            use_ab_pruning, use_move_ordering);
         match res {
             Ok(SearchResult {
                 best_move,
@@ -170,6 +194,8 @@ pub fn minimax_helper(max_depth: u8, board: &Board, is_maximizing_player: bool, 
 // }
 
 mod test {
+    use std::time::Instant;
+
     use super::*;
 
     #[test]
@@ -310,6 +336,32 @@ mod test {
         assert!(m.piece == Piece::from_algebraic('N', "e4"));
 
         todo!("Implement");
+    }
+
+    #[test]
+    fn sebastian_lague_test_position() {
+        let b = Board::from_fen("r3k2r/p1ppqpb1/Bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPB1PPP/R3K2R b KQkq - 0 1");
+
+        let now_minimax = Instant::now();
+        let pure_minimax_4 = minimax_no_pruning(4, &b);
+        // Sebastian has 1.16 s, 3_553_501 positions
+        println!("pure minimax: {:.6}s evaluated {} positions", now_minimax.elapsed().as_secs_f32(),
+            pure_minimax_4.unwrap().nodes_searched);
+
+        let now_pruning = Instant::now();
+        let minimax_a_b_pruning = minimax_no_ordering(4, &b);
+        // Sebastian has 0.18 s, 464_795 positions
+        println!("minimax a b pruning: {:.6}s evaluated {} positions", now_pruning.elapsed().as_secs_f32(),
+            minimax_a_b_pruning.unwrap().nodes_searched);
+
+        let now_pruning_sorting = Instant::now();
+        let minimax_a_b_pruning_sorting = minimax(4, &b);
+        // Sebastian has 0.025 s, 4916 positions
+        println!("minimax a b pruning with ordering: {:.6}s evaluated {} positions",
+            now_pruning_sorting.elapsed().as_secs_f32(), minimax_a_b_pruning_sorting.unwrap().nodes_searched);
+
+        // TODO: assert things on the resulting positions being the same
+        assert!(false);
     }
 
     #[test]

@@ -2,49 +2,109 @@ use crate::board::*;
 
 
 pub struct Material {
-    pub white: i32,
-    pub black: i32,
+    pub white_material: i32,
+    pub white_piece_location_adjustment: i32,
+    pub white_pawn_material: i32,
+    pub white_piece_material: i32,
+
+    pub black_material: i32,
+    pub black_piece_location_adjustment: i32,
+    pub black_pawn_material: i32,
+    pub black_piece_material: i32,
+}
+
+impl Material {
+    pub fn get_material_difference(&self) -> i32 {
+        self.white_material - self.black_material
+    }
+
+    pub fn get_location_adjusted_material_difference(&self) -> i32 {
+        self.white_material + self.white_piece_location_adjustment
+         - self.black_material - self.black_piece_location_adjustment
+    }
+
+    fn piece_to_material(piece: &Piece) -> i32 {
+        match piece.piece_type {
+            PieceType::Pawn => 100,
+            PieceType::Rook => 500,
+            PieceType::Knight => 300,
+            PieceType::Bishop => 320,  // Bishop is worth slightly more than a knight
+            PieceType::Queen => 900,
+            PieceType::King => 0,
+        }
+    }
+
+    pub fn compute_material(board: &Board) -> Material {
+        let mut white_material = 0;
+        let mut black_material = 0;
+        let mut white_piece_location_adjustment = 0;
+        let mut black_piece_location_adjustment = 0;
+        let mut white_pawn_material = 0;
+        let mut black_pawn_material = 0;
+        let mut white_piece_material = 0;
+        let mut black_piece_material = 0;
+
+        for piece in &board.pieces {
+            let current_piece_material = Material::piece_to_material(&piece);
+            match piece.color {
+                Color::White => {
+                    white_material += current_piece_material;
+                    white_piece_location_adjustment += get_piece_adjustment_value(&piece, false);
+                    if piece.piece_type == PieceType::Pawn {
+                        white_pawn_material += current_piece_material;
+                    } else {
+                        white_piece_material += current_piece_material
+                    };
+                },
+                Color::Black => {
+                    black_material += current_piece_material;
+                    black_piece_location_adjustment += get_piece_adjustment_value(&piece, false);
+                    if piece.piece_type == PieceType::Pawn {
+                        black_pawn_material += current_piece_material;
+                    } else {
+                        black_piece_material += current_piece_material;
+                    }
+                }
+            };
+        };
+        Material {
+            white_material,
+            white_piece_location_adjustment,
+            white_pawn_material,
+            white_piece_material,
+            black_material,
+            black_piece_location_adjustment,
+            black_pawn_material,
+            black_piece_material,
+        }
+    }
 }
 
 pub fn evaluate_board(board: &Board) -> i32 {
-    let material = sum_material(board);
-    let mut score = material.white - material.black;
+    let material = Material::compute_material(board);
+    material.get_location_adjusted_material_difference()
+}
 
-    // if board.get_active_color() == Color::Black {
-    //     score *= -1;
-    // };
+
+
+pub fn guess_move_value(board: &Board, mv: &Move) -> i32 {
+    let mut score = 0;
+    let material_difference_multiplier = 10;
+
+    if let Some(captured_piece) = mv.captured {
+        score += material_difference_multiplier * (
+            Material::piece_to_material(&captured_piece) - Material::piece_to_material(&mv.piece));
+    };
+
+    // TODO: add promotion bonus equal to the value of the promoted piece
+    // score
+
+    // TODO: penalize moves that move a piece into a position where it can be captured by a pawn
+    // thse shold be cached when we evaluate the board before the move
     score
 }
 
-fn to_material(piece: &Piece) -> i32 {
-    match piece.piece_type {
-        PieceType::Pawn => 100,
-        PieceType::Rook => 500,
-        PieceType::Knight => 300,
-        PieceType::Bishop => 320,  // Bishop is worth slightly more than a knight
-        PieceType::Queen => 900,
-        PieceType::King => 0,
-    }
-}
 
-fn sum_material(b: &Board) -> Material {
-    let mut white_material = 0;
-    let mut black_material = 0;
-
-    // TODO: Implement endgame detection
-    let is_endgame = false;
-
-    for p in b.pieces.iter() {
-        match p.color {
-            Color::White => white_material += to_material(p) + get_piece_adjustment_value(p, is_endgame),
-            Color::Black => black_material += to_material(p) + get_piece_adjustment_value(p, is_endgame)
-        }
-    }
-    Material {
-        white: white_material,
-        black: black_material,
-    }
-}
 
 
 fn get_piece_adjustment_value(piece: &Piece, is_endgame: bool) -> i32 {
