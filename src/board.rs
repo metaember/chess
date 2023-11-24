@@ -1963,7 +1963,19 @@ mod tests {
 
     #[test]
     fn execute_capture() {
-        todo!("implement");
+        let b = Board::from_fen("4k3/8/8/8/8/2b5/3P4/3K4 w - - 0 1");
+        b.draw_to_terminal();
+        let p = Piece::from_algebraic('P', "d2");
+        let m = Move::from_algebraic(&b, "d2", "c3");
+        let captured = Piece::from_algebraic('b', "c3");
+        assert_eq!(m.captured, Some(captured));
+        assert!(b.pieces.contains(&p));
+        assert!(b.pieces.contains(&captured));
+
+        let b_after = b.execute_move(&m);
+        assert!(b_after.pieces.contains(&Piece::from_algebraic('P', "c3")));
+        assert!(!b_after.pieces.contains(&p));
+        assert!(!b_after.pieces.contains(&captured));
     }
 
     #[test]

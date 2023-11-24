@@ -1,5 +1,3 @@
-use std::u128::MIN;
-
 use crate::board;
 use crate::board::*;
 use crate::evaluate::*;
@@ -667,6 +665,16 @@ mod test {
         // assert things on the resulting positions being the same
         assert_eq!(pure_minimax_4.best_move, minimax_a_b_pruning.best_move);
         assert_eq!(pure_minimax_4.best_move, minimax_a_b_pruning_sorting.best_move);
+
+        // let now_negamax_fast_no_q = Instant::now();
+        // let res_neg_fast_no_q = negamax_fast(4, &b, MIN_SCORE, MAX_SCORE, false);
+        // // Sebastian has 0.025 s, 4916 positions
+        // println!("negamax fast: {:.6}s", now_negamax_fast_no_q.elapsed().as_secs_f32());
+
+        // let now_negamax_fast = Instant::now();
+        // let res_neg_fast = negamax_fast(4, &b, MIN_SCORE, MAX_SCORE, true);
+        // // Sebastian has 0.025 s, 4916 positions
+        // println!("negamax fast: {:.6}s", now_negamax_fast.elapsed().as_secs_f32());
     }
 
     #[test]
