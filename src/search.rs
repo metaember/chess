@@ -1,23 +1,28 @@
+use std::u128::MIN;
+
+use crate::board;
 use crate::board::*;
 use crate::evaluate::*;
 
-const MIN_SCORE: i32 = i32::MIN;
-const MAX_SCORE: i32 = i32::MAX;
+pub const MIN_SCORE: i32 = -1_000_000_000;
+pub const MAX_SCORE: i32 = 1_000_000_000;
 
 #[derive(Debug)]
 pub struct SearchResult {
     pub best_move: Option<Move>,
     pub best_score: i32,
     pub nodes_searched: i32,
+    pub quiescent_nodes_searched: i32,
     // TODO remove these two fields in prod for speed reasons
     pub moves: Vec<Move>, // path of moves down the tree
-    pub scores: Vec<i32>,
 }
 
 impl SearchResult {
     pub fn print(&self) {
-        self.moves.iter().for_each(|m| println!("{} {}", m.to_algebraic(), m.to_human()));
-        self.scores.iter().for_each(|s| println!("{}", s));
+        println!("Search result: [{}, nodes: {} tot, {} quies] {}: {}", self.best_score, self.nodes_searched,
+            self.quiescent_nodes_searched, self.best_move.unwrap().to_algebraic(), self.best_move.unwrap().to_human());
+        println!("Move path:");
+        self.moves.iter().rev().for_each(|m| println!("  • {}: {}", m.to_algebraic(), m.to_human()));
     }
 }
 
@@ -34,58 +39,66 @@ pub fn search(max_depth: u8, board: &Board) -> Move {
         );
     }
     let result = result.unwrap();
-    println!(
-        "Nodes searched: {}, evaluation is {}",
-        result.nodes_searched, result.best_score
-    );
     result.best_move.expect("No move found")
 }
 
+
 pub fn minimax(max_depth: u8, board: &Board) -> Result<SearchResult, Vec<Move>> {
-    let maximizing_player = if board.get_active_color() == Color::White { true } else { false };
-    minimax_helper(max_depth, board, maximizing_player, MIN_SCORE, MAX_SCORE, true, true)
+    let (alpha, beta) = (MIN_SCORE, MAX_SCORE);
+    negamax(max_depth, board, alpha, beta, true, true, true)
 }
+
+pub fn minimax_no_quiescence(max_depth: u8, board: &Board) -> Result<SearchResult, Vec<Move>> {
+    let (alpha, beta) = (MIN_SCORE, MAX_SCORE);
+    negamax(max_depth, board, alpha, beta, true, true, false)
+}
+
 
 pub fn minimax_no_ordering(max_depth: u8, board: &Board) -> Result<SearchResult, Vec<Move>> {
-    let maximizing_player = if board.get_active_color() == Color::White { true } else { false };
-    minimax_helper(max_depth, board, maximizing_player, MIN_SCORE, MAX_SCORE, true, false)
+    let (alpha, beta) = (MIN_SCORE, MAX_SCORE);
+    negamax(max_depth, board, alpha, beta, false, false, false)
 }
-
 
 pub fn minimax_no_pruning(max_depth: u8, board: &Board) -> Result<SearchResult, Vec<Move>> {
-    let maximizing_player = if board.get_active_color() == Color::White { true } else { false };
-    minimax_helper(max_depth, board, maximizing_player, MIN_SCORE, MAX_SCORE, false, false)
+    let (alpha, beta) = (MIN_SCORE, MAX_SCORE);
+    negamax(max_depth, board, alpha, beta, false, false, false)
 }
 
-pub fn minimax_helper(max_depth: u8, board: &Board, is_maximizing_player: bool, alpha: i32, beta: i32,
-        use_ab_pruning: bool, use_move_ordering: bool) -> Result<SearchResult, Vec<Move>> {
+/// Main minimax function
+/// TODO: maybe discount further moves by a tiny bit to favor short mating sequences
+pub fn negamax(max_depth: u8, board: &Board, alpha: i32, beta: i32,
+               use_ab_pruning: bool, use_move_ordering: bool, quiescence: bool) -> Result<SearchResult, Vec<Move>> {
+
     if max_depth == 0 {
-        // If we've reached the maximum depth, evaluate the board naively
-        let score = evaluate_board(board);
-        return Ok(SearchResult {
-            best_move: None,
-            best_score: score,
-            nodes_searched: 1,
-            moves: vec![],
-            scores: vec![score],
-        });
-    }
+        // If we've reached the maximum depth
+        if quiescence {
+            return negamax_captures_only(board, alpha, beta);
+        } else {
+            let score = evaluate_board(board);
+            return Ok(SearchResult {
+                best_move: None,
+                best_score: score,
+                nodes_searched: 1,
+                quiescent_nodes_searched: 0,
+                moves: vec![],
+            });
+
+        };
+    };
 
     // for alpha-beta pruning
     let mut alpha = alpha;
-    let mut beta = beta;
 
-    let worst_score = if is_maximizing_player {MIN_SCORE} else {MAX_SCORE};
 
     let legal_moves = match board.get_legal_moves(&board.get_active_color()) {
         Ok(moves) => moves,
         Err(Status::Checkmate(_)) => {
             return Ok(SearchResult {
                 best_move: None,
-                best_score: worst_score,
+                best_score: MIN_SCORE,
                 nodes_searched: 0,
+                quiescent_nodes_searched: 0,
                 moves: vec![],
-                scores: vec![],
             })
         }
         Err(Status::Stalemate) => {
@@ -93,13 +106,14 @@ pub fn minimax_helper(max_depth: u8, board: &Board, is_maximizing_player: bool, 
                 best_move: None,
                 best_score: 0,
                 nodes_searched: 0,
+                quiescent_nodes_searched: 0,
                 moves: vec![],
-                scores: vec![],
             })
         }
         _ => panic!("No legal moves, not a stalemate or a checkmate"),
     };
 
+    // if using move ordersing, we sort the moves by their value heuristic here
     let legal_moves = if use_move_ordering {
         let mut moves_and_scores = legal_moves
             .iter()
@@ -116,13 +130,11 @@ pub fn minimax_helper(max_depth: u8, board: &Board, is_maximizing_player: bool, 
     };
 
     let mut current_best_move = &legal_moves[0];
-    let mut current_best_score = worst_score;
+    let mut current_best_score = MIN_SCORE;
     let mut total_nodes_searched = 0;
+    let mut total_quiescent_nodes_searched = 0;
     let mut current_moves = vec![];
     let mut current_scores = vec![];
-
-    // TODO: maybe discount further moves by a tiny bit to favor short mating sequences
-
 
     for m in &legal_moves {
         if let Some(captured) = m.captured {
@@ -131,37 +143,35 @@ pub fn minimax_helper(max_depth: u8, board: &Board, is_maximizing_player: bool, 
             }
         }
         let b = board.execute_move(&m);
-        let res = minimax_helper(max_depth - 1, &b, !is_maximizing_player, alpha, beta,
-            use_ab_pruning, use_move_ordering);
+        let res = negamax(max_depth - 1, &b, -beta, -alpha,
+            use_ab_pruning, use_move_ordering, quiescence);
         match res {
             Ok(SearchResult {
                 best_move: _,  // best_move from prev iteration
-                best_score,
+                best_score: evaluation,
                 nodes_searched,
+                quiescent_nodes_searched,
                 moves,
-                scores,
             }) => {
                 total_nodes_searched += nodes_searched;
+                total_quiescent_nodes_searched += quiescent_nodes_searched;
+                let evaluation = -evaluation;
 
-                if is_maximizing_player && best_score > current_best_score
-                    || !is_maximizing_player && best_score < current_best_score {
-                    current_best_score = best_score;
+                if evaluation > current_best_score {
+                    current_best_score = evaluation;
                     current_best_move = m;
                     current_moves = moves;
-                    current_scores = scores;
                 };
+
                 if use_ab_pruning {
-                    if is_maximizing_player {
-                        alpha = alpha.max(best_score);
-                        if beta <= alpha {
-                            break;
-                        }
-                    } else {
-                        beta = beta.min(best_score);
-                        if beta <= alpha {
-                            break;
-                        }
+                    // The last move was too good, meaning the opponent would not have allowed
+                    // us to get to this position by playing a different move earlier on,
+                    // so we can stop searching the remaining moves
+                    if evaluation >= beta {
+                        current_best_score = beta;
+                        break;
                     }
+                    alpha = alpha.max(evaluation);
                 }
             }
             Err(moves) => {
@@ -180,10 +190,166 @@ pub fn minimax_helper(max_depth: u8, board: &Board, is_maximizing_player: bool, 
         best_move: Some(*current_best_move),
         best_score: current_best_score,
         nodes_searched: total_nodes_searched,
+        quiescent_nodes_searched: total_quiescent_nodes_searched,
         moves: current_moves,
-        scores: current_scores,
     })
 }
+
+/// Minimax run with no depth limit for the quiescence search.
+/// We only consider captures. This version returns the score and some
+/// metadata on the bast path found
+///
+/// TODO: maybe add checks and promotions here as well?
+pub fn negamax_captures_only(board: &Board, alpha: i32, beta: i32) -> Result<SearchResult, Vec<Move>> {
+    let evaluation = evaluate_board(&board);
+    if evaluation > beta {
+        return Ok(SearchResult {
+            best_move: None,
+            best_score: beta,
+            nodes_searched: 1,
+            quiescent_nodes_searched: 1,
+            moves: vec![],
+        });
+    }
+
+    let mut alpha = alpha.max(evaluation);
+
+    let legal_moves = match board.get_legal_moves(&board.get_active_color()) {
+        Ok(moves) => moves,
+        Err(Status::Checkmate(_)) => {
+            return Ok(SearchResult {
+                best_move: None,
+                best_score: MIN_SCORE,
+                nodes_searched: 0,
+                quiescent_nodes_searched: 0,
+                moves: vec![],
+            })
+        }
+        Err(Status::Stalemate) => {
+            return Ok(SearchResult {
+                best_move: None,
+                best_score: 0,
+                nodes_searched: 0,
+                quiescent_nodes_searched: 0,
+                moves: vec![],
+            })
+        }
+        _ => panic!("No legal moves, not a stalemate or a checkmate"),
+    };
+
+    // TODO: put this flag in the move generation to save on some copies
+    let captures = legal_moves
+        .into_iter()
+        .filter(|m| m.captured.is_some())
+        .collect::<Vec<Move>>();
+
+
+    let mut current_best_move = None;
+    let mut total_nodes_searched = 0;
+    let mut total_quiescent_nodes_searched = 0;
+    let mut current_moves = vec![];
+    let mut current_scores = vec![];
+
+    // TODO: use move ordering in the quiescence search??
+    for m in captures {
+        // board.draw_to_terminal();
+        let b = board.execute_move(&m);
+        // b.draw_to_terminal();
+        let search_res = negamax_captures_only(&b, -beta, -alpha).unwrap();
+
+        let evaluation = -search_res.best_score;
+        total_nodes_searched += search_res.nodes_searched;
+        total_quiescent_nodes_searched += search_res.quiescent_nodes_searched;
+
+        if evaluation >= beta {
+            current_best_move = Some(m);
+            current_moves = search_res.moves;
+            current_moves.push(m.clone());
+            current_scores.push(beta);
+
+            return Ok(SearchResult {
+                best_move: current_best_move,
+                best_score: beta,
+                nodes_searched: total_nodes_searched,
+                quiescent_nodes_searched: total_quiescent_nodes_searched,
+                moves: current_moves,
+            })
+        }
+        alpha = alpha.max(evaluation);
+    }
+    return Ok(SearchResult {
+        best_move: current_best_move,
+        best_score: alpha,
+        nodes_searched: total_nodes_searched,
+        quiescent_nodes_searched: total_quiescent_nodes_searched,
+        moves: current_moves,
+    })
+}
+
+pub fn negamax_fast(deapth: i32, board: &Board, alpha: i32, beta: i32, quiescence: bool) -> i32 {
+    if deapth == 0 {
+        if quiescence {
+            return negamax_captures_only_fast(board, alpha, beta);
+        }
+        return evaluate_board(&board);
+    };
+
+    let legal_moves = match board.get_legal_moves(&board.get_active_color()) {
+        Ok(moves) => moves,
+        Err(Status::Checkmate(_)) => { return MIN_SCORE; }
+        Err(Status::Stalemate) => { return 0; }
+        _ => panic!("No legal moves, not a stalemate or a checkmate"),
+    };
+
+    let mut alpha = alpha;
+
+    for m in legal_moves {
+        let b = board.execute_move(&m);
+        let evaluation = -negamax_fast(deapth - 1, &b, -beta, -alpha, quiescence);
+        if evaluation >= beta {
+            return beta;
+        }
+        alpha = alpha.max(evaluation);
+    }
+    return alpha;
+}
+
+/// Minimax run with no depth limit for the quiescence search.
+/// We only consider captures. This version returns the score of the position only
+///
+/// TODO: maybe add checks and promotions here as well?
+pub fn negamax_captures_only_fast(board: &Board, alpha: i32, beta: i32) -> i32 {
+    let evaluation = evaluate_board(&board);
+    if evaluation > beta {
+        return beta;
+    }
+    let mut alpha = alpha.max(evaluation);
+
+    let legal_moves = match board.get_legal_moves(&board.get_active_color()) {
+        Ok(moves) => moves,
+        Err(Status::Checkmate(_)) => { return MIN_SCORE; }
+        Err(Status::Stalemate) => { return 0; }
+        _ => panic!("No legal moves, not a stalemate or a checkmate"),
+    };
+
+    let captures = legal_moves
+        .into_iter()
+        .filter(|m| m.captured.is_some())
+        .collect::<Vec<Move>>();
+
+    // TODO: use move ordering in the quiescence search??
+
+    for m in captures {
+        let b = board.execute_move(&m);
+        let evaluation = -negamax_captures_only_fast(&b, -beta, -alpha);
+        if evaluation >= beta {
+            return beta;
+        }
+        alpha = alpha.max(evaluation);
+    }
+    return alpha;
+}
+
 
 // Returns a random legal move
 // pub fn random_move(board: &Board) -> Move {
@@ -194,10 +360,152 @@ pub fn minimax_helper(max_depth: u8, board: &Board, is_maximizing_player: bool, 
 //     *legal_moves.choose(&mut rng).expect("No moves!")
 // }
 
+
+#[cfg(test)]
 mod test {
     use std::time::Instant;
-
     use super::*;
+
+    #[test]
+    fn test_quiescence_search_1(){
+        // . . . . . . ♖ .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . ♟︎ . . .
+        // . . . . . ♖ . .
+        // . . . . . ♔ . ♚
+        let b = Board::from_fen("6R1/8/8/8/8/4p3/5R2/5K1k b - - 0 1");
+        b.draw_to_terminal();
+
+        // First a regular search 1 deep without quiescence
+        // we expect to greedily capture the rook
+        let search_result = minimax_no_quiescence(1, &b).unwrap();
+        search_result.print();
+        let m = search_result.best_move.unwrap();
+        assert_eq!(search_result.nodes_searched, 2);
+        assert_eq!(m, Move::from_algebraic(&b, "e3", "f2"));
+        println!("");
+
+        // now we enable quiescence search, still one move deep
+        // this time during the search, we keep looking after the capture.
+        // unfortunately 1 move deep is too shallow to see the draw opportunity
+        let search_result = minimax(1, &b).unwrap();
+        search_result.print();
+        let m = search_result.best_move.unwrap();
+        assert_eq!(m, Move::from_algebraic(&b, "e3", "f2"));
+    }
+
+    #[test]
+    fn test_quiescence_search_2(){
+        // This is an example of a position where we need to look past the first
+        // capture to reject the capture
+
+        // . . . . . . . .
+        // . . . . . ♚ . .
+        // . . . . . ♟︎ . .
+        // . . . . ♟︎ . . .
+        // . . . . ♖ . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . ♔ . . . .
+        let b = Board::from_fen("8/5k2/5p2/4p3/4R3/8/8/3K4 w - - 0 1");
+        b.draw_to_terminal();
+
+        // First a regular search 1 deep without quiescence
+        // we expect to greedily capture the pawn with the rook
+        let search_result = minimax_no_quiescence(1, &b).unwrap();
+        search_result.print();
+        let m = search_result.best_move.unwrap();
+        let eval = search_result.best_score;
+        assert_eq!(m, Move::from_algebraic(&b, "e4", "e5"));
+        assert_eq!(eval, 350);
+        println!("");
+
+        // now we enable quiescence search, still one move deep
+        // this time during the search, we keep looking after the capture.
+        // we find that the next move is black recapturing the rook, so we
+        // don't play the move
+        let search_result = minimax(1, &b).unwrap();
+        search_result.print();
+        let m = search_result.best_move.unwrap();
+        assert_ne!(m, Move::from_algebraic(&b, "e4", "e5"));
+    }
+
+    #[test]
+    fn test_quiescence_search_3(){
+        // This is an example of a position where looking past the first capture
+        // allows us to recognize the sac is actually good
+
+        // . . . . ♚ . . .
+        // . . . . . . . .
+        // . . . . ♜ . . .
+        // . . . . . . . .
+        // . . . . ♟︎ . . .
+        // . . . ♟︎ . . . .
+        // . . . . . . . .
+        // . . . ♖ ♕ ♔ . .
+        let b = Board::from_fen("4k3/8/4r3/8/4p3/3p4/8/3RQK2 w - - 0 1");
+        b.draw_to_terminal();
+
+        // First a regular search 1 deep without quiescence
+        // we expect to greedily capture the pawn with the rook
+        let search_result = minimax_no_quiescence(1, &b).unwrap();
+        search_result.print();
+        let m = search_result.best_move.unwrap();
+        let eval = search_result.best_score;
+        assert!(m == Move::from_algebraic(&b, "d1", "d3") || m == Move::from_algebraic(&b, "e1", "e4"));
+        println!("{} {}", eval, search_result.nodes_searched);
+
+        // now we enable quiescence search, still one move deep
+        // this time during the search, we keep looking after the capture.
+        // we find that the next move is black recapturing the rook, so we
+        // but the move after that we recapture their rook with the queen so we
+        // still play it
+        let search_result = minimax(1, &b).unwrap();
+        search_result.print();
+        let m = search_result.best_move.unwrap();
+        assert_ne!(m, Move::from_algebraic(&b, "e4", "e5"));
+        println!("{} {}", eval, search_result.nodes_searched);
+    }
+
+
+    #[test]
+    fn test_quiescence_search_4(){
+        // This is an example of a position where looking past the first capture
+        // allows us to discard it
+
+        // . . . . ♚ . . .
+        // . . . . . . . .
+        // . . . . ♜ . . .
+        // . . . . . . . .
+        // . . . . ♟︎ . . .
+        // . . . ♟︎ . . . .
+        // . . . . . . . .
+        // . . . ♖ . ♔ . .
+        let b = Board::from_fen("4k3/8/4r3/8/4p3/3p4/8/3R1K2 w - - 0 1");
+        b.draw_to_terminal();
+
+        // First a regular search 1 deep without quiescence
+        // we expect to greedily capture the pawn with the rook
+        let search_result = minimax_no_quiescence(1, &b).unwrap();
+        search_result.print();
+        let m = search_result.best_move.unwrap();
+        let eval = search_result.best_score;
+        assert!(m == Move::from_algebraic(&b, "d1", "d3"));
+        println!("{} {}", eval, search_result.nodes_searched);
+
+        // now we enable quiescence search, still one move deep
+        // this time during the search, we keep looking after the capture.
+        // we find that the next move is black recapturing the rook, so we
+        // don't play the move
+        let search_result = minimax(1, &b).unwrap();
+        search_result.print();
+        let m = search_result.best_move.unwrap();
+        assert_ne!(m, Move::from_algebraic(&b, "d1", "d3"));
+        println!("{} {}", eval, search_result.nodes_searched);
+    }
 
     #[test]
     fn test_blunders_knight_1() {
@@ -206,7 +514,7 @@ mod test {
         // ♟︎ ♟︎ . . . . . .
         // . . . . . ♟︎ . .
         // . . . . ♘ . . .
-        // . . . ♕ ♙ . . .
+        // . . . ♕ ♙ . . .`
         // ♙ ♙ ♙ ♙ . ♙ ♙ ♙
         // ♖ . ♗ . ♔ . ♘ ♖
         let fen = "1n1qkb1r/rbppp1pp/pp6/5p2/4N3/3QP3/PPPP1PPP/R1B1K1NR w KQk - 0 8";
@@ -308,17 +616,13 @@ mod test {
         println!("Search before blunder: 4 moves deep");
         assert!(b.get_active_color() == Color::White);
         let search_result = minimax(4, &b).unwrap();
-        println!("search result: {} {}", search_result.best_move.unwrap().to_human(), search_result.best_score);
-        search_result.moves.iter().for_each(|m| println!("{} {}", m.to_algebraic(), m.to_human()));
-        search_result.scores.iter().for_each(|s| println!("{}", s));
+        search_result.print();
 
         // search 2 moves deep
         println!("Search before blunder: 2 moves deep");
         assert!(b.get_active_color() == Color::White);
         let search_result = minimax(2, &b).unwrap();
-        println!("search result: {} {}", search_result.best_move.unwrap().to_human(), search_result.best_score);
-        search_result.moves.iter().for_each(|m| println!("{} {}", m.to_algebraic(), m.to_human()));
-        search_result.scores.iter().for_each(|s| println!("{}", s));
+        search_result.print();
         assert!(search_result.best_move.unwrap().piece == Piece::from_algebraic('N', "e4"));
 
         // search 5 moves deep
@@ -327,7 +631,6 @@ mod test {
         let search_result = minimax(5, &b).unwrap();
         println!("search result: {} {}", search_result.best_move.unwrap().to_human(), search_result.best_score);
         search_result.moves.iter().for_each(|m| println!("{} {}", m.to_algebraic(), m.to_human()));
-        search_result.scores.iter().for_each(|s| println!("{}", s));
         assert!(search_result.best_move.unwrap().piece == Piece::from_algebraic('N', "e4"));
 
 
@@ -344,25 +647,26 @@ mod test {
         let b = Board::from_fen("r3k2r/p1ppqpb1/Bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPB1PPP/R3K2R b KQkq - 0 1");
 
         let now_minimax = Instant::now();
-        let pure_minimax_4 = minimax_no_pruning(4, &b);
+        let pure_minimax_4 = minimax_no_pruning(4, &b).unwrap();
         // Sebastian has 1.16 s, 3_553_501 positions
         println!("pure minimax: {:.6}s evaluated {} positions", now_minimax.elapsed().as_secs_f32(),
-            pure_minimax_4.unwrap().nodes_searched);
+            pure_minimax_4.nodes_searched);
 
         let now_pruning = Instant::now();
-        let minimax_a_b_pruning = minimax_no_ordering(4, &b);
+        let minimax_a_b_pruning = minimax_no_ordering(4, &b).unwrap();
         // Sebastian has 0.18 s, 464_795 positions
         println!("minimax a b pruning: {:.6}s evaluated {} positions", now_pruning.elapsed().as_secs_f32(),
-            minimax_a_b_pruning.unwrap().nodes_searched);
+            minimax_a_b_pruning.nodes_searched);
 
         let now_pruning_sorting = Instant::now();
-        let minimax_a_b_pruning_sorting = minimax(4, &b);
+        let minimax_a_b_pruning_sorting = minimax_no_quiescence(4, &b).unwrap();
         // Sebastian has 0.025 s, 4916 positions
         println!("minimax a b pruning with ordering: {:.6}s evaluated {} positions",
-            now_pruning_sorting.elapsed().as_secs_f32(), minimax_a_b_pruning_sorting.unwrap().nodes_searched);
+            now_pruning_sorting.elapsed().as_secs_f32(), minimax_a_b_pruning_sorting.nodes_searched);
 
-        // TODO: assert things on the resulting positions being the same
-        assert!(false);
+        // assert things on the resulting positions being the same
+        assert_eq!(pure_minimax_4.best_move, minimax_a_b_pruning.best_move);
+        assert_eq!(pure_minimax_4.best_move, minimax_a_b_pruning_sorting.best_move);
     }
 
     #[test]

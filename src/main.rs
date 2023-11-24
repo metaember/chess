@@ -33,6 +33,8 @@ fn main() -> Result<()> {
     color_eyre::install()?;
 
     let args = Args::parse();
+
+    println!("Starting game with depth: {}, count: {}, print_search: {}", args.depth, args.count, args.print_search);
     let mut game = Game::new(args.depth);
     game.play(args.count as i32, args.print_search);
     println!("{}", game.to_pgn());

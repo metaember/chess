@@ -1,7 +1,5 @@
 use std::cmp::{max, min};
 
-use crate::board;
-
 pub const STARTING_POSITION_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]

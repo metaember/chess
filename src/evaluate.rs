@@ -82,12 +82,17 @@ impl Material {
 
 pub fn evaluate_board(board: &Board) -> i32 {
     let material = Material::compute_material(board);
-    material.get_location_adjusted_material_difference()
+    let unsigned_score = material.get_location_adjusted_material_difference();
+    if board.get_active_color() == Color::White {
+        unsigned_score
+    } else {
+        -unsigned_score
+    }
 }
 
 
 
-pub fn guess_move_value(board: &Board, mv: &Move) -> i32 {
+pub fn guess_move_value(_board: &Board, mv: &Move) -> i32 {
     let mut score = 0;
     let material_difference_multiplier = 10;
 
