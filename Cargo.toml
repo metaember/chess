@@ -28,3 +28,8 @@ harness = false
 inherits = "release"
 strip = false
 debug = true
+
+
+[profile.release]
+lto = true
+codegen-units = 1
