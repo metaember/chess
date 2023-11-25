@@ -9,6 +9,7 @@ edition = "2021"
 chrono = "0.4.31"
 clap = { version = "4.4.8", features = ["derive"] }
 color-eyre = "0.6.2"
+itertools = "0.12.0"
 rand = "0.8.5"
 
 [build]
@@ -21,3 +22,9 @@ criterion = { version = "0.4", features = ["html_reports"] }
 [[bench]]
 name = "benchmarks"
 harness = false
+
+[profile.profiling]
+# use release mode for benchmarks
+inherits = "release"
+strip = false
+debug = true
