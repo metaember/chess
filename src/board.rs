@@ -1,6 +1,9 @@
 use std::cmp::{max, min};
+use itertools::chain;
+use std::iter;
 
 pub const STARTING_POSITION_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+const SQUARES_IN_BOARD: usize = 64;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Color {
@@ -362,8 +365,80 @@ impl Move {
 }
 
 
+/// Container holding a single color's pieces
+#[derive(Debug, Clone)]
+pub struct PieceContainer {
+    pub pawns: Vec<Piece>,
+    pub rooks: Vec<Piece>,
+    pub knights: Vec<Piece>,
+    pub bishops: Vec<Piece>,
+    pub queens: Vec<Piece>,
+    pub king: Vec<Piece>,
+}
+
+impl PieceContainer {
+    pub fn new() -> Self {
+        Self {
+            pawns: vec![],
+            rooks: vec![],
+            knights: vec![],
+            bishops: vec![],
+            queens: vec![],
+            king: vec![],
+        }
+    }
+
+    pub fn add_piece(&mut self, piece: Piece) {
+        match piece.piece_type {
+            PieceType::Pawn => self.pawns.push(piece),
+            PieceType::Rook => self.rooks.push(piece),
+            PieceType::Knight => self.knights.push(piece),
+            PieceType::Bishop => self.bishops.push(piece),
+            PieceType::Queen => self.queens.push(piece),
+            PieceType::King => self.king.push(piece),
+        }
+    }
+
+    pub fn remove_piece(&mut self, piece: Piece) {
+        match piece.piece_type {
+            PieceType::Pawn => self.pawns.swap_remove(self.pawns.iter().position(|p| *p == piece).unwrap()),
+            PieceType::Rook => self.rooks.swap_remove(self.rooks.iter().position(|p| *p == piece).unwrap()),
+            PieceType::Knight => self.knights.swap_remove(self.knights.iter().position(|p| *p == piece).unwrap()),
+            PieceType::Bishop => self.bishops.swap_remove(self.bishops.iter().position(|p| *p == piece).unwrap()),
+            PieceType::Queen => self.queens.swap_remove(self.queens.iter().position(|p| *p == piece).unwrap()),
+            PieceType::King => self.king.swap_remove(self.king.iter().position(|p| *p == piece).unwrap()),
+        };
+    }
+
+    pub fn get_pieces_by_type(&self, piece_type: &PieceType) -> &[Piece] {
+        match piece_type {
+            PieceType::Pawn => &self.pawns,
+            PieceType::Rook => &self.rooks,
+            PieceType::Knight => &self.knights,
+            PieceType::Bishop => &self.bishops,
+            PieceType::Queen => &self.queens,
+            PieceType::King => &self.king,
+        }
+    }
+
+    pub fn sliding_pieces(&self) -> impl IntoIterator<Item=&Piece> {
+        chain!(self.rooks.iter(), self.bishops.iter(), self.queens.iter())
+    }
+
+    pub fn all_pieces(&self) -> impl IntoIterator<Item=&Piece> {
+        chain!(self.pawns.iter(), self.rooks.iter(), self.knights.iter(),
+            self.bishops.iter(), self.queens.iter(), self.king.iter())
+    }
+
+    pub fn len(&self) -> usize {
+        self.pawns.len() + self.rooks.len() + self.knights.len() + self.bishops.len() + self.queens.len() + self.king.len()
+    }
+}
+
 pub struct Board {
-    pub pieces: Vec<Piece>,
+    pub white: PieceContainer,
+    pub black: PieceContainer,
+
     // who's move it is
     active_color: Color,
     castle_kingside_white: bool,
@@ -387,15 +462,19 @@ impl Board {
 
         assert!(parts.len() == 6);
         let mut board_to_piece: [[Option<Piece>; 8]; 8] = [[None; 8]; 8];
+        let mut white = PieceContainer::new();
+        let mut black = PieceContainer::new();
 
         let piece_data = parts[0];
-        let mut pieces: Vec<Piece> = vec![];
         let mut rank = 8;
         let mut file = 1;
         for piece_char in piece_data.chars() {
             if piece_char.is_alphabetic() {
                 let p = Piece::from_rank_file(piece_char, rank, file);
-                pieces.push(p);
+                match p.color {
+                    Color::White => white.add_piece(p),
+                    Color::Black => black.add_piece(p),
+                }
                 board_to_piece[(rank - 1) as usize][(file - 1) as usize] = Some(p);
                 file += 1;
             } else if piece_char.is_numeric() {
@@ -427,7 +506,8 @@ impl Board {
         let fullmove_clock: u32 = parts[5].parse().expect("Fullmove clock should be a u32");
 
         Board {
-            pieces,
+            white,
+            black,
             active_color,
             castle_kingside_white,
             castle_queenside_white,
@@ -464,40 +544,24 @@ impl Board {
         self.active_color
     }
 
-    fn check_for_insufficient_material(&self) -> Option<Status> {
-        let white_pieces: Vec<_> = self.pieces.iter().filter(|p| p.color == Color::White).collect();
-        let black_pieces: Vec<_> = self.pieces.iter().filter(|p| p.color == Color::Black).collect();
+    pub fn get_pieces_for_color(&self, color: &Color) -> &PieceContainer {
+        match color {
+            Color::White => &self.white,
+            Color::Black => &self.black,
+        }
+    }
 
-        if white_pieces.len() >= 3 || black_pieces.len() >= 3 {
+    fn check_for_insufficient_material(&self) -> Option<Status> {
+        if self.white.len() >= 3 || self.black.len() >= 3 {
             return None;
         }
 
-        let white_bishop_count = white_pieces
-            .iter()
-            .filter(|p| p.piece_type == PieceType::Bishop)
-            .count();
-
-        let black_bishop_count = black_pieces
-            .iter()
-            .filter(|p| p.piece_type == PieceType::Bishop)
-            .count();
-
-        let white_knight_count = white_pieces
-            .iter()
-            .filter(|p| p.piece_type == PieceType::Knight)
-            .count();
-
-        let black_knight_count = black_pieces
-            .iter()
-            .filter(|p| p.piece_type == PieceType::Knight)
-            .count();
-
-        let black_insufficient  = black_pieces.len() == 1 || black_pieces.len() == 2 && {
-            black_knight_count == 1 || black_bishop_count == 1
+        let black_insufficient = self.black.len() == 1 || self.black.len() == 2 && {
+            self.black.knights.len() == 1 || self.black.bishops.len() == 1
         };
 
-        let white_insufficient  = white_pieces.len() == 1 || white_pieces.len() == 2 && {
-            white_knight_count == 1 || white_bishop_count == 1
+        let white_insufficient = self.white.len() == 1 || self.white.len() == 2 && {
+            self.white.knights.len() == 1 || self.white.bishops.len() == 1
         };
 
         if black_insufficient && white_insufficient {
@@ -513,20 +577,8 @@ impl Board {
             panic!("King cannot be captured, something is amiss. Move was {}", selected_move.to_human());
         }
 
-        let mut pieces = self.pieces.clone();
-        pieces = pieces
-            .into_iter()
-            .filter(|p| {
-                // remove the piece that moved ...
-                p != &selected_move.piece && match selected_move.captured {
-                    Some(cap_piece) => p != &cap_piece,  // .. maybe remove the captured piece ..
-                    None => true,
-                }
-            })
-            .collect();
-
-        // .. and add the piece that moved back in the new position
-        // TODO: handle promotion
+        let mut white = self.white.clone();
+        let mut black = self.black.clone();
 
         let is_promotion = selected_move.piece.piece_type == PieceType::Pawn
             && (selected_move.to.rank == 8 || selected_move.to.rank == 1);
@@ -543,7 +595,24 @@ impl Board {
                 ..selected_move.piece
             }
         };
-        pieces.push(new_piece);
+
+        // remove the old piece, maybe remove the captured piece, and add the piece at the new position
+        match selected_move.piece.color {
+            Color::White => {
+                white.remove_piece(selected_move.piece);
+                if let Some(captured) = selected_move.captured {
+                    black.remove_piece(captured);
+                }
+                white.add_piece(new_piece);
+            },
+            Color::Black => {
+                black.remove_piece(selected_move.piece);
+                if let Some(captured) = selected_move.captured {
+                    white.remove_piece(captured);
+                }
+                black.add_piece(new_piece);
+            }
+        };
 
         let mut board_to_piece = self.board_to_piece.clone();
         board_to_piece[(selected_move.from.rank - 1) as usize][(selected_move.from.file - 1) as usize] = None;
@@ -594,12 +663,14 @@ impl Board {
             }
         }
 
+        let move_is_irriversible = selected_move.captured.is_some() || selected_move.piece.piece_type == PieceType::Pawn;
+
         // TODO: update the other states too
         Board {
-            pieces,
+            white,
+            black,
             active_color: self.active_color.other_color(),
-            halfmove_clock: if selected_move.captured.is_some() || selected_move.piece.piece_type == PieceType::Pawn {
-                0} else {self.halfmove_clock + 1},
+            halfmove_clock: if move_is_irriversible {0} else {self.halfmove_clock + 1},
             fullmove_clock: self.fullmove_clock + if self.active_color == Color::Black {1} else {0},
             castle_kingside_white: self.castle_kingside_white && castle_kingside_white,
             castle_queenside_white: self.castle_queenside_white && castle_queenside_white,
@@ -695,18 +766,18 @@ impl Board {
             .filter(|m| m.to == my_king.position)
             .collect();
 
-        let my_pieces: Vec<&Piece> = self.pieces.iter().filter(|p| p.color == *color).collect();
-        let pieces_to_compute_moves_for = match current_checks.len() {
-            0 => my_pieces,
+        let my_pieces = self.get_pieces_for_color(&self.get_active_color()).all_pieces();
+
+        let pieces_to_compute_moves_for: Box<dyn Iterator<Item = &Piece>> = match current_checks.len() {
+            0 => Box::new(my_pieces.into_iter()),
             // but only onto squares that block or capture the attacking piece, or king move
-            1 => my_pieces,
+            1 => Box::new(my_pieces.into_iter()),
             // double check, only the king can move
-            _ => vec![&my_king],
+            _ => Box::new(iter::once(my_king)),
         };
 
         // 3: check all legal moves from the pieces we can legally move
-        // first get all valid moves
-        let mut my_possible_moves: Vec<_> = pieces_to_compute_moves_for
+        let mut my_possible_moves: Vec<Move> = pieces_to_compute_moves_for
             .into_iter()
             .map(|p| self.get_pseudo_moves(&p, false))
             .flatten()
@@ -787,15 +858,13 @@ impl Board {
        Ok(my_possible_moves)
     }
 
-    fn get_king(&self, color: &Color) -> Piece {
-        // TODO: implement a data structure to make this lookup const time
-        for piece in &self.pieces {
-            if piece.color == *color && piece.piece_type == PieceType::King {
-                return *piece;
-            }
+    fn get_king(&self, color: &Color) -> &Piece {
+        unsafe {
+            // If there are bugs in this code, go blame @afnanenayet
+            // @
+            // User must ensure there is always a king in ths vector
+            self.get_pieces_for_color(color).king.get_unchecked(0)//.expect("King not found")
         }
-        // king should always be on the board
-        panic!("King not found");
     }
 
     /// Get a vector of all pseudo valid moves for the side `color`.
@@ -808,12 +877,22 @@ impl Board {
         color: &Color,
         observed_mode: bool
     ) -> Vec<Move> {
-        self.pieces
-            .iter()
-            .filter(|p| p.color == *color)
-            .map(|p| self.get_pseudo_moves(p, observed_mode))
-            .flatten()
-            .collect()
+        // Pre-allocate the max size
+        // let mut result: Vec<Move> = Vec::with_capacity(SQUARES_IN_BOARD);
+        // result.extend(
+        //     self.get_pieces_for_color(color)
+        //         .all_pieces()
+        //         .into_iter()
+        //         .map(|p| self.get_pseudo_moves(p, observed_mode))
+        //         .flatten()
+        // );
+        // result
+        self.get_pieces_for_color(color)
+                .all_pieces()
+                .into_iter()
+                .map(|p| self.get_pseudo_moves(p, observed_mode))
+                .flatten()
+                .collect()
     }
 
     /// Get a vector of pseudo valid moves for the piece `piece`.
@@ -1049,6 +1128,7 @@ impl Board {
         moves
     }
 
+
     fn get_pseudo_bishop_moves(
         &self,
         piece: &Piece,
@@ -1243,11 +1323,7 @@ impl Board {
     /// where the piece would maintain protection of the king, by blocking the ray or capturing
     /// the pinning piece.
     fn get_pins(&self, color: &Color) -> Vec<PinnedPiece> {
-        let opponent_sliding_pieces: Vec<&Piece> = self
-            .pieces
-            .iter()
-            .filter(|p| p.color == color.other_color() && p.piece_type.is_sliding())
-            .collect();
+        let opponent_sliding_pieces = self.get_pieces_for_color(&color.other_color()).sliding_pieces();
 
         let king = self.get_king(color);
         let mut pins: Vec<PinnedPiece> = vec![];
@@ -1570,37 +1646,33 @@ mod tests {
         assert!(b.castle_queenside_black);
         assert!(b.castle_kingside_black);
 
-        assert_eq!(b.pieces.len(), 8 * 4);
+        assert_eq!(b.white.len(), 8 * 2);
+        assert_eq!(b.black.len(), 8 * 2);
 
         // count pawns
-        assert_eq!(
-            b.pieces
-                .iter()
-                .filter(|p| p.piece_type == PieceType::Pawn)
-                .count(),
-            8 * 2
-        );
+        assert_eq!(b.white.pawns.len(), 8 * 2);
+        assert_eq!(b.black.pawns.len(), 8 * 2);
 
         // count pairwise pieces
         for pt in [PieceType::Rook, PieceType::Bishop, PieceType::Knight] {
-            assert_eq!(b.pieces.iter().filter(|p| p.piece_type == pt).count(), 4);
+            assert_eq!(b.white.get_pieces_by_type(&pt).len(), 2);
+            assert_eq!(b.black.get_pieces_by_type(&pt).len(), 2);
         }
 
         for pt in [PieceType::King, PieceType::Queen] {
-            assert_eq!(b.pieces.iter().filter(|p| p.piece_type == pt).count(), 2);
+            assert_eq!(b.white.get_pieces_by_type(&pt).len(), 1);
+            assert_eq!(b.black.get_pieces_by_type(&pt).len(), 1);
         }
 
         // check some individual pieces
 
-        let kings: Vec<&Piece> = b
-            .pieces
-            .iter()
-            .filter(|p| p.piece_type == PieceType::King)
-            .collect();
+        let white_kings = b.white.get_pieces_by_type(&PieceType::King);
+        assert_eq!(white_kings.len(), 1);
+        assert_eq!(white_kings[0].position, Position { rank: 1, file: 5 });
 
-        assert_eq!(kings.len(), 2);
-        assert_eq!(kings[0].position, Position { rank: 8, file: 5 });
-        assert_eq!(kings[1].position, Position { rank: 1, file: 5 });
+        let black_kings = b.black.get_pieces_by_type(&PieceType::King);
+        assert_eq!(black_kings.len(), 1);
+        assert_eq!(black_kings[0].position, Position { rank: 8, file: 5 });
 
         assert_eq!(b.halfmove_clock, 0);
         assert_eq!(b.fullmove_clock, 1);
@@ -1969,13 +2041,12 @@ mod tests {
         let m = Move::from_algebraic(&b, "d2", "c3");
         let captured = Piece::from_algebraic('b', "c3");
         assert_eq!(m.captured, Some(captured));
-        assert!(b.pieces.contains(&p));
-        assert!(b.pieces.contains(&captured));
+        assert!(b.white.all_pieces().into_iter().any(|curr_p| curr_p == &p));
+        assert!(b.black.all_pieces().into_iter().any(|curr_p| curr_p == &captured));
 
         let b_after = b.execute_move(&m);
-        assert!(b_after.pieces.contains(&Piece::from_algebraic('P', "c3")));
-        assert!(!b_after.pieces.contains(&p));
-        assert!(!b_after.pieces.contains(&captured));
+        assert!(!b_after.white.all_pieces().into_iter().any(|curr_p| curr_p == &Piece::from_algebraic('P', "c3")));
+        assert!(!b_after.black.all_pieces().into_iter().any(|curr_p| curr_p == &captured));
     }
 
     #[test]

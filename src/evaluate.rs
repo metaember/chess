@@ -44,27 +44,27 @@ impl Material {
         let mut white_piece_material = 0;
         let mut black_piece_material = 0;
 
-        for piece in &board.pieces {
+        for piece in board.white.all_pieces().into_iter() {
             let current_piece_material = Material::piece_to_material(&piece);
-            match piece.color {
-                Color::White => {
-                    white_material += current_piece_material;
-                    white_piece_location_adjustment += get_piece_adjustment_value(&piece, false);
-                    if piece.piece_type == PieceType::Pawn {
-                        white_pawn_material += current_piece_material;
-                    } else {
-                        white_piece_material += current_piece_material
-                    };
-                },
-                Color::Black => {
-                    black_material += current_piece_material;
-                    black_piece_location_adjustment += get_piece_adjustment_value(&piece, false);
-                    if piece.piece_type == PieceType::Pawn {
-                        black_pawn_material += current_piece_material;
-                    } else {
-                        black_piece_material += current_piece_material;
-                    }
-                }
+
+            white_material += current_piece_material;
+            white_piece_location_adjustment += get_piece_adjustment_value(&piece, false);
+            if piece.piece_type == PieceType::Pawn {
+                white_pawn_material += current_piece_material;
+            } else {
+                white_piece_material += current_piece_material
+            };
+        };
+
+        for piece in board.black.all_pieces().into_iter() {
+            let current_piece_material = Material::piece_to_material(&piece);
+
+            black_material += current_piece_material;
+            black_piece_location_adjustment += get_piece_adjustment_value(&piece, false);
+            if piece.piece_type == PieceType::Pawn {
+                black_pawn_material += current_piece_material;
+            } else {
+                black_piece_material += current_piece_material;
             };
         };
         Material {
