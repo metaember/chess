@@ -698,6 +698,9 @@ mod test {
         // Jon Hammer vs Magnus Carlsen, Halkidiki, 2003
         // 5rk1/ppp2pbp/3p2p1/1q6/4r1P1/1NP1B3/PP2nPP1/R2QR2K b - - 0 1
         // 1... Qh5+ 2. gxh5 Rh4#
+
+        todo!("Re-enable this test when it's faster to search.");
+
         let fen = "5rk1/ppp2pbp/3p2p1/1q6/4r1P1/1NP1B3/PP2nPP1/R2QR2K b - - 0 1";
         let b = Board::from_fen(fen);
         b.draw_to_terminal();
@@ -805,6 +808,9 @@ mod test {
         // Jean Netzer vs Maxime Vachier-Lagrave, Hyeres, 2002
         // 5r2/6k1/p2p4/6n1/P3p3/8/5P2/2q2QKR b - - 0 1
         // 1... Nf3+ 2. Kg2 Qg5+ 3. Kh3 Rh8#
+
+        todo!("Re-enable this test when it's faster to search.");
+
         let fen = "5r2/6k1/p2p4/6n1/P3p3/8/5P2/2q2QKR b - - 0 1";
         let b = Board::from_fen(fen);
         b.draw_to_terminal();

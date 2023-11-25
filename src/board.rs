@@ -322,6 +322,11 @@ pub struct Move {
     pub from: Position,
     pub to: Position,
     pub captured: Option<Piece>,
+    // TODO: remove piece from this, since we can get it from the board
+    // in O(1) now
+    // TODO: add a flag for promotion
+    // pub promotion: Option<PieceType>,
+    // perhaps also en passant flag or check flag
 }
 
 impl Move {
@@ -1058,34 +1063,24 @@ impl Board {
         let mut moves: Vec<Move> = vec![];
         let pos = &piece.position;
 
-        // nice, clean code
-        let zips: [std::iter::Zip<_, _>; 4] = [
-            std::iter::zip(
-                ((pos.rank + 1)..9).collect::<Vec<_>>().into_iter(),
-                ((pos.file + 1)..9).collect::<Vec<_>>().into_iter(),
-            ),
-            std::iter::zip(
-                ((pos.rank + 1)..9).collect::<Vec<_>>().into_iter(),
-                (1..pos.file).rev().collect::<Vec<_>>().into_iter(),
-            ),
-            std::iter::zip(
-                (1..pos.rank).rev().collect::<Vec<_>>().into_iter(),
-                (pos.file + 1..9).collect::<Vec<_>>().into_iter(),
-            ),
-            std::iter::zip(
-                (1..pos.rank).rev().collect::<Vec<_>>().into_iter(),
-                (1..pos.file).rev().collect::<Vec<_>>().into_iter(),
-            ),
+        let directions = [
+            (1, 1),
+            (1, -1),
+            (-1, 1),
+            (-1, -1),
         ];
 
-        for direction in zips {
-            for (rank, file) in direction {
-                let candidate = Position { rank, file };
-                let potential_move = self.check_move_target(
-                    piece,
-                    &candidate,
-                    observed_mode,
-                );
+        for direction in directions {
+            let mut cur_rank = pos.rank as i8 + direction.0;
+            let mut cur_file = pos.file as i8 + direction.1;
+
+            while 1 <= cur_rank && cur_rank <= 8 && 1 <= cur_file && cur_file <= 8 {
+                let candidate = Position {
+                    rank: cur_rank as u8,
+                    file: cur_file as u8,
+                };
+                let potential_move =
+                    self.check_move_target(piece, &candidate, observed_mode);
                 match potential_move {
                     PotentialMove::Invalid => break,
                     PotentialMove::Valid(maybe_other) => {
@@ -1100,14 +1095,8 @@ impl Board {
                         }
                     }
                 }
-                // For sliding pieces like bishop and rook and queen, to check for pins we can keep
-                // searching in the direction past the point were we would break, and count the
-                // number of pieces betweeen the target square and the opponenet king.
-                // if it's 2 or more, we can stop. If it's 1, that piece is pinned, we should
-                // return that info back up.
-                //
-                // A pinned piece can still move, but it's limited to the squares observed in this
-                // direction, up to an including capturing the pinning piece.
+                cur_rank += direction.0;
+                cur_file += direction.1;
             }
         }
         moves
