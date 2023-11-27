@@ -889,5 +889,7 @@ mod test {
         assert_eq!(minimax_no_pruning(2, &b).unwrap().nodes_searched, 400);
         assert_eq!(minimax_no_pruning(3, &b).unwrap().nodes_searched, 8902);
         assert_eq!(minimax_no_pruning(4, &b).unwrap().nodes_searched, 197281);
+        assert_eq!(minimax_no_pruning(5, &b).unwrap().nodes_searched, 4865609);
+        assert_eq!(minimax_no_pruning(6, &b).unwrap().nodes_searched, 119060324);
     }
 }
