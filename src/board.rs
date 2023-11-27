@@ -340,6 +340,7 @@ pub enum MoveFlag {
     Promotion(PieceType),
     /// Double pawn push at first pawn move. Contains the en passant square
     DoublePawnPush(Position),
+    EnPassantCapture,
 }
 
 impl MoveFlag {
@@ -859,6 +860,11 @@ impl Board {
             castle_queenside_white: self.castle_queenside_white && castle_queenside_white,
             castle_kingside_black: self.castle_kingside_black && castle_kingside_black,
             castle_queenside_black: self.castle_queenside_black && castle_queenside_black,
+            en_passant_target: if let MoveFlag::DoublePawnPush(ep_target) = selected_move.move_flag {
+                Some(ep_target)
+            } else {
+                None
+            },
             board_to_piece,
             white_king_position,
             black_king_position,
@@ -1158,21 +1164,43 @@ impl Board {
 
         let next_rank = pawn_step_forward(pos.rank, &piece.color);
         let promotion_rank = if piece.color == Color::White {8} else {1};
+        let ep_rank = if piece.color == Color::White {6} else {3};
 
         if pos.file >= 2 {
-            let maybe_other_piece = self.piece_at(next_rank, pos.file - 1);
+            let maybe_other_piece = self.piece_at(next_rank, pos.file - 1).map(|p| *p);
 
             if next_rank != promotion_rank {
-                moves.push(Move {
-                    piece: *piece,
-                    from: piece.position,
-                    to: Position {
-                        rank: next_rank,
-                        file: pos.file - 1,
-                    },
-                    captured: maybe_other_piece.map(|p| *p),
-                    move_flag: MoveFlag::Regular,
-                });
+                if next_rank == ep_rank
+                        && maybe_other_piece.is_none()
+                        && self.en_passant_target == Some(Position { rank: next_rank, file: pos.file - 1 }) {
+                    // En passant capture
+                    let captured_piece = self.piece_at(pos.rank, pos.file - 1).expect("Should have piece at the en passant target");
+                    if captured_piece.piece_type != PieceType::Pawn {
+                        panic!("En passant capture should be a pawn")
+                    }
+
+                    moves.push(Move {
+                        piece: *piece,
+                        from: piece.position,
+                        to: Position {
+                            rank: next_rank,
+                            file: pos.file - 1,
+                        },
+                        captured: Some(*captured_piece),
+                        move_flag: MoveFlag::EnPassantCapture,
+                    });
+                } else {
+                    moves.push(Move {
+                        piece: *piece,
+                        from: piece.position,
+                        to: Position {
+                            rank: next_rank,
+                            file: pos.file - 1,
+                        },
+                        captured: None,
+                        move_flag: MoveFlag::Regular,
+                    });
+                }
             } else {
                 // promotion
                 for piece_type in PIECES_CAN_PROMOTE_TO {
@@ -1183,25 +1211,52 @@ impl Board {
                             rank: next_rank,
                             file: pos.file - 1,
                         },
-                        captured: maybe_other_piece.map(|p| *p),
+                        captured: maybe_other_piece,
                         move_flag: MoveFlag::Promotion(piece_type)
                     })
                 }
             }
         }
         if pos.file <= 7 {
-            let maybe_other_piece = self.piece_at(next_rank, pos.file + 1);
+            let maybe_other_piece = self.piece_at(next_rank, pos.file + 1).map(|p| *p);
+
             if next_rank != promotion_rank {
-                moves.push(Move {
-                    piece: *piece,
-                    from: piece.position,
-                    to: Position {
-                        rank: next_rank,
-                        file: pos.file + 1,
-                    },
-                    captured: maybe_other_piece.map(|p| *p),
-                    move_flag: MoveFlag::Regular,
-                });
+                if next_rank == ep_rank
+                        && maybe_other_piece.is_none()
+                        && self.en_passant_target == Some(Position { rank: next_rank, file: pos.file + 1 }) {
+                    // En passant capture
+                    println!("{:?}, {}, {:?}", piece.position, piece.color.to_human(), piece);
+                    println!(
+                        "En passant capture: ep_target: {:?}, ep_captured_pawn: {:?}:",
+                        self.en_passant_target.unwrap(),
+                        (pos.rank, pos.file + 1));
+
+                    let captured_piece = self.piece_at(pos.rank, pos.file + 1).expect("Should have piece at the en passant target");
+                    if captured_piece.piece_type != PieceType::Pawn {
+                        panic!("En passant capture should be a pawn")
+                    }
+                    moves.push(Move {
+                        piece: *piece,
+                        from: piece.position,
+                        to: Position {
+                            rank: piece.position.rank,
+                            file: pos.file + 1,
+                        },
+                        captured: Some(*captured_piece),
+                        move_flag: MoveFlag::EnPassantCapture,
+                    });
+                } else {
+                    moves.push(Move {
+                        piece: *piece,
+                        from: piece.position,
+                        to: Position {
+                            rank: next_rank,
+                            file: pos.file + 1,
+                        },
+                        captured: None,
+                        move_flag: MoveFlag::Regular,
+                    });
+                }
             } else {
                 // promotion
                 for piece_type in PIECES_CAN_PROMOTE_TO {
@@ -1212,7 +1267,7 @@ impl Board {
                             rank: next_rank,
                             file: pos.file + 1,
                         },
-                        captured: maybe_other_piece.map(|p| *p),
+                        captured: maybe_other_piece,
                         move_flag: MoveFlag::Promotion(piece_type)
                     })
                 }
@@ -1229,9 +1284,6 @@ impl Board {
     }
 
     /// get the valid pushes for a pawn
-    ///
-    /// TODO: add en passant
-    /// TODO: add promotion
     fn get_pseudo_pawn_pushes(&self, piece: &Piece) -> Vec<Move> {
         let mut moves: Vec<Move> = vec![];
         let pos = &piece.position;
@@ -1291,7 +1343,6 @@ impl Board {
         };
         moves
     }
-
 
     fn get_pseudo_rook_moves(
         &self,
@@ -2427,6 +2478,77 @@ mod tests {
             let new_b = b.execute_move(&m);
             assert!(new_b.pieces.contains(&Piece::from_algebraic(pt.to_char(), "d8")));
         });
+    }
+
+    #[test]
+    fn execute_ep_capture() {
+        let b = Board::from_fen("rnbqkbnr/pppp1ppp/8/8/4p3/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        b.draw_to_terminal();
+
+        // ♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜
+        // ♟︎ ♟︎ ♟︎ ♟︎ . ♟︎ ♟︎ ♟︎
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . ♟︎ . . .
+        // . . . . . . . .
+        // ♙ ♙ ♙ ♙ ♙ ♙ ♙ ♙
+        // ♖ ♘ ♗ ♕ ♔ ♗ ♘ ♖
+
+        assert!(b.en_passant_target.is_none());
+        let legal_moves = b.get_legal_moves(&b.active_color).unwrap();
+        assert_eq!(legal_moves.len(), 19);
+
+        let m = Move{
+            piece: Piece::from_algebraic('P', "d2"),
+            from: Position::from_algebraic("d2"),
+            to: Position::from_algebraic("d4"),
+            captured: None,
+            move_flag: MoveFlag::DoublePawnPush(Position::from_algebraic("d3")),
+        };
+        // assert the move m is legal
+        assert!(legal_moves.contains(&m));
+
+        let b = b.execute_move(&m);
+        b.draw_to_terminal();
+        // ♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜
+        // ♟︎ ♟︎ ♟︎ ♟︎ . ♟︎ ♟︎ ♟︎
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . ♙ ♟︎ . . .
+        // . . . . . . . .
+        // ♙ ♙ ♙ . ♙ ♙ ♙ ♙
+        // ♖ ♘ ♗ ♕ ♔ ♗ ♘ ♖
+
+        assert_eq!(b.active_color, Color::Black);
+        assert_eq!(b.en_passant_target, Some(Position::from_algebraic("d3")));
+
+        let legal_moves = b.get_legal_moves(&b.active_color).unwrap();
+        legal_moves.iter().for_each(|m| println!("{} {} {:?}", m.to_algebraic(), m.to_human(), m.move_flag));
+
+        let ep_capture = Move{
+            piece: Piece::from_algebraic('p', "e4"),
+            from: Position::from_algebraic("e4"),
+            to: Position::from_algebraic("d3"),
+            captured: Some(Piece::from_algebraic('P', "d4")),
+            move_flag: MoveFlag::EnPassantCapture,
+        };
+        assert!(legal_moves.contains(&ep_capture));
+
+        let b = b.execute_move(&ep_capture);
+        b.draw_to_terminal();
+        // ♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜
+        // ♟︎ ♟︎ ♟︎ ♟︎ . ♟︎ ♟︎ ♟︎
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . ♟︎ . . . .
+        // ♙ ♙ ♙ . ♙ ♙ ♙ ♙
+        // ♖ ♘ ♗ ♕ ♔ ♗ ♘ ♖
+
+        assert_eq!(b.active_color, Color::White);
+        assert_eq!(b.en_passant_target, None);
+        assert!(b.piece_at_position(&Position::from_algebraic("d4")).is_none());
+        assert_eq!(b.piece_at_position(&Position::from_algebraic("d3")).unwrap(), &Piece::from_algebraic('p', "d3"));
     }
 
 
