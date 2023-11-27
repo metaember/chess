@@ -1007,19 +1007,19 @@ impl Board {
 
         let pins = self.get_pins(color);
 
-        let mut castle_kingside_unobstructed = true;
-        let mut castle_queenside_unobstructed = true;
+        let mut castle_kingside_obstructed = false;
+        let mut castle_queenside_obstructed = false;
 
         let castle_rank = if *color == Color::White {1} else {8};
 
         for Move { piece: _, from: _, to, captured: _, move_flag: _ } in opponent_potential_moves.iter() {
-            if castle_queenside_unobstructed && to.rank == castle_rank && (to.file == 1 || to.file == 2 || to.file == 3) {
-                castle_queenside_unobstructed = false;
+            if !castle_queenside_obstructed && to.rank == castle_rank && (to.file == 3 || to.file == 4) {
+                castle_queenside_obstructed = true;
             }
-            if castle_kingside_unobstructed && to.rank == castle_rank && (to.file == 7 || to.file == 6) {
-                castle_kingside_unobstructed = false;
+            if !castle_kingside_obstructed && to.rank == castle_rank && (to.file == 7 || to.file == 6) {
+                castle_kingside_obstructed = true;
             }
-            if !castle_kingside_unobstructed && !castle_queenside_unobstructed {
+            if castle_kingside_obstructed && castle_queenside_obstructed {
                 break;
             }
         }
@@ -1054,13 +1054,13 @@ impl Board {
             })
             // Filter out castles that go through observed squares
             .filter(|m| match m.move_flag {
-                MoveFlag::CastleKingside => match color {
-                    Color::White => self.castle_kingside_white && castle_kingside_unobstructed,
-                    Color::Black => self.castle_kingside_black && castle_kingside_unobstructed,
+                MoveFlag::CastleKingside => !castle_kingside_obstructed && match color {
+                    Color::White => self.castle_kingside_white,
+                    Color::Black => self.castle_kingside_black,
                 },
-                MoveFlag::CastleQueenside => match color {
-                    Color::White => self.castle_queenside_white && castle_queenside_unobstructed,
-                    Color::Black => self.castle_queenside_black && castle_queenside_unobstructed,
+                MoveFlag::CastleQueenside => !castle_queenside_obstructed && match color {
+                    Color::White => self.castle_queenside_white,
+                    Color::Black => self.castle_queenside_black,
                 },
                 _ => true,
             })
@@ -2471,6 +2471,157 @@ mod tests {
             }
         });
     }
+
+    #[test]
+    fn cannot_castle_through_check() {
+        let b = Board::from_fen("3rk3/8/8/8/8/8/8/R3K2R w KQ - 0 1");
+        b.draw_to_terminal();
+
+        // . . . ♜ ♚ . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // ♖ . . . ♔ . . ♖
+
+        let legal_moves = b.get_legal_moves(&b.active_color).unwrap();
+        let legal_castles = legal_moves.iter().filter(|m| m.move_flag.is_castle()).collect::<Vec<_>>();
+        assert_eq!(legal_castles.len(), 1);
+        legal_castles.iter().for_each(|m| println!("{}: {}", m.to_algebraic(), m.to_human()));
+        // assert that white can only castle kingside, not queenside
+        assert!(legal_castles.iter().any(|m| m.move_flag == MoveFlag::CastleKingside));
+        assert!(!legal_castles.iter().any(|m| m.move_flag == MoveFlag::CastleQueenside));
+
+        // same side, still not possible due to check
+        let b = Board::from_fen("2r1k3/8/8/8/8/8/8/R3K2R w KQ - 0 1");
+        b.draw_to_terminal();
+        // . . ♜ . ♚ . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // ♖ . . . ♔ . . ♖
+
+        let legal_moves = b.get_legal_moves(&b.active_color).unwrap();
+        let legal_castles = legal_moves.iter().filter(|m| m.move_flag.is_castle()).collect::<Vec<_>>();
+        assert_eq!(legal_castles.len(), 1);
+        legal_castles.iter().for_each(|m| println!("{}: {}", m.to_algebraic(), m.to_human()));
+        // assert that white can only castle kingside, not queenside
+        assert!(legal_castles.iter().any(|m| m.move_flag == MoveFlag::CastleKingside));
+        assert!(!legal_castles.iter().any(|m| m.move_flag == MoveFlag::CastleQueenside));
+
+        // same side, but now possible because the rook does not cover the king path
+        let b = Board::from_fen("1r2k3/8/8/8/8/8/8/R3K2R w KQ - 0 1");
+        b.draw_to_terminal();
+        // . ♜ . . ♚ . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // ♖ . . . ♔ . . ♖
+
+        let legal_moves = b.get_legal_moves(&b.active_color).unwrap();
+        let legal_castles = legal_moves.iter().filter(|m| m.move_flag.is_castle()).collect::<Vec<_>>();
+        assert_eq!(legal_castles.len(), 2);
+        legal_castles.iter().for_each(|m| println!("{}: {}", m.to_algebraic(), m.to_human()));
+        // assert that white can only castle kingside, not queenside
+        assert!(legal_castles.iter().any(|m| m.move_flag == MoveFlag::CastleKingside));
+        assert!(legal_castles.iter().any(|m| m.move_flag == MoveFlag::CastleQueenside));
+
+
+        // other side, but now possible because the rook does not cover the king path
+        let b = Board::from_fen("4kr2/8/8/8/8/8/8/R3K2R w KQ - 0 1");
+        b.draw_to_terminal();
+        // . . . . ♚ ♜ . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // ♖ . . . ♔ . . ♖
+
+        let legal_moves = b.get_legal_moves(&b.active_color).unwrap();
+        let legal_castles = legal_moves.iter().filter(|m| m.move_flag.is_castle()).collect::<Vec<_>>();
+        assert_eq!(legal_castles.len(), 1);
+        legal_castles.iter().for_each(|m| println!("{}: {}", m.to_algebraic(), m.to_human()));
+        // assert that white can only castle kingside, not queenside
+        assert!(!legal_castles.iter().any(|m| m.move_flag == MoveFlag::CastleKingside));
+        assert!(legal_castles.iter().any(|m| m.move_flag == MoveFlag::CastleQueenside));
+
+        // other side, still not possible due to check
+        let b = Board::from_fen("4k1r1/8/8/8/8/8/8/R3K2R w KQ - 0 1");
+        b.draw_to_terminal();
+        // . . . . ♚ . ♜ .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // ♖ . . . ♔ . . ♖
+
+        let legal_moves = b.get_legal_moves(&b.active_color).unwrap();
+        let legal_castles = legal_moves.iter().filter(|m| m.move_flag.is_castle()).collect::<Vec<_>>();
+        assert_eq!(legal_castles.len(), 1);
+        legal_castles.iter().for_each(|m| println!("{}: {}", m.to_algebraic(), m.to_human()));
+        // assert that white can only castle kingside, not queenside
+        assert!(!legal_castles.iter().any(|m| m.move_flag == MoveFlag::CastleKingside));
+        assert!(legal_castles.iter().any(|m| m.move_flag == MoveFlag::CastleQueenside));
+
+        // other side, possible again
+        let b = Board::from_fen("4k2r/8/8/8/8/8/8/R3K2R w KQ - 0 1");
+        b.draw_to_terminal();
+        // . . . . ♚ . . ♜
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // . . . . . . . .
+        // ♖ . . . ♔ . . ♖
+
+        let legal_moves = b.get_legal_moves(&b.active_color).unwrap();
+        let legal_castles = legal_moves.iter().filter(|m| m.move_flag.is_castle()).collect::<Vec<_>>();
+        assert_eq!(legal_castles.len(), 2);
+        legal_castles.iter().for_each(|m| println!("{}: {}", m.to_algebraic(), m.to_human()));
+        // assert that white can only castle kingside, not queenside
+        assert!(legal_castles.iter().any(|m| m.move_flag == MoveFlag::CastleKingside));
+        assert!(legal_castles.iter().any(|m| m.move_flag == MoveFlag::CastleQueenside));
+    }
+
+    #[test]
+    fn cannot_castle_through_piece() {
+        for file in [2, 3, 4] {
+            let pre = file - 2;
+            let post = 4 - file;
+            let b = Board::from_fen(format!("4k3/8/8/8/8/8/8/R{}N{}K2R w KQ - 0 1", pre, post).as_str());
+            b.draw_to_terminal();
+            assert!(b.piece_at(1, file).is_some_and(|p| p.piece_type == PieceType::Knight));
+            // assert that white can only castle kingside, not queenside
+            assert!(b.get_legal_moves(&b.active_color).unwrap().iter().any(|m| m.move_flag == MoveFlag::CastleKingside));
+            assert!(!b.get_legal_moves(&b.active_color).unwrap().iter().any(|m| m.move_flag == MoveFlag::CastleQueenside));
+
+        }
+
+        for file in [6, 7] {
+            let pre = file - 6;
+            let post = 7 - file;
+            let b = Board::from_fen(format!("4k3/8/8/8/8/8/8/R3K{}N{}R w KQ - 0 1", pre, post).as_str());
+            b.draw_to_terminal();
+            assert!(b.piece_at(1, file).is_some_and(|p| p.piece_type == PieceType::Knight));
+            // assert that white can only castle queenside
+            assert!(!b.get_legal_moves(&b.active_color).unwrap().iter().any(|m| m.move_flag == MoveFlag::CastleKingside));
+            assert!(b.get_legal_moves(&b.active_color).unwrap().iter().any(|m| m.move_flag == MoveFlag::CastleQueenside));
+        }
+    }
+
 
     #[test]
     fn count_legal_moves_from_start_position() {
