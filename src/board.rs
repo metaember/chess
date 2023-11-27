@@ -1,4 +1,4 @@
-use std::cmp::{max, min};
+use std::{cmp::{max, min}, io::empty};
 #[cfg(test)]
 use pretty_assertions::{assert_eq, assert_ne};
 
@@ -266,6 +266,22 @@ impl Piece {
             res.to_lowercase()
         }
     }
+    pub fn to_algebraic_pgn(&self) -> String {
+        let mut res = String::new();
+        match self.piece_type {
+            PieceType::Pawn => res.push('p'),
+            PieceType::Rook => res.push('r'),
+            PieceType::Knight => res.push('n'),
+            PieceType::Bishop => res.push('b'),
+            PieceType::Queen => res.push('q'),
+            PieceType::King => res.push('k'),
+        }
+        if self.color == Color::White {
+            res.to_uppercase()
+        } else {
+            res.to_lowercase()
+        }
+    }
 }
 
 
@@ -426,6 +442,39 @@ impl Move {
     pub fn from_algebraic(board: &Board, from_str: &str, to_str: &str) -> Self {
         let from = Position::from_algebraic(from_str);
         let to = Position::from_algebraic(to_str);
+        let piece = board.piece_at_position(&from).unwrap().clone();
+
+        if piece.piece_type == PieceType::King && from.file == 5 && to.file == 7 {
+            return Self {
+                piece,
+                from,
+                to,
+                captured: None,
+                move_flag: MoveFlag::CastleKingside,
+            };
+        } else if piece.piece_type == PieceType::King && from.file == 5 && to.file == 3 {
+            return Self {
+                piece,
+                from,
+                to,
+                captured: None,
+                move_flag: MoveFlag::CastleQueenside,
+            };
+        } else if piece.piece_type == PieceType::Pawn && (from.rank as i8 - to.rank as i8).abs() == 2 {
+            return Self {
+                piece,
+                from,
+                to,
+                captured: None,
+                move_flag: MoveFlag::DoublePawnPush(Position {
+                    rank: match piece.color {
+                        Color::White => 3,
+                        Color::Black => 6,
+                    },
+                    file: from.file
+                }),
+            };
+        }
         Move {
             piece: board.piece_at_position(&from).unwrap().clone(),
             from,
@@ -603,6 +652,76 @@ impl Board {
 
     pub fn new() -> Board {
         Board::from_fen(STARTING_POSITION_FEN)
+    }
+
+    pub fn to_fen(&self) -> String {
+        let mut fen = "".to_string();
+        for rank in 0..8 {
+            let board_rank = 7 - rank;
+            let mut empty_squares = 0;
+            for file in 0..8 {
+                if let Some(piece) = self.board_to_piece[board_rank][file] {
+                    if empty_squares > 0 {
+                        fen.push_str(&empty_squares.to_string());
+                        empty_squares = 0;
+                    };
+                    fen.push_str(&piece.to_algebraic_pgn());
+                } else {
+                    empty_squares += 1;
+                }
+            }
+            if empty_squares > 0 {
+                fen.push_str(&empty_squares.to_string());
+            }
+            if rank < 7 {
+                fen.push('/');
+            }
+        };
+
+        // active color
+        fen.push_str(" ");
+        let active_color = self.active_color.to_human().chars().next().unwrap();
+        fen.push(active_color);
+
+        // castling
+        fen.push(' ');
+        if self.castle_kingside_white {
+            fen.push('K');
+        }
+        if self.castle_queenside_white {
+            fen.push('Q');
+        }
+        if self.castle_kingside_black {
+            fen.push('k');
+        }
+        if self.castle_queenside_black {
+            fen.push('q');
+        }
+        if !self.castle_kingside_white
+            && !self.castle_queenside_white
+            && !self.castle_kingside_black
+            && !self.castle_queenside_black
+        {
+            fen.push('-');
+        }
+
+        // en passant target
+        fen.push(' ');
+        if self.en_passant_target.is_none() {
+            fen.push_str("-");
+        } else {
+            fen.push_str(&self.en_passant_target.unwrap().to_algebraic());
+        }
+
+        // halfmove clock
+        fen.push(' ');
+        fen.push_str(&self.halfmove_clock.to_string());
+
+        // fullmove clock
+        fen.push(' ');
+        fen.push_str(&self.fullmove_clock.to_string());
+
+        fen
     }
 
     fn piece_at(&self, rank: u8, file: u8) -> Option<&Piece> {
@@ -2075,6 +2194,19 @@ mod tests {
 
         assert_eq!(b.halfmove_clock, 0);
         assert_eq!(b.fullmove_clock, 1);
+
+        assert_eq!(b.to_fen(), STARTING_POSITION_FEN);
+    }
+
+    #[test]
+    fn test_to_fen() {
+        [
+            "7k/3r4/8/8/3R4/8/3K4/8 w - - 0 1",
+            "3r4/7k/3r4/8/3R4/8/3K4/8 w - - 0 1"
+        ].iter().for_each(|fen| {
+            let b = Board::from_fen(fen);
+            assert_eq!(b.to_fen(), *fen);
+        })
     }
 
     // Tests for the pin  code
