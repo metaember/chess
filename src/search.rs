@@ -1,6 +1,6 @@
-use crate::board;
 use crate::board::*;
 use crate::evaluate::*;
+use crate::book::Book;
 
 pub const MIN_SCORE: i32 = -1_000_000_000;
 pub const MAX_SCORE: i32 = 1_000_000_000;
@@ -23,6 +23,22 @@ impl SearchResult {
         self.moves.iter().rev().for_each(|m| println!("  • {}: {}", m.to_algebraic(), m.to_human()));
     }
 }
+
+pub fn search_with_book(max_depth: u8, board: &Board, book: &Book) -> Result<SearchResult, Vec<Move>> {
+    let book_move = book.suggest_move(board, true);
+    if book_move.is_some() {
+        return Ok(SearchResult{
+            best_move: book_move,
+            best_score: 0,
+            nodes_searched: 0,
+            quiescent_nodes_searched: 0,
+            moves: vec![],
+        })
+    }
+    minimax(max_depth, board)
+}
+
+
 
 pub fn search(max_depth: u8, board: &Board) -> Move {
     let result = minimax(max_depth, board);

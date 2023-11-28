@@ -1,6 +1,4 @@
-use std::{cmp::{max, min}, io::empty};
-#[cfg(test)]
-use pretty_assertions::{assert_eq, assert_ne};
+use std::cmp::{max, min};
 
 
 pub const STARTING_POSITION_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -627,7 +625,7 @@ impl Board {
         let en_passant_target = if parts[3] == "-" {
             None
         } else {
-            Some(Position::from_algebraic(parts[3].get(0..3).unwrap()))
+            Some(Position::from_algebraic(parts[3].get(0..2).unwrap()))
         };
 
         let halfmove_clock: u32 = parts[4].parse().expect("Halfmove clock should be an u32");
@@ -648,6 +646,10 @@ impl Board {
             white_king_position,
             black_king_position,
         }
+    }
+
+    pub fn from_fen_no_moves(fen_string: &str) -> Board {
+        Board::from_fen(format!("{} 0 1", fen_string).as_str())
     }
 
     pub fn new() -> Board {
@@ -724,6 +726,10 @@ impl Board {
         fen
     }
 
+    pub fn to_fen_no_moves(&self) -> String {
+        self.to_fen().rsplitn(3, " ").skip(2).next().unwrap().to_string()
+    }
+
     fn piece_at(&self, rank: u8, file: u8) -> Option<&Piece> {
         // TODO: speed this up by storing a board representation as well
         self.board_to_piece[(rank - 1) as usize][(file - 1) as usize].as_ref()
@@ -744,7 +750,7 @@ impl Board {
         self.active_color
     }
 
-    fn check_for_insufficient_material(&self) -> Option<Status> {
+    pub fn check_for_insufficient_material(&self) -> Option<Status> {
         let white_pieces: Vec<_> = self.pieces.iter().filter(|p| p.color == Color::White).collect();
         let black_pieces: Vec<_> = self.pieces.iter().filter(|p| p.color == Color::Black).collect();
 
@@ -772,16 +778,39 @@ impl Board {
             .filter(|p| p.piece_type == PieceType::Knight)
             .count();
 
-        let black_insufficient  = black_pieces.len() == 1 || black_pieces.len() == 2 && {
+        let black_insufficient = black_pieces.len() == 1 || black_pieces.len() == 2 && {
             black_knight_count == 1 || black_bishop_count == 1
         };
 
-        let white_insufficient  = white_pieces.len() == 1 || white_pieces.len() == 2 && {
+        let white_insufficient = white_pieces.len() == 1 || white_pieces.len() == 2 && {
             white_knight_count == 1 || white_bishop_count == 1
         };
 
         if black_insufficient && white_insufficient {
             Some(Status::InsufficientMaterial)
+        } else {
+            None
+        }
+    }
+
+    pub fn check_for_threefold_repetition(&self, previous_board_fens: &Vec<String>) -> Option<Status> {
+        let mut count = 0;
+        let current_fen = self.to_fen_no_moves();
+        for fen in previous_board_fens {
+            if fen == &current_fen {
+                count += 1;
+            }
+        }
+        if count >= 3 {
+            Some(Status::ThreefoldRepetition)
+        } else {
+            None
+        }
+    }
+
+    pub fn check_for_fifty_move_rule(&self) -> Option<Status> {
+        if self.halfmove_clock >= 100 {
+            Some(Status::FiftyMoveRule)
         } else {
             None
         }
@@ -1220,9 +1249,13 @@ impl Board {
 
     /// Get a vector of all pseudo valid moves for the side `color`.
     ///
-    ///  We define a pseudo valid move to be a move that obeys the piece move directions,
+    /// We define a pseudo valid move to be a move that obeys the piece move directions,
     /// stays on the board, does not skip over pieces, etc, but does not check for
     /// checks, pins etc.
+    ///
+    /// If `pbserved_mode` is True, then we check all squares that are attacked by `color`,
+    /// including squares that we have pieces of our own color on, and including squares that
+    /// are "past" the opponent king for sliding pieces.
     pub fn get_all_pseudo_moves(
         &self,
         color: &Color,
@@ -1316,7 +1349,7 @@ impl Board {
                             rank: next_rank,
                             file: pos.file - 1,
                         },
-                        captured: None,
+                        captured: maybe_other_piece,
                         move_flag: MoveFlag::Regular,
                     });
                 }
@@ -1344,12 +1377,6 @@ impl Board {
                         && maybe_other_piece.is_none()
                         && self.en_passant_target == Some(Position { rank: next_rank, file: pos.file + 1 }) {
                     // En passant capture
-                    println!("{:?}, {}, {:?}", piece.position, piece.color.to_human(), piece);
-                    println!(
-                        "En passant capture: ep_target: {:?}, ep_captured_pawn: {:?}:",
-                        self.en_passant_target.unwrap(),
-                        (pos.rank, pos.file + 1));
-
                     let captured_piece = self.piece_at(pos.rank, pos.file + 1).expect("Should have piece at the en passant target");
                     if captured_piece.piece_type != PieceType::Pawn {
                         panic!("En passant capture should be a pawn")
@@ -1372,7 +1399,7 @@ impl Board {
                             rank: next_rank,
                             file: pos.file + 1,
                         },
-                        captured: None,
+                        captured: maybe_other_piece,
                         move_flag: MoveFlag::Regular,
                     });
                 }
@@ -1972,7 +1999,9 @@ impl Board {
 
 #[cfg(test)]
 mod tests {
-    use super::{Color, Move, PieceType, Position, Piece, MoveFlag, Board, Status, PinnedPiece, PIECES_CAN_PROMOTE_TO, STARTING_POSITION_FEN};
+    use super::{Color, Move, PieceType, Position, Piece, MoveFlag, Board, Status, PIECES_CAN_PROMOTE_TO, STARTING_POSITION_FEN};
+    use pretty_assertions::assert_eq;
+
     #[test]
     fn test_color_from_char() {
         assert_eq!(Color::from_char('w'), Color::White);
@@ -2874,6 +2903,24 @@ mod tests {
             assert!(!b.get_legal_moves(&b.active_color).unwrap().iter().any(|m| m.move_flag == MoveFlag::CastleKingside));
             assert!(b.get_legal_moves(&b.active_color).unwrap().iter().any(|m| m.move_flag == MoveFlag::CastleQueenside));
         }
+    }
+
+    #[test]
+    fn pawn_capture_test() {
+        let b = Board::from_fen("r1b1kbnr/ppp2ppp/2nppq2/3N4/2PP4/5N2/PP2PPPP/R1BQKB1R b KQkq - 4 5");
+        b.draw_to_terminal();
+
+        assert_eq!(b.active_color, Color::Black);
+
+        let black_pseudo_moves = b.get_all_pseudo_moves(&b.get_active_color(), true);
+        black_pseudo_moves.iter().for_each(|m| println!("{} {}", m.to_algebraic(), m.to_human()));
+        assert!(black_pseudo_moves.contains(&Move::from_algebraic(&b, "e6", "d5")));
+
+        println!();
+
+        let black_moves = b.get_legal_moves(&b.active_color).unwrap();
+        black_moves.iter().for_each(|m| println!("{} {}", m.to_algebraic(), m.to_human()));
+        assert!(black_moves.contains(&Move::from_algebraic(&b, "e6", "d5")));
     }
 
 

@@ -3,6 +3,7 @@ use std::time::Instant;
 
 use crate::board::*;
 use crate::search::*;
+use crate::book::Book;
 
 pub struct Game {
     board: Board,
@@ -43,24 +44,33 @@ impl Game {
         Game::new_from_fen_silent(max_depth, STARTING_POSITION_FEN.to_string())
     }
 
-    pub fn play(&mut self, max_moves: i32, print_search: bool) {
+    pub fn play(&mut self, max_moves: i32, print_search: bool, use_book: bool) {
         let max_moves_in_ply = 2 * max_moves;
+
+
+        let book = if use_book {Some(Book::new())} else {None};
 
         for i in 1..=max_moves_in_ply {
             let now = Instant::now();
             // let selected_move = search(self.max_depth, &self.board);
-            let search_result = minimax(self.max_depth, &self.board).unwrap();
+            let search_result = if use_book {
+                search_with_book(self.max_depth, &self.board, &book.as_ref().unwrap())
+            } else {
+                minimax(self.max_depth, &self.board)
+            }.unwrap();
+            let elaped = now.elapsed().as_secs_f32();
 
             let selected_move = search_result.best_move.unwrap();
             if !self.silent && print_search {
                 search_result.print();
             }
-            let elaped = now.elapsed().as_secs_f32();
+
             if !self.silent {
                 println!("move {}: {} ({} - elapsed: {:.6}s)", (i + 1) / 2,
                     selected_move.to_human(), selected_move.to_algebraic(), elaped);
             };
             self.board = self.board.execute_move(&selected_move);
+
             self.moves.push(selected_move);
             if !self.silent {
                 self.board.draw_to_terminal();
@@ -101,7 +111,7 @@ mod tests {
     #[test]
     fn test_game() {
         let mut game = Game::new(1);
-        game.play(3, false);
+        game.play(3, false, false);
         game.to_pgn();
     }
 }

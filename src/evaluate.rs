@@ -113,9 +113,6 @@ pub fn guess_move_value(_board: &Board, mv: &Move) -> i32 {
 
 
 fn get_piece_adjustment_value(piece: &Piece, is_endgame: bool) -> i32 {
-    if piece.piece_type == PieceType::King {
-        return 0;
-    }
     let raw_table = get_raw_adjustemnt_table(piece, is_endgame);
     let index = match piece.color {
         Color::White => (piece.position.rank - 1) * 8 + piece.position.file - 1,
@@ -137,7 +134,13 @@ fn get_raw_adjustemnt_table(piece: &Piece, is_endgame: bool) -> &[i32; 8*8] {
         PieceType::Knight => &KNIGHTS,
         PieceType::Bishop => &BISHOPS,
         PieceType::Queen => &QUEENS,
-        PieceType::King => todo!("King has no adjustment table"),
+        PieceType::King => {
+            if is_endgame {
+                &KING_END
+            } else {
+                &KING_START
+            }
+        },
     }
 }
 
@@ -204,9 +207,31 @@ const QUEENS: [i32; 8*8] = [
    -20,-10,-10, -5, -5,-10,-10,-20,
    -10,  0,  0,  0,  0,  0,  0,-10,
    -10,  0,  5,  5,  5,  5,  0,-10,
-   -5,  0,  5,  5,  5,  5,  0, -5,
-   0,  0,  5,  5,  5,  5,  0, -5,
+    -5,  0,  5,  5,  5,  5,  0, -5,
+    0,   0,  5,  5,  5,  5,  0, -5,
    -10,  5,  5,  5,  5,  5,  0,-10,
    -10,  0,  5,  0,  0,  0,  0,-10,
    -20,-10,-10, -5, -5,-10,-10,-20
+];
+
+const KING_START: [i32; 8*8] = [
+    -80, -70, -70, -70, -70, -70, -70, -80,
+    -60, -60, -60, -60, -60, -60, -60, -60,
+    -40, -50, -50, -60, -60, -50, -50, -40,
+    -30, -40, -40, -50, -50, -40, -40, -30,
+    -20, -30, -30, -40, -40, -30, -30, -20,
+    -10, -20, -20, -20, -20, -20, -20, -10,
+    20,  20,  -5,   -5,  -5,  -5,  20,  20,
+    20,  30,  10,    0,   0,  10,  30,  20
+];
+
+const KING_END: [i32; 8*8] = [
+    -20, -10, -10, -10, -10, -10, -10, -20,
+    -5,    0,   5,   5,   5,   5,   0,  -5,
+    -10,  -5,  20,  30,  30,  20,  -5, -10,
+    -15, -10,  35,  45,  45,  35, -10, -15,
+    -20, -15,  30,  40,  40,  30, -15, -20,
+    -25, -20,  20,  25,  25,  20, -20, -25,
+    -30, -25,   0,   0,   0,   0, -25, -30,
+    -50, -30, -30, -30, -30, -30, -30, -50
 ];
