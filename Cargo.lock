@@ -751,6 +751,7 @@ dependencies = [
  "once_cell",
  "pretty_assertions",
  "rand",
+ "rayon",
 ]
 
 [[package]]

@@ -101,21 +101,35 @@ pub fn bench_evaluate_sebastian(c: &mut Criterion) {
 
 pub fn bench_moves_from_start_4_deep_1_move(c: &mut Criterion) {
     c.bench_function("move from start 4 deep 1 move", |b| {
-        b.iter(|| Game::new_silent(black_box(4)).play(black_box(1), false))
+        b.iter(|| Game::new_silent(black_box(4)).play(black_box(1), false, false))
     });
 }
 
 pub fn bench_moves_from_start_5_deep_1_move(c: &mut Criterion) {
     c.bench_function("move from start 5 deep 1 move", |b| {
-        b.iter(|| Game::new_silent(black_box(5)).play(black_box(1), false))
+        b.iter(|| Game::new_silent(black_box(5)).play(black_box(1), false, false))
     });
 }
+
+pub fn bench_moves_from_start_2_deep_1_sebastian(c: &mut Criterion) {
+    let mut group = c.benchmark_group("flat-sampling");
+    group.sample_size(10);
+    group.sampling_mode(SamplingMode::Flat);
+    group.bench_function("move from start 2 deep 1 move sebastian", |b| {
+        b.iter(|| {
+            Game::new_from_fen_silent(black_box(2), black_box(SEB_FEN.to_owned()))
+                .play(black_box(1), false, false)
+        })
+    });
+    group.finish();
+}
+
 
 pub fn bench_moves_from_start_4_deep_1_sebastian(c: &mut Criterion) {
     c.bench_function("move from start 4 deep 1 move sebastian", |b| {
         b.iter(|| {
             Game::new_from_fen_silent(black_box(4), black_box(SEB_FEN.to_owned()))
-                .play(black_box(1), false)
+                .play(black_box(1), false, false)
         })
     });
 }
@@ -124,7 +138,7 @@ pub fn bench_moves_from_start_5_deep_1_sebastian(c: &mut Criterion) {
     c.bench_function("move from start 5 deep 1 move sebastian", |b| {
         b.iter(|| {
             Game::new_from_fen_silent(black_box(5), black_box(SEB_FEN.to_owned()))
-                .play(black_box(1), false)
+                .play(black_box(1), false, false)
         })
     });
 }
@@ -143,6 +157,7 @@ criterion_group!(
     bench_evaluate_sebastian,
     // bench_moves_from_start_4_deep_1_move,
     // bench_moves_from_start_5_deep_1_move,
+    bench_moves_from_start_2_deep_1_sebastian,
     // bench_moves_from_start_4_deep_1_sebastian,
     // bench_moves_from_start_5_deep_1_sebastian
 );

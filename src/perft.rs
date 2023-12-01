@@ -7,12 +7,17 @@ pub fn run_perft_test(board: &Board, depth: u8) -> i64 {
     }
 
     let mut nodes = 0;
-    let moves = board.get_legal_moves(&board.get_active_color()).unwrap();
-    for m in moves {
-        let b = board.execute_move(&m);
-        nodes += run_perft_test(&b, depth - 1);
+    let moves = board.get_legal_moves(&board.get_active_color());
+    if let Ok(moves) = moves {
+        for m in moves {
+            let b = board.execute_move(&m);
+            nodes += run_perft_test(&b, depth - 1);
+        }
+        return nodes;
+    } else {
+        // stalemate or checkmate
+        return 0;
     }
-    nodes
 }
 
 /// Perft from starting position

@@ -1,4 +1,5 @@
 use std::cmp::{max, min};
+use rayon::prelude::*;
 
 
 pub const STARTING_POSITION_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";

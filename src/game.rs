@@ -60,7 +60,14 @@ impl Game {
             }.unwrap();
             let elaped = now.elapsed().as_secs_f32();
 
-            let selected_move = search_result.best_move.unwrap();
+            let selected_move = match search_result.best_move {
+                Some(m) => m,
+                None => {
+                    println!("No move found");
+                    // TODO: better messages for stalemate and checkmate
+                    break;
+                }
+            };
             if !self.silent && print_search {
                 search_result.print();
             }
