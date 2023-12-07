@@ -1,5 +1,5 @@
-use crate::board::*;
-
+use crate::board::Board;
+use crate::types::{Color, Move, Piece, PieceType};
 
 pub struct Material {
     pub white_material: i32,
@@ -20,7 +20,8 @@ impl Material {
 
     pub fn get_location_adjusted_material_difference(&self) -> i32 {
         self.white_material + self.white_piece_location_adjustment
-         - self.black_material - self.black_piece_location_adjustment
+            - self.black_material
+            - self.black_piece_location_adjustment
     }
 
     fn piece_to_material(piece: &Piece) -> i32 {
@@ -28,7 +29,7 @@ impl Material {
             PieceType::Pawn => 100,
             PieceType::Rook => 500,
             PieceType::Knight => 300,
-            PieceType::Bishop => 320,  // Bishop is worth slightly more than a knight
+            PieceType::Bishop => 320, // Bishop is worth slightly more than a knight
             PieceType::Queen => 900,
             PieceType::King => 0,
         }
@@ -55,7 +56,7 @@ impl Material {
                     } else {
                         white_piece_material += current_piece_material
                     };
-                },
+                }
                 Color::Black => {
                     black_material += current_piece_material;
                     black_piece_location_adjustment += get_piece_adjustment_value(&piece, false);
@@ -66,7 +67,7 @@ impl Material {
                     }
                 }
             };
-        };
+        }
         Material {
             white_material,
             white_piece_location_adjustment,
@@ -90,15 +91,14 @@ pub fn evaluate_board(board: &Board) -> i32 {
     }
 }
 
-
-
 pub fn guess_move_value(_board: &Board, mv: &Move) -> i32 {
     let mut score = 0;
     let material_difference_multiplier = 10;
 
     if let Some(captured_piece) = mv.captured {
-        score += material_difference_multiplier * (
-            Material::piece_to_material(&captured_piece) - Material::piece_to_material(&mv.piece));
+        score += material_difference_multiplier
+            * (Material::piece_to_material(&captured_piece)
+                - Material::piece_to_material(&mv.piece));
     };
 
     // TODO: add promotion bonus equal to the value of the promoted piece
@@ -109,9 +109,6 @@ pub fn guess_move_value(_board: &Board, mv: &Move) -> i32 {
     score
 }
 
-
-
-
 fn get_piece_adjustment_value(piece: &Piece, is_endgame: bool) -> i32 {
     let raw_table = get_raw_adjustemnt_table(piece, is_endgame);
     let index = match piece.color {
@@ -121,7 +118,7 @@ fn get_piece_adjustment_value(piece: &Piece, is_endgame: bool) -> i32 {
     raw_table[index as usize]
 }
 
-fn get_raw_adjustemnt_table(piece: &Piece, is_endgame: bool) -> &[i32; 8*8] {
+fn get_raw_adjustemnt_table(piece: &Piece, is_endgame: bool) -> &[i32; 8 * 8] {
     match piece.piece_type {
         PieceType::Pawn => {
             if is_endgame {
@@ -129,7 +126,7 @@ fn get_raw_adjustemnt_table(piece: &Piece, is_endgame: bool) -> &[i32; 8*8] {
             } else {
                 &PAWNS
             }
-        },
+        }
         PieceType::Rook => &ROOKS,
         PieceType::Knight => &KNIGHTS,
         PieceType::Bishop => &BISHOPS,
@@ -140,78 +137,47 @@ fn get_raw_adjustemnt_table(piece: &Piece, is_endgame: bool) -> &[i32; 8*8] {
             } else {
                 &KING_START
             }
-        },
+        }
     }
 }
 
 // This part of the code aattributes different weights to pieces in different positions
 // stolen from : https://github.com/SebLague/Chess-Coding-Adventure/blob/Chess-V2-UCI/Chess-Coding-Adventure/src/Core/Evaluation/PieceSquareTable.cs
 
-
-const PAWNS: [i32; 8*8] = [
-    0,   0,   0,   0,   0,   0,   0,   0,
-   50,  50,  50,  50,  50,  50,  50,  50,
-   10,  10,  20,  30,  30,  20,  10,  10,
-    5,   5,  10,  25,  25,  10,   5,   5,
-    0,   0,   0,  20,  20,   0,   0,   0,
-    5,  -5, -10,   0,   0, -10,  -5,   5,
-    5,  10,  10, -20, -20,  10,  10,   5,
-    0,   0,   0,   0,   0,   0,   0,   0
+const PAWNS: [i32; 8 * 8] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 50, 50, 50, 50, 50, 50, 50, 50, 10, 10, 20, 30, 30, 20, 10, 10, 5, 5,
+    10, 25, 25, 10, 5, 5, 0, 0, 0, 20, 20, 0, 0, 0, 5, -5, -10, 0, 0, -10, -5, 5, 5, 10, 10, -20,
+    -20, 10, 10, 5, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
-const PAWNS_END: [i32; 8*8] = [
-    0,   0,   0,   0,   0,   0,   0,   0,
-   80,  80,  80,  80,  80,  80,  80,  80,
-   50,  50,  50,  50,  50,  50,  50,  50,
-   30,  30,  30,  30,  30,  30,  30,  30,
-   20,  20,  20,  20,  20,  20,  20,  20,
-   10,  10,  10,  10,  10,  10,  10,  10,
-   10,  10,  10,  10,  10,  10,  10,  10,
-    0,   0,   0,   0,   0,   0,   0,   0
+const PAWNS_END: [i32; 8 * 8] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 80, 80, 80, 80, 80, 80, 80, 80, 50, 50, 50, 50, 50, 50, 50, 50, 30, 30,
+    30, 30, 30, 30, 30, 30, 20, 20, 20, 20, 20, 20, 20, 20, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
+    10, 10, 10, 10, 10, 10, 0, 0, 0, 0, 0, 0, 0, 0,
 ];
 
-const ROOKS: [i32; 8*8] = [
-   0,  0,  0,  0,  0,  0,  0,  0,
-   5, 10, 10, 10, 10, 10, 10,  5,
-   -5,  0,  0,  0,  0,  0,  0, -5,
-   -5,  0,  0,  0,  0,  0,  0, -5,
-   -5,  0,  0,  0,  0,  0,  0, -5,
-   -5,  0,  0,  0,  0,  0,  0, -5,
-   -5,  0,  0,  0,  0,  0,  0, -5,
-   0,  0,  0,  5,  5,  0,  0,  0
+const ROOKS: [i32; 8 * 8] = [
+    0, 0, 0, 0, 0, 0, 0, 0, 5, 10, 10, 10, 10, 10, 10, 5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0,
+    0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, -5, 0, 0, 0, 0, 0, 0, -5, 0, 0,
+    0, 5, 5, 0, 0, 0,
 ];
 
-const KNIGHTS: [i32; 8*8] = [
-   -50,-40,-30,-30,-30,-30,-40,-50,
-   -40,-20,  0,  0,  0,  0,-20,-40,
-   -30,  0, 10, 15, 15, 10,  0,-30,
-   -30,  5, 15, 20, 20, 15,  5,-30,
-   -30,  0, 15, 20, 20, 15,  0,-30,
-   -30,  5, 10, 15, 15, 10,  5,-30,
-   -40,-20,  0,  5,  5,  0,-20,-40,
-   -50,-40,-30,-30,-30,-30,-40,-50,
+const KNIGHTS: [i32; 8 * 8] = [
+    -50, -40, -30, -30, -30, -30, -40, -50, -40, -20, 0, 0, 0, 0, -20, -40, -30, 0, 10, 15, 15, 10,
+    0, -30, -30, 5, 15, 20, 20, 15, 5, -30, -30, 0, 15, 20, 20, 15, 0, -30, -30, 5, 10, 15, 15, 10,
+    5, -30, -40, -20, 0, 5, 5, 0, -20, -40, -50, -40, -30, -30, -30, -30, -40, -50,
 ];
 
-const BISHOPS: [i32; 8*8] = [
-   -20,-10,-10,-10,-10,-10,-10,-20,
-   -10,  0,  0,  0,  0,  0,  0,-10,
-   -10,  0,  5, 10, 10,  5,  0,-10,
-   -10,  5,  5, 10, 10,  5,  5,-10,
-   -10,  0, 10, 10, 10, 10,  0,-10,
-   -10, 10, 10, 10, 10, 10, 10,-10,
-   -10,  5,  0,  0,  0,  0,  5,-10,
-   -20,-10,-10,-10,-10,-10,-10,-20,
+const BISHOPS: [i32; 8 * 8] = [
+    -20, -10, -10, -10, -10, -10, -10, -20, -10, 0, 0, 0, 0, 0, 0, -10, -10, 0, 5, 10, 10, 5, 0,
+    -10, -10, 5, 5, 10, 10, 5, 5, -10, -10, 0, 10, 10, 10, 10, 0, -10, -10, 10, 10, 10, 10, 10, 10,
+    -10, -10, 5, 0, 0, 0, 0, 5, -10, -20, -10, -10, -10, -10, -10, -10, -20,
 ];
 
-const QUEENS: [i32; 8*8] = [
-   -20,-10,-10, -5, -5,-10,-10,-20,
-   -10,  0,  0,  0,  0,  0,  0,-10,
-   -10,  0,  5,  5,  5,  5,  0,-10,
-    -5,  0,  5,  5,  5,  5,  0, -5,
-    0,   0,  5,  5,  5,  5,  0, -5,
-   -10,  5,  5,  5,  5,  5,  0,-10,
-   -10,  0,  5,  0,  0,  0,  0,-10,
-   -20,-10,-10, -5, -5,-10,-10,-20
+const QUEENS: [i32; 8 * 8] = [
+    -20, -10, -10, -5, -5, -10, -10, -20, -10, 0, 0, 0, 0, 0, 0, -10, -10, 0, 5, 5, 5, 5, 0, -10,
+    -5, 0, 5, 5, 5, 5, 0, -5, 0, 0, 5, 5, 5, 5, 0, -5, -10, 5, 5, 5, 5, 5, 0, -10, -10, 0, 5, 0, 0,
+    0, 0, -10, -20, -10, -10, -5, -5, -10, -10, -20,
 ];
 
 // const KING_START: [i32; 8*8] = [
@@ -225,25 +191,15 @@ const QUEENS: [i32; 8*8] = [
 //     20,  30,  10,    0,   0,  10,  30,  20
 // ];
 
-
-const KING_START: [i32; 8*8] = [
-    -80, -70, -70, -70, -70, -70, -70, -80,
-    -60, -60, -60, -60, -60, -60, -60, -60,
-    -40, -50, -50, -60, -60, -50, -50, -40,
-    -30, -40, -40, -50, -50, -40, -40, -30,
-    -20, -30, -30, -40, -40, -30, -30, -20,
-    -10, -20, -20, -20, -20, -20, -20, -10,
-    20,  20,  -15, -15, -15,  -5,  20,  20,
-    20,  30,  10,  -10,   0,  10,  30,  20
+const KING_START: [i32; 8 * 8] = [
+    -80, -70, -70, -70, -70, -70, -70, -80, -60, -60, -60, -60, -60, -60, -60, -60, -40, -50, -50,
+    -60, -60, -50, -50, -40, -30, -40, -40, -50, -50, -40, -40, -30, -20, -30, -30, -40, -40, -30,
+    -30, -20, -10, -20, -20, -20, -20, -20, -20, -10, 20, 20, -15, -15, -15, -5, 20, 20, 20, 30,
+    10, -10, 0, 10, 30, 20,
 ];
 
-const KING_END: [i32; 8*8] = [
-    -20, -10, -10, -10, -10, -10, -10, -20,
-    -5,    0,   5,   5,   5,   5,   0,  -5,
-    -10,  -5,  20,  30,  30,  20,  -5, -10,
-    -15, -10,  35,  45,  45,  35, -10, -15,
-    -20, -15,  30,  40,  40,  30, -15, -20,
-    -25, -20,  20,  25,  25,  20, -20, -25,
-    -30, -25,   0,   0,   0,   0, -25, -30,
-    -50, -30, -30, -30, -30, -30, -30, -50
+const KING_END: [i32; 8 * 8] = [
+    -20, -10, -10, -10, -10, -10, -10, -20, -5, 0, 5, 5, 5, 5, 0, -5, -10, -5, 20, 30, 30, 20, -5,
+    -10, -15, -10, 35, 45, 45, 35, -10, -15, -20, -15, 30, 40, 40, 30, -15, -20, -25, -20, 20, 25,
+    25, 20, -20, -25, -30, -25, 0, 0, 0, 0, -25, -30, -50, -30, -30, -30, -30, -30, -30, -50,
 ];
