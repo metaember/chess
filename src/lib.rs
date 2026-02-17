@@ -6,3 +6,6 @@ pub mod book;
 pub mod search;
 pub mod game;
 pub mod perft;
+
+#[cfg(test)]
+mod stockfish_tests;

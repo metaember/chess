@@ -630,6 +630,14 @@ impl Board {
             })
             .collect();
 
+        // Double check: only king can move
+        if current_checks.len() >= 2 {
+            my_possible_moves = my_possible_moves
+                .into_iter()
+                .filter(|m| m.piece.piece_type == PieceType::King)
+                .collect();
+        }
+
         // if in single check, we have three options:
         // move the king, capture the checking piece, or block the checking ray if the checker is sliding
         // compute pins
@@ -665,7 +673,8 @@ impl Board {
                 .collect();
         }
 
-        let pins = self.moveget_pins(color);
+        let pin_movegen = MoveGenerator::new(self, *color);
+        let pins = pin_movegen.get_pins(color);
 
         let mut castle_kingside_obstructed = false;
         let mut castle_queenside_obstructed = false;
@@ -717,7 +726,7 @@ impl Board {
                 } in pins.iter()
                 {
                     // if the pinned piece is the one we're currently considering
-                    if pinned_piece == m.piece {
+                    if *pinned_piece == m.piece {
                         // check if the move is allowed by the pin
                         // TODO OPTIMISE: this is a nested loop, can we rewrite another way?
                         can_move_to = valid_responses.iter().find(|&&x| x == m.to).is_some();
@@ -757,8 +766,12 @@ impl Board {
     }
 
     pub fn get_all_pseudo_moves(&self, color: Color, observed_mode: bool) -> Vec<Move> {
-        let move_generator = MoveGenerator::new(self, color);
-        move_generator.collect()
+        let mut move_generator = MoveGenerator::new(self, color);
+        if observed_mode {
+            move_generator.collect_observed()
+        } else {
+            move_generator.collect()
+        }
     }
 
     /// Get the current position of the king
@@ -809,6 +822,7 @@ mod tests {
         Board, Color, Move, MoveFlag, Piece, PieceType, Position, Status, PIECES_CAN_PROMOTE_TO,
         STARTING_POSITION_FEN,
     };
+    use crate::movegen::MoveGenerator;
     use pretty_assertions::assert_eq;
 
     #[test]
@@ -1062,7 +1076,7 @@ mod tests {
         // . . . . . . . .
         let b = Board::from_fen("7k/3r4/8/8/3R4/8/3K4/8 w - - 0 1");
         b.draw_to_terminal();
-        let pins = b.get_pins(&Color::White);
+        let pins = MoveGenerator::new(&b, Color::White).get_pins(&Color::White);
         assert_eq!(pins.len(), 1);
         assert_eq!(pins[0].piece.piece_type, PieceType::Rook);
         assert_eq!(pins[0].piece.position, Position { rank: 4, file: 4 });
@@ -1090,7 +1104,7 @@ mod tests {
         // . . . . . . . .
         let b = Board::from_fen("k7/8/8/3K1N1r/8/8/8/8 w - - 0 1");
         b.draw_to_terminal();
-        let pins = b.get_pins(&Color::White);
+        let pins = MoveGenerator::new(&b, Color::White).get_pins(&Color::White);
         assert_eq!(pins.len(), 1);
         assert_eq!(pins[0].piece.piece_type, PieceType::Knight);
         assert_eq!(pins[0].piece.position, Position { rank: 5, file: 6 });
@@ -1118,7 +1132,7 @@ mod tests {
         // . . . . . . . .
         let b = Board::from_fen("3r4/3r4/8/7k/3Q4/8/3K4/8 w - - 0 1");
         b.draw_to_terminal();
-        let pins = b.get_pins(&Color::White);
+        let pins = MoveGenerator::new(&b, Color::White).get_pins(&Color::White);
         assert_eq!(pins.len(), 1); // other rook is not pinning
         assert_eq!(pins[0].piece.piece_type, PieceType::Queen);
         assert_eq!(pins[0].piece.position, Position { rank: 4, file: 4 });
@@ -1146,7 +1160,7 @@ mod tests {
         // . . . . . . . .
         let b = Board::from_fen("3r4/7k/3r4/8/3R4/8/3K4/8 w - - 0 1");
         b.draw_to_terminal();
-        let pins = b.get_pins(&Color::White);
+        let pins = MoveGenerator::new(&b, Color::White).get_pins(&Color::White);
         assert_eq!(pins.len(), 1); // other rook is not pinning
         assert_eq!(pins[0].piece.piece_type, PieceType::Rook);
         assert_eq!(pins[0].piece.position, Position { rank: 4, file: 4 });
@@ -1174,7 +1188,7 @@ mod tests {
         // . . . . . . . .
         let b = Board::from_fen("7k/8/8/8/3R4/6r1/3K4/8 w - - 0 1");
         b.draw_to_terminal();
-        let pins = b.get_pins(&Color::White);
+        let pins = MoveGenerator::new(&b, Color::White).get_pins(&Color::White);
         assert_eq!(pins.len(), 0);
     }
 
@@ -1190,7 +1204,7 @@ mod tests {
         // . . . . . . . .
         let b = Board::from_fen("7k/8/8/8/3R4/8/3K2r1/8 w - - 0 1");
         b.draw_to_terminal();
-        let pins = b.get_pins(&Color::White);
+        let pins = MoveGenerator::new(&b, Color::White).get_pins(&Color::White);
         assert_eq!(pins.len(), 0);
     }
 
@@ -1206,7 +1220,7 @@ mod tests {
         // . . . . . . . .
         let b = Board::from_fen("7k/8/3R4/8/3K4/8/3r4/8 w - - 0 1");
         b.draw_to_terminal();
-        let pins = b.get_pins(&Color::White);
+        let pins = MoveGenerator::new(&b, Color::White).get_pins(&Color::White);
         assert_eq!(pins.len(), 0);
     }
 
@@ -1222,7 +1236,7 @@ mod tests {
         // . . . . . . . .
         let b = Board::from_fen("3r4/7k/3R4/3K4/3R4/8/3r4/8 w - - 0 1");
         b.draw_to_terminal();
-        let pins = b.get_pins(&Color::White);
+        let pins = MoveGenerator::new(&b, Color::White).get_pins(&Color::White);
         assert_eq!(pins.len(), 2);
 
         assert_eq!(pins[0].piece.piece_type, PieceType::Rook);
@@ -1263,7 +1277,7 @@ mod tests {
         // . . . . . . . .
         let b = Board::from_fen("k7/8/6b1/8/4P3/3K4/8/8 w - - 0 1");
         b.draw_to_terminal();
-        let pins = b.get_pins(&Color::White);
+        let pins = MoveGenerator::new(&b, Color::White).get_pins(&Color::White);
         assert_eq!(pins.len(), 1);
         assert_eq!(pins[0].piece.piece_type, PieceType::Pawn);
         assert_eq!(pins[0].piece.position, Position { rank: 4, file: 5 });
@@ -1291,7 +1305,7 @@ mod tests {
         // . . . . . . . .
         let b = Board::from_fen("7k/b7/8/8/3P4/4K3/8/8 w - - 0 1");
         b.draw_to_terminal();
-        let pins = b.get_pins(&Color::White);
+        let pins = MoveGenerator::new(&b, Color::White).get_pins(&Color::White);
         assert_eq!(pins.len(), 1);
         assert_eq!(pins[0].piece.piece_type, PieceType::Pawn);
         assert_eq!(pins[0].piece.position, Position { rank: 4, file: 4 });
@@ -1319,7 +1333,7 @@ mod tests {
         // . . . . . . . .
         let b = Board::from_fen("7k/8/8/8/4K3/3P4/2b5/8 w - - 0 1");
         b.draw_to_terminal();
-        let pins = b.get_pins(&Color::White);
+        let pins = MoveGenerator::new(&b, Color::White).get_pins(&Color::White);
         assert_eq!(pins.len(), 1);
         assert_eq!(pins[0].piece.piece_type, PieceType::Pawn);
         assert_eq!(pins[0].piece.position, Position { rank: 3, file: 4 });
@@ -1348,7 +1362,7 @@ mod tests {
 
         let b = Board::from_fen("7k/8/8/8/4K3/5Q2/8/7b w - - 0 1");
         b.draw_to_terminal();
-        let pins = b.get_pins(&Color::White);
+        let pins = MoveGenerator::new(&b, Color::White).get_pins(&Color::White);
         assert_eq!(pins.len(), 1);
         assert_eq!(pins[0].piece.piece_type, PieceType::Queen);
         assert_eq!(pins[0].piece.position, Position { rank: 3, file: 6 });
@@ -1368,7 +1382,7 @@ mod tests {
     fn test_pin_fail_1() {
         let b = Board::from_fen("rnbqkbnr/p1pppppp/8/1B6/8/4P3/PPPP1PPP/RNBQK1NR b KQkq - 0 2");
         b.draw_to_terminal();
-        let pins = b.get_pins(&Color::Black);
+        let pins = MoveGenerator::new(&b, Color::Black).get_pins(&Color::Black);
         assert_eq!(pins.len(), 1);
         pins[0]
             .valid_responses
@@ -1444,7 +1458,7 @@ mod tests {
             &Piece::from_algebraic('B', "b5")
         );
 
-        let pins = b.get_pins(&Color::Black);
+        let pins = MoveGenerator::new(&b, Color::Black).get_pins(&Color::Black);
         assert_eq!(pins.len(), 1);
         pins[0]
             .valid_responses
@@ -1904,7 +1918,7 @@ mod tests {
 
         assert_eq!(b.active_color, Color::Black);
 
-        let black_pseudo_moves = b.get_all_pseudo_moves(&b.get_active_color(), true);
+        let black_pseudo_moves = b.get_all_pseudo_moves(b.get_active_color(), true);
         black_pseudo_moves
             .iter()
             .for_each(|m| println!("{} {}", m.to_algebraic(), m.to_human()));
@@ -2102,7 +2116,7 @@ mod tests {
         b.draw_to_terminal();
         assert_eq!(b.active_color, Color::Black);
 
-        let pins = b.get_pins(&Color::Black);
+        let pins = MoveGenerator::new(&b, Color::Black).get_pins(&Color::Black);
         assert_eq!(pins.len(), 1);
         assert_eq!(pins[0].piece.piece_type, PieceType::Pawn);
         assert_eq!(pins[0].piece.position, Position { rank: 7, file: 6 });
@@ -2143,7 +2157,7 @@ mod tests {
         b.draw_to_terminal();
         assert_eq!(b.active_color, Color::Black);
 
-        let pins = b.get_pins(&Color::Black);
+        let pins = MoveGenerator::new(&b, Color::Black).get_pins(&Color::Black);
         assert_eq!(pins.len(), 1);
         assert_eq!(pins[0].piece.piece_type, PieceType::Pawn);
         assert_eq!(pins[0].piece.position, Position { rank: 7, file: 6 });
@@ -2184,7 +2198,7 @@ mod tests {
         b.draw_to_terminal();
         assert_eq!(b.active_color, Color::Black);
 
-        let pins = b.get_pins(&Color::Black);
+        let pins = MoveGenerator::new(&b, Color::Black).get_pins(&Color::Black);
         assert_eq!(pins.len(), 1);
         assert_eq!(pins[0].piece.piece_type, PieceType::Pawn);
         assert_eq!(pins[0].piece.position, Position { rank: 7, file: 6 });
