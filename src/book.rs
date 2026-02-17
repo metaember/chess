@@ -1,8 +1,8 @@
-use std::fs;
-use std::collections::HashMap;
+use crate::board::Board;
+use crate::types::Move;
 use rand::prelude::*;
-use crate::board::{Board, Move};
-
+use std::collections::HashMap;
+use std::fs;
 
 const NEW_POS_PREFIX: &str = "pos ";
 const BOOK_PATH: &str = "/Users/charlesbine/Documents/prog/rust_chess/book/book.txt";
@@ -14,9 +14,7 @@ pub struct Book {
 impl Book {
     pub fn new() -> Self {
         let book = Book::read_book();
-        Self {
-            book
-        }
+        Self { book }
     }
 
     /// Read the book flat file, returning a hash map of fen string
@@ -25,7 +23,8 @@ impl Book {
     fn read_book() -> HashMap<String, HashMap<String, i32>> {
         let mut book: HashMap<String, HashMap<String, i32>> = HashMap::new();
         let mut current_position_map: HashMap<String, i32> = HashMap::new();
-        let contents = fs::read_to_string(BOOK_PATH).expect("Something went wrong reading the file");
+        let contents =
+            fs::read_to_string(BOOK_PATH).expect("Something went wrong reading the file");
         let mut last_fen: Option<String> = None;
 
         for line in contents.lines() {
@@ -49,7 +48,7 @@ impl Book {
 
     /// Given a position, return the best moves from the book.
     /// if a position is not in the book, return None
-    pub fn get_book_moves(&self, current_fen: String) -> Option<&HashMap<String, i32>>{
+    pub fn get_book_moves(&self, current_fen: String) -> Option<&HashMap<String, i32>> {
         self.book.get(&current_fen)
     }
 
@@ -102,19 +101,22 @@ impl Book {
             self.get_uniformly_selected_move(board.to_fen_no_moves().to_string())
         }?;
 
-        let m = Move::from_algebraic(board, move_str.get(0..2).unwrap(), move_str.get(2..4).unwrap());
+        let m = Move::from_algebraic(
+            board,
+            move_str.get(0..2).unwrap(),
+            move_str.get(2..4).unwrap(),
+        );
         Some(m)
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
-    use std::time::Instant;
     use super::Book;
-    use crate::board::{Board, Move, PieceType, MoveFlag};
+    use crate::board::Board;
+    use crate::types::{Move, MoveFlag, PieceType};
     use pretty_assertions::assert_eq;
+    use std::time::Instant;
 
     #[test]
     fn load_book() {
@@ -134,7 +136,11 @@ mod tests {
             // try to make the moves
             for (move_str, count) in moves {
                 // test move
-                let m = Move::from_algebraic(&b, move_str.get(0..2).unwrap(), move_str.get(2..4).unwrap());
+                let m = Move::from_algebraic(
+                    &b,
+                    move_str.get(0..2).unwrap(),
+                    move_str.get(2..4).unwrap(),
+                );
                 if move_str == "e1g1" {
                     assert_eq!(m.piece.piece_type, PieceType::King);
                     assert_eq!(m.move_flag, MoveFlag::CastleKingside);
