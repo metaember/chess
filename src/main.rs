@@ -1,11 +1,13 @@
 use clap::Parser;
 use color_eyre::eyre::Result;
 
+mod types;
 mod board;
 mod book;
 mod evaluate;
 mod search;
 mod game;
+mod movegen;
 
 
 use crate::game::*;
@@ -28,8 +30,8 @@ struct Args {
     print_search: bool,
 
     /// Use the book to select moves
-    #[arg(short, long, default_value_t = true)]
-    use_book: bool,
+    #[arg(short, long, default_value_t = false)]
+    no_book: bool,
 }
 
 
@@ -41,7 +43,7 @@ fn main() -> Result<()> {
 
     println!("Starting game with depth: {}, count: {}, print_search: {}", args.depth, args.count, args.print_search);
     let mut game = Game::new(args.depth);
-    game.play(args.count as i32, args.print_search, args.use_book);
+    game.play(args.count as i32, args.print_search, !args.no_book);
     println!("{}", game.to_pgn());
 
     Ok(())
