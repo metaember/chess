@@ -30,11 +30,18 @@ RUN pnpm build
 # Runtime stage
 FROM debian:bookworm-slim
 
+# Create non-root user
+RUN useradd -r -u 1000 -m chess
+
 WORKDIR /app
 
 # Copy built artifacts
 COPY --from=rust-builder /build/target/release/web_server ./web_server
 COPY --from=web-builder /web ./web
+
+# Set ownership and switch to non-root user
+RUN chown -R chess:chess /app
+USER chess
 
 EXPOSE 3000
 
