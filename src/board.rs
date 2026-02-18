@@ -1,8 +1,22 @@
+use crate::bitboard::{position_to_bb, ATTACK_TABLES, BitboardIter};
 use crate::movegen::{MoveGenerator, PinnedPiece};
 use crate::types::*;
 use crate::zobrist::ZOBRIST_KEYS;
 
 pub const STARTING_POSITION_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+/// Convert PieceType to an index (0-5) for piece_bb array
+#[inline(always)]
+pub const fn piece_type_to_index(pt: PieceType) -> usize {
+    match pt {
+        PieceType::Pawn => 0,
+        PieceType::Rook => 1,
+        PieceType::Knight => 2,
+        PieceType::Bishop => 3,
+        PieceType::Queen => 4,
+        PieceType::King => 5,
+    }
+}
 
 #[derive(Clone)]
 pub struct Board {
@@ -23,6 +37,16 @@ pub struct Board {
     pub black_king_position: Position,
     /// Zobrist hash of the position for transposition table lookups
     pub zobrist_hash: u64,
+
+    // === Bitboard representation ===
+    /// Piece bitboards: piece_bb[color as usize][piece_type as usize]
+    /// Indexed as: [0=White, 1=Black][0=Pawn, 1=Rook, 2=Knight, 3=Bishop, 4=Queen, 5=King]
+    piece_bb: [[u64; 6]; 2],
+    /// All occupied squares
+    occupied: u64,
+    /// Attack maps: all squares attacked by each color (cached, recomputed on move)
+    white_attack_map: u64,
+    black_attack_map: u64,
 }
 
 impl Board {
@@ -117,6 +141,21 @@ impl Board {
             zobrist_hash ^= ZOBRIST_KEYS.en_passant[(ep.file - 1) as usize];
         }
 
+        // Initialize piece bitboards
+        let mut piece_bb = [[0u64; 6]; 2];
+        let mut occupied = 0u64;
+        for piece in &pieces {
+            let sq_bb = position_to_bb(&piece.position);
+            let color_idx = piece.color as usize;
+            let piece_idx = piece_type_to_index(piece.piece_type);
+            piece_bb[color_idx][piece_idx] |= sq_bb;
+            occupied |= sq_bb;
+        }
+
+        // Compute initial attack maps
+        let white_attack_map = Self::compute_attack_map_static(&piece_bb, occupied, Color::White, Some(black_king_position));
+        let black_attack_map = Self::compute_attack_map_static(&piece_bb, occupied, Color::Black, Some(white_king_position));
+
         Board {
             pieces,
             active_color,
@@ -131,6 +170,10 @@ impl Board {
             white_king_position,
             black_king_position,
             zobrist_hash,
+            piece_bb,
+            occupied,
+            white_attack_map,
+            black_attack_map,
         }
     }
 
@@ -140,6 +183,101 @@ impl Board {
 
     pub fn new() -> Board {
         Board::from_fen(STARTING_POSITION_FEN)
+    }
+
+    /// Compute the attack map for a given color using piece bitboards
+    /// This is a static method that doesn't require &self, used during construction
+    fn compute_attack_map_static(
+        piece_bb: &[[u64; 6]; 2],
+        occupied: u64,
+        color: Color,
+        opponent_king_pos: Option<Position>,
+    ) -> u64 {
+        let color_idx = color as usize;
+        let mut attacks = 0u64;
+
+        // For xray attacks through opponent king, we remove the king from occupied
+        let occupied_no_king = match opponent_king_pos {
+            Some(pos) => occupied & !position_to_bb(&pos),
+            None => occupied,
+        };
+
+        // Pawn attacks
+        for sq in BitboardIter(piece_bb[color_idx][0]) {
+            attacks |= ATTACK_TABLES.pawn[color_idx][sq as usize];
+        }
+
+        // Rook attacks
+        for sq in BitboardIter(piece_bb[color_idx][1]) {
+            attacks |= ATTACK_TABLES.rook_attacks(sq, occupied_no_king);
+        }
+
+        // Knight attacks
+        for sq in BitboardIter(piece_bb[color_idx][2]) {
+            attacks |= ATTACK_TABLES.knight[sq as usize];
+        }
+
+        // Bishop attacks
+        for sq in BitboardIter(piece_bb[color_idx][3]) {
+            attacks |= ATTACK_TABLES.bishop_attacks(sq, occupied_no_king);
+        }
+
+        // Queen attacks
+        for sq in BitboardIter(piece_bb[color_idx][4]) {
+            attacks |= ATTACK_TABLES.queen_attacks(sq, occupied_no_king);
+        }
+
+        // King attacks
+        for sq in BitboardIter(piece_bb[color_idx][5]) {
+            attacks |= ATTACK_TABLES.king[sq as usize];
+        }
+
+        attacks
+    }
+
+    /// Recompute attack maps for both colors (call after position changes)
+    fn recompute_attack_maps(&mut self) {
+        self.white_attack_map = Self::compute_attack_map_static(
+            &self.piece_bb,
+            self.occupied,
+            Color::White,
+            Some(self.black_king_position),
+        );
+        self.black_attack_map = Self::compute_attack_map_static(
+            &self.piece_bb,
+            self.occupied,
+            Color::Black,
+            Some(self.white_king_position),
+        );
+    }
+
+    /// Get the attack map for a given color
+    #[inline]
+    pub fn get_attack_map(&self, color: Color) -> u64 {
+        match color {
+            Color::White => self.white_attack_map,
+            Color::Black => self.black_attack_map,
+        }
+    }
+
+    /// Get the occupied squares bitboard
+    #[inline]
+    pub fn get_occupied(&self) -> u64 {
+        self.occupied
+    }
+
+    /// Get piece bitboard for a specific color and piece type
+    #[inline]
+    pub fn get_piece_bb(&self, color: Color, piece_type: PieceType) -> u64 {
+        self.piece_bb[color as usize][piece_type_to_index(piece_type)]
+    }
+
+    /// Get all pieces bitboard for a specific color
+    #[inline]
+    pub fn get_pieces_bb(&self, color: Color) -> u64 {
+        let c = color as usize;
+        self.piece_bb[c][0] | self.piece_bb[c][1] | self.piece_bb[c][2] |
+        self.piece_bb[c][3] | self.piece_bb[c][4] | self.piece_bb[c][5]
     }
 
     pub fn to_fen(&self) -> String {
@@ -550,6 +688,21 @@ impl Board {
             zobrist_hash ^= ZOBRIST_KEYS.en_passant[(ep.file - 1) as usize];
         }
 
+        // Compute piece bitboards
+        let mut piece_bb = [[0u64; 6]; 2];
+        let mut occupied = 0u64;
+        for piece in &pieces {
+            let sq_bb = position_to_bb(&piece.position);
+            let color_idx = piece.color as usize;
+            let piece_idx = piece_type_to_index(piece.piece_type);
+            piece_bb[color_idx][piece_idx] |= sq_bb;
+            occupied |= sq_bb;
+        }
+
+        // Compute attack maps
+        let white_attack_map = Self::compute_attack_map_static(&piece_bb, occupied, Color::White, Some(black_king_position));
+        let black_attack_map = Self::compute_attack_map_static(&piece_bb, occupied, Color::Black, Some(white_king_position));
+
         Board {
             pieces,
             active_color: new_active_color,
@@ -573,6 +726,10 @@ impl Board {
             white_king_position,
             black_king_position,
             zobrist_hash,
+            piece_bb,
+            occupied,
+            white_attack_map,
+            black_attack_map,
         }
     }
 
@@ -791,6 +948,49 @@ impl Board {
         self.zobrist_hash ^= ZOBRIST_KEYS.side_to_move;
         self.active_color = self.active_color.other_color();
 
+        // Update bitboards
+        let color_idx = mv.piece.color as usize;
+        let from_bb = position_to_bb(&mv.from);
+        let to_bb = position_to_bb(&mv.to);
+
+        // Remove piece from old square
+        let original_piece_idx = piece_type_to_index(mv.piece.piece_type);
+        self.piece_bb[color_idx][original_piece_idx] &= !from_bb;
+        self.occupied &= !from_bb;
+
+        // Handle captured piece
+        if let Some(captured) = mv.captured {
+            let cap_bb = position_to_bb(&captured.position);
+            let cap_color_idx = captured.color as usize;
+            let cap_piece_idx = piece_type_to_index(captured.piece_type);
+            self.piece_bb[cap_color_idx][cap_piece_idx] &= !cap_bb;
+            self.occupied &= !cap_bb;
+        }
+
+        // Handle castling rook
+        if let Some((_, old_rook_pos)) = undo.rook_info {
+            let new_rook_pos = match mv.move_flag {
+                MoveFlag::CastleKingside => Position { rank: old_rook_pos.rank, file: 6 },
+                MoveFlag::CastleQueenside => Position { rank: old_rook_pos.rank, file: 4 },
+                _ => unreachable!(),
+            };
+            let old_rook_bb = position_to_bb(&old_rook_pos);
+            let new_rook_bb = position_to_bb(&new_rook_pos);
+            let rook_idx = piece_type_to_index(PieceType::Rook);
+            self.piece_bb[color_idx][rook_idx] &= !old_rook_bb;
+            self.piece_bb[color_idx][rook_idx] |= new_rook_bb;
+            self.occupied &= !old_rook_bb;
+            self.occupied |= new_rook_bb;
+        }
+
+        // Add piece to new square (with correct piece type for promotion)
+        let final_piece_idx = piece_type_to_index(final_piece_type);
+        self.piece_bb[color_idx][final_piece_idx] |= to_bb;
+        self.occupied |= to_bb;
+
+        // Recompute attack maps
+        self.recompute_attack_maps();
+
         undo
     }
 
@@ -891,6 +1091,53 @@ impl Board {
             self.board_to_piece[(captured.position.rank - 1) as usize]
                 [(captured.position.file - 1) as usize] = Some(captured);
         }
+
+        // Restore bitboards
+        let color_idx = mv.piece.color as usize;
+        let from_bb = position_to_bb(&mv.from);
+        let to_bb = position_to_bb(&mv.to);
+        let piece_idx_bb = piece_type_to_index(undo.original_piece_type);
+
+        // Remove piece from destination square (with promotion type if applicable)
+        let moved_piece_idx = if let MoveFlag::Promotion(promoted_to) = mv.move_flag {
+            piece_type_to_index(promoted_to)
+        } else {
+            piece_idx_bb
+        };
+        self.piece_bb[color_idx][moved_piece_idx] &= !to_bb;
+        self.occupied &= !to_bb;
+
+        // Add piece back to original square
+        self.piece_bb[color_idx][piece_idx_bb] |= from_bb;
+        self.occupied |= from_bb;
+
+        // Handle castling rook restoration
+        if let Some((_, old_rook_pos)) = undo.rook_info {
+            let new_rook_pos = match mv.move_flag {
+                MoveFlag::CastleKingside => Position { rank: old_rook_pos.rank, file: 6 },
+                MoveFlag::CastleQueenside => Position { rank: old_rook_pos.rank, file: 4 },
+                _ => unreachable!(),
+            };
+            let old_rook_bb = position_to_bb(&old_rook_pos);
+            let new_rook_bb = position_to_bb(&new_rook_pos);
+            let rook_idx = piece_type_to_index(PieceType::Rook);
+            self.piece_bb[color_idx][rook_idx] &= !new_rook_bb;
+            self.piece_bb[color_idx][rook_idx] |= old_rook_bb;
+            self.occupied &= !new_rook_bb;
+            self.occupied |= old_rook_bb;
+        }
+
+        // Restore captured piece bitboards
+        if let Some(captured) = mv.captured {
+            let cap_bb = position_to_bb(&captured.position);
+            let cap_color_idx = captured.color as usize;
+            let cap_piece_idx = piece_type_to_index(captured.piece_type);
+            self.piece_bb[cap_color_idx][cap_piece_idx] |= cap_bb;
+            self.occupied |= cap_bb;
+        }
+
+        // Recompute attack maps
+        self.recompute_attack_maps();
     }
 
     /// Find the index of a piece in the pieces Vec
@@ -969,24 +1216,28 @@ impl Board {
     ///         - if the king moved, both casling options are dissallowed
     ///         - if either rooks has moved, then that side is dissallowed.
     pub fn get_legal_moves(&self, color: &Color) -> Result<Vec<Move>, Status> {
+        // Use cached attack map for fast check detection
+        let opponent_attack_map = self.get_attack_map(color.other_color());
+
         // 1: get all valid opponent moves and compute pins
-        // We set `observed_mode` here because we need to check if an oppoenent piece is defended
-        // to know if we can capture it with out king. This also does not include the opponent king (
-        // that is our king in this context) because or sliding pieces, squares behind our king also
-        // constiture sqaures they could attack and therefore are invlaid moves for our king
+        // We still need the full move list for:
+        // - Computing which pieces are giving check (for blocking logic)
+        // - Computing pins
         let opponent_potential_moves = self.get_all_pseudo_moves(color.other_color(), true);
 
-        // 2: Compute checks, this subsets the possible pieces to move
+        // 2: Compute checks using the move list for blocking/capture logic
         let my_king = self.get_king(*color);
         let current_checks: Vec<&Move> = opponent_potential_moves
             .iter()
             .filter(|m| m.to == my_king.position)
             .collect();
 
-        let is_in_check = current_checks.len() >= 1;
+        // Use bitboard for fast check detection
+        let is_in_check = self.is_in_check(*color);
 
         let my_pieces: Vec<&Piece> = self.pieces.iter().filter(|p| p.color == *color).collect();
-        let pieces_to_compute_moves_for = match current_checks.len() {
+        // TODO: reimplement piece subsetting optimization for double check
+        let _pieces_to_compute_moves_for = match current_checks.len() {
             0 => my_pieces,
             // but only onto squares that block or capture the attacking piece, or king move
             1 => my_pieces,
@@ -1065,43 +1316,25 @@ impl Board {
         let pin_movegen = MoveGenerator::new(self, *color);
         let pins = pin_movegen.get_pins(color);
 
-        let mut castle_kingside_obstructed = false;
-        let mut castle_queenside_obstructed = false;
-
+        // Use bitboard attack map to check castle obstruction
         let castle_rank = if *color == Color::White { 1 } else { 8 };
 
-        for Move {
-            piece: _,
-            from: _,
-            to,
-            captured: _,
-            move_flag: _,
-        } in opponent_potential_moves.iter()
-        {
-            if !castle_queenside_obstructed
-                && to.rank == castle_rank
-                && (to.file == 3 || to.file == 4)
-            {
-                castle_queenside_obstructed = true;
-            }
-            if !castle_kingside_obstructed
-                && to.rank == castle_rank
-                && (to.file == 7 || to.file == 6)
-            {
-                castle_kingside_obstructed = true;
-            }
-            if castle_kingside_obstructed && castle_queenside_obstructed {
-                break;
-            }
-        }
+        // Check if castling squares are attacked using bitboards
+        let c3 = position_to_bb(&Position { rank: castle_rank, file: 3 });
+        let d4 = position_to_bb(&Position { rank: castle_rank, file: 4 });
+        let f6 = position_to_bb(&Position { rank: castle_rank, file: 6 });
+        let g7 = position_to_bb(&Position { rank: castle_rank, file: 7 });
+
+        let castle_queenside_obstructed = (opponent_attack_map & (c3 | d4)) != 0;
+        let castle_kingside_obstructed = (opponent_attack_map & (f6 | g7)) != 0;
 
         // 4: further filter moves
         my_possible_moves = my_possible_moves
             .into_iter()
-            // 4.A Filter out moves that put the king in check
+            // 4.A Filter out moves that put the king in check using bitboard attack map
             .filter(|m| match m.piece.piece_type {
-                // King cannot move into check
-                PieceType::King => !opponent_potential_moves.iter().any(|om| om.to == m.to),
+                // King cannot move into check - use bitboard for O(1) check
+                PieceType::King => (position_to_bb(&m.to) & opponent_attack_map) == 0,
                 _ => true,
             })
             // 4.B. Filter out invalid moves of a pinned piece
@@ -1278,11 +1511,24 @@ impl Board {
         println!("{}", self.draw_board());
     }
 
-    /// Check if the given color's king is in check
+    /// Check if the given color's king is in check using cached attack maps
+    /// This is O(1) instead of O(n_pieces) since we use precomputed bitboards
+    #[inline]
     pub fn is_in_check(&self, color: Color) -> bool {
-        let king_pos = self.get_king_position(color);
-        let opponent_moves = self.get_all_pseudo_moves(color.other_color(), true);
-        opponent_moves.iter().any(|m| m.to == king_pos)
+        let king_bb = position_to_bb(&self.get_king_position(color));
+        let opponent_attacks = match color {
+            Color::White => self.black_attack_map,
+            Color::Black => self.white_attack_map,
+        };
+        (king_bb & opponent_attacks) != 0
+    }
+
+    /// Check if a specific square is attacked by the given color
+    #[inline]
+    pub fn is_square_attacked_by(&self, pos: &Position, color: Color) -> bool {
+        let sq_bb = position_to_bb(pos);
+        let attacks = self.get_attack_map(color);
+        (sq_bb & attacks) != 0
     }
 
     /// Make a null move (pass turn to opponent without moving)

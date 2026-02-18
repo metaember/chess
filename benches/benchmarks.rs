@@ -1,5 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, SamplingMode};
-use rust_chess::board::{Board, Color};
+use rust_chess::board::Board;
+use rust_chess::types::Color;
 use rust_chess::evaluate::evaluate_board;
 use rust_chess::game::Game;
 use rust_chess::search::{minimax, negamax, negamax_fast, search, MAX_SCORE, MIN_SCORE};
