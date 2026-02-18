@@ -136,6 +136,17 @@ fn piece_type_to_index(pt: PieceType) -> usize {
 }
 
 pub fn evaluate_board(board: &Board) -> i32 {
+    // Use incrementally maintained evaluation scores
+    let unsigned_score = board.get_tapered_score();
+    if board.get_active_color() == Color::White {
+        unsigned_score
+    } else {
+        -unsigned_score
+    }
+}
+
+/// Evaluate board by computing material from scratch (for verification)
+pub fn evaluate_board_slow(board: &Board) -> i32 {
     let material = Material::compute_material(board);
     let unsigned_score = material.get_tapered_score();
     if board.get_active_color() == Color::White {
@@ -532,6 +543,113 @@ mod tests {
             "Advanced pawn should be worth more. Rank 2 = {}, Rank 6 = {}",
             rank_2_value,
             rank_6_value
+        );
+    }
+
+    /// Test that incremental evaluation matches slow evaluation after a series of moves.
+    #[test]
+    fn test_incremental_eval_matches_slow_eval() {
+        let mut board = Board::new();
+
+        // Play some moves and verify incremental eval matches slow eval
+        let moves = [
+            ("e2", "e4"),  // 1. e4
+            ("e7", "e5"),  // 1... e5
+            ("g1", "f3"),  // 2. Nf3
+            ("b8", "c6"),  // 2... Nc6
+            ("f1", "b5"),  // 3. Bb5
+            ("a7", "a6"),  // 3... a6
+            ("b5", "a4"),  // 4. Ba4
+            ("g8", "f6"),  // 4... Nf6
+        ];
+
+        for (from, to) in moves {
+            let mv = crate::types::Move::from_algebraic(&board, from, to);
+            let undo = board.make_move(&mv);
+
+            let fast_eval = evaluate_board(&board);
+            let slow_eval = evaluate_board_slow(&board);
+
+            assert_eq!(
+                fast_eval, slow_eval,
+                "Incremental eval {} != slow eval {} after move {} -> {}",
+                fast_eval, slow_eval, from, to
+            );
+
+            // Also verify after unmake
+            board.unmake_move(&undo);
+            let fast_eval_after_unmake = evaluate_board(&board);
+            let slow_eval_after_unmake = evaluate_board_slow(&board);
+            assert_eq!(
+                fast_eval_after_unmake, slow_eval_after_unmake,
+                "Incremental eval {} != slow eval {} after unmake of {} -> {}",
+                fast_eval_after_unmake, slow_eval_after_unmake, from, to
+            );
+
+            // Re-make the move to continue the sequence
+            board.make_move(&mv);
+        }
+    }
+
+    /// Test incremental evaluation with captures
+    #[test]
+    fn test_incremental_eval_with_captures() {
+        // Start from a position with captures available
+        let mut board = Board::from_fen("r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3");
+
+        // Nf3xe5 (capture)
+        let moves = board.get_legal_moves(&Color::White).unwrap();
+        let capture_move = moves.iter().find(|m| m.from.to_algebraic() == "f3" && m.to.to_algebraic() == "e5").unwrap();
+
+        let undo = board.make_move(capture_move);
+        let fast_eval = evaluate_board(&board);
+        let slow_eval = evaluate_board_slow(&board);
+
+        assert_eq!(
+            fast_eval, slow_eval,
+            "Incremental eval {} != slow eval {} after capture",
+            fast_eval, slow_eval
+        );
+
+        board.unmake_move(&undo);
+        let fast_eval_unmake = evaluate_board(&board);
+        let slow_eval_unmake = evaluate_board_slow(&board);
+
+        assert_eq!(
+            fast_eval_unmake, slow_eval_unmake,
+            "Incremental eval {} != slow eval {} after unmake capture",
+            fast_eval_unmake, slow_eval_unmake
+        );
+    }
+
+    /// Test incremental evaluation with castling
+    #[test]
+    fn test_incremental_eval_with_castling() {
+        // Position where white can castle kingside
+        let mut board = Board::from_fen("r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4");
+
+        // O-O (kingside castle)
+        let moves = board.get_legal_moves(&Color::White).unwrap();
+        let castle_move = moves.iter().find(|m| m.move_flag == crate::types::MoveFlag::CastleKingside).unwrap();
+
+        let undo = board.make_move(castle_move);
+        let fast_eval = evaluate_board(&board);
+        let slow_eval = evaluate_board_slow(&board);
+
+        assert_eq!(
+            fast_eval, slow_eval,
+            "Incremental eval {} != slow eval {} after castling",
+            fast_eval, slow_eval
+        );
+
+        board.unmake_move(&undo);
+        let fast_eval_unmake = evaluate_board(&board);
+        let slow_eval_unmake = evaluate_board_slow(&board);
+
+        assert_eq!(
+            fast_eval_unmake, slow_eval_unmake,
+            "Incremental eval {} != slow eval {} after unmake castling",
+            fast_eval_unmake, slow_eval_unmake
         );
     }
 }

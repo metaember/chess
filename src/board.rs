@@ -1,4 +1,5 @@
 use crate::bitboard::{position_to_bb, ATTACK_TABLES, BitboardIter};
+use crate::evaluate::{get_pst_value, Material, MAX_PHASE, PHASE_WEIGHTS};
 use crate::movegen::{MoveGenerator, PinnedPiece};
 use crate::types::*;
 use crate::zobrist::ZOBRIST_KEYS;
@@ -47,6 +48,16 @@ pub struct Board {
     /// Attack maps: all squares attacked by each color (cached, recomputed on move)
     white_attack_map: u64,
     black_attack_map: u64,
+
+    // === Incremental evaluation ===
+    /// Material scores for [White, Black]
+    material: [i32; 2],
+    /// Middlegame PST scores for [White, Black]
+    pst_mg: [i32; 2],
+    /// Endgame PST scores for [White, Black]
+    pst_eg: [i32; 2],
+    /// Game phase (0 = endgame, MAX_PHASE = opening/middlegame)
+    phase: i32,
 }
 
 impl Board {
@@ -141,15 +152,26 @@ impl Board {
             zobrist_hash ^= ZOBRIST_KEYS.en_passant[(ep.file - 1) as usize];
         }
 
-        // Initialize piece bitboards
+        // Initialize piece bitboards and incremental evaluation
         let mut piece_bb = [[0u64; 6]; 2];
         let mut occupied = 0u64;
+        let mut material = [0i32; 2];
+        let mut pst_mg = [0i32; 2];
+        let mut pst_eg = [0i32; 2];
+        let mut phase = 0i32;
+
         for piece in &pieces {
             let sq_bb = position_to_bb(&piece.position);
             let color_idx = piece.color as usize;
             let piece_idx = piece_type_to_index(piece.piece_type);
             piece_bb[color_idx][piece_idx] |= sq_bb;
             occupied |= sq_bb;
+
+            // Update incremental evaluation
+            material[color_idx] += Material::piece_to_material(piece.piece_type);
+            pst_mg[color_idx] += get_pst_value(piece.piece_type, piece.color, piece.position.rank, piece.position.file, false);
+            pst_eg[color_idx] += get_pst_value(piece.piece_type, piece.color, piece.position.rank, piece.position.file, true);
+            phase += PHASE_WEIGHTS[piece_idx];
         }
 
         // Compute initial attack maps
@@ -174,6 +196,10 @@ impl Board {
             occupied,
             white_attack_map,
             black_attack_map,
+            material,
+            pst_mg,
+            pst_eg,
+            phase,
         }
     }
 
@@ -278,6 +304,41 @@ impl Board {
         let c = color as usize;
         self.piece_bb[c][0] | self.piece_bb[c][1] | self.piece_bb[c][2] |
         self.piece_bb[c][3] | self.piece_bb[c][4] | self.piece_bb[c][5]
+    }
+
+    // === Incremental evaluation getters ===
+
+    /// Get material score for a color
+    #[inline]
+    pub fn get_material(&self, color: Color) -> i32 {
+        self.material[color as usize]
+    }
+
+    /// Get middlegame PST score for a color
+    #[inline]
+    pub fn get_pst_mg(&self, color: Color) -> i32 {
+        self.pst_mg[color as usize]
+    }
+
+    /// Get endgame PST score for a color
+    #[inline]
+    pub fn get_pst_eg(&self, color: Color) -> i32 {
+        self.pst_eg[color as usize]
+    }
+
+    /// Get game phase (0 = endgame, MAX_PHASE = opening/middlegame)
+    #[inline]
+    pub fn get_phase(&self) -> i32 {
+        self.phase
+    }
+
+    /// Get tapered evaluation score (positive = white advantage)
+    #[inline]
+    pub fn get_tapered_score(&self) -> i32 {
+        let mg_score = self.material[0] + self.pst_mg[0] - self.material[1] - self.pst_mg[1];
+        let eg_score = self.material[0] + self.pst_eg[0] - self.material[1] - self.pst_eg[1];
+        let phase = self.phase.clamp(0, MAX_PHASE);
+        (mg_score * phase + eg_score * (MAX_PHASE - phase)) / MAX_PHASE
     }
 
     pub fn to_fen(&self) -> String {
@@ -688,15 +749,26 @@ impl Board {
             zobrist_hash ^= ZOBRIST_KEYS.en_passant[(ep.file - 1) as usize];
         }
 
-        // Compute piece bitboards
+        // Compute piece bitboards and incremental evaluation
         let mut piece_bb = [[0u64; 6]; 2];
         let mut occupied = 0u64;
+        let mut material = [0i32; 2];
+        let mut pst_mg = [0i32; 2];
+        let mut pst_eg = [0i32; 2];
+        let mut phase = 0i32;
+
         for piece in &pieces {
             let sq_bb = position_to_bb(&piece.position);
             let color_idx = piece.color as usize;
             let piece_idx = piece_type_to_index(piece.piece_type);
             piece_bb[color_idx][piece_idx] |= sq_bb;
             occupied |= sq_bb;
+
+            // Update incremental evaluation
+            material[color_idx] += Material::piece_to_material(piece.piece_type);
+            pst_mg[color_idx] += get_pst_value(piece.piece_type, piece.color, piece.position.rank, piece.position.file, false);
+            pst_eg[color_idx] += get_pst_value(piece.piece_type, piece.color, piece.position.rank, piece.position.file, true);
+            phase += PHASE_WEIGHTS[piece_idx];
         }
 
         // Compute attack maps
@@ -730,6 +802,10 @@ impl Board {
             occupied,
             white_attack_map,
             black_attack_map,
+            material,
+            pst_mg,
+            pst_eg,
+            phase,
         }
     }
 
@@ -752,12 +828,21 @@ impl Board {
             original_piece_type: mv.piece.piece_type,
             rook_info: None,
             zobrist_hash: self.zobrist_hash,
+            material: self.material,
+            pst_mg: self.pst_mg,
+            pst_eg: self.pst_eg,
+            phase: self.phase,
         };
 
         let mut undo = undo;
+        let color_idx = mv.piece.color as usize;
 
         // Update Zobrist hash: remove piece from old position
         self.zobrist_hash ^= ZOBRIST_KEYS.piece_key(mv.piece.color, mv.piece.piece_type, &mv.from);
+
+        // Incremental eval: remove piece from old position
+        self.pst_mg[color_idx] -= get_pst_value(mv.piece.piece_type, mv.piece.color, mv.from.rank, mv.from.file, false);
+        self.pst_eg[color_idx] -= get_pst_value(mv.piece.piece_type, mv.piece.color, mv.from.rank, mv.from.file, true);
 
         // Clear the from square on the board array
         self.board_to_piece[(mv.from.rank - 1) as usize][(mv.from.file - 1) as usize] = None;
@@ -765,8 +850,18 @@ impl Board {
         // Handle captures (remove captured piece)
         if let Some(cap_idx) = undo.captured_piece_index {
             let captured = mv.captured.unwrap();
+            let cap_color_idx = captured.color as usize;
+            let cap_piece_idx = piece_type_to_index(captured.piece_type);
+
             // Update Zobrist hash: remove captured piece
             self.zobrist_hash ^= ZOBRIST_KEYS.piece_key(captured.color, captured.piece_type, &captured.position);
+
+            // Incremental eval: remove captured piece
+            self.material[cap_color_idx] -= Material::piece_to_material(captured.piece_type);
+            self.pst_mg[cap_color_idx] -= get_pst_value(captured.piece_type, captured.color, captured.position.rank, captured.position.file, false);
+            self.pst_eg[cap_color_idx] -= get_pst_value(captured.piece_type, captured.color, captured.position.rank, captured.position.file, true);
+            self.phase -= PHASE_WEIGHTS[cap_piece_idx];
+
             // Clear the captured piece's square
             self.board_to_piece[(captured.position.rank - 1) as usize]
                 [(captured.position.file - 1) as usize] = None;
@@ -822,6 +917,12 @@ impl Board {
                 self.zobrist_hash ^= ZOBRIST_KEYS.piece_key(mv.piece.color, PieceType::Rook, &old_rook_pos);
                 self.zobrist_hash ^= ZOBRIST_KEYS.piece_key(mv.piece.color, PieceType::Rook, &new_rook_pos);
 
+                // Incremental eval: move rook
+                self.pst_mg[color_idx] -= get_pst_value(PieceType::Rook, mv.piece.color, old_rook_pos.rank, old_rook_pos.file, false);
+                self.pst_eg[color_idx] -= get_pst_value(PieceType::Rook, mv.piece.color, old_rook_pos.rank, old_rook_pos.file, true);
+                self.pst_mg[color_idx] += get_pst_value(PieceType::Rook, mv.piece.color, new_rook_pos.rank, new_rook_pos.file, false);
+                self.pst_eg[color_idx] += get_pst_value(PieceType::Rook, mv.piece.color, new_rook_pos.rank, new_rook_pos.file, true);
+
                 // Update rook position
                 self.pieces[rook_idx].position = new_rook_pos;
                 self.board_to_piece[(old_rook_pos.rank - 1) as usize]
@@ -848,6 +949,14 @@ impl Board {
         // Handle promotion
         let final_piece_type = if let MoveFlag::Promotion(promoted_to_type) = mv.move_flag {
             self.pieces[piece_idx].piece_type = promoted_to_type;
+
+            // Incremental eval: promotion changes material and phase
+            let pawn_material = Material::piece_to_material(PieceType::Pawn);
+            let promoted_material = Material::piece_to_material(promoted_to_type);
+            self.material[color_idx] += promoted_material - pawn_material;
+            self.phase += PHASE_WEIGHTS[piece_type_to_index(promoted_to_type)];
+            // Note: pawn phase weight is 0, so no need to subtract
+
             promoted_to_type
         } else {
             mv.piece.piece_type
@@ -855,6 +964,10 @@ impl Board {
 
         // Update Zobrist hash: add piece to new position (with correct type after promotion)
         self.zobrist_hash ^= ZOBRIST_KEYS.piece_key(mv.piece.color, final_piece_type, &mv.to);
+
+        // Incremental eval: add piece to new position
+        self.pst_mg[color_idx] += get_pst_value(final_piece_type, mv.piece.color, mv.to.rank, mv.to.file, false);
+        self.pst_eg[color_idx] += get_pst_value(final_piece_type, mv.piece.color, mv.to.rank, mv.to.file, true);
 
         // Update the destination square on the board array
         self.board_to_piece[(mv.to.rank - 1) as usize][(mv.to.file - 1) as usize] =
@@ -1000,6 +1113,12 @@ impl Board {
 
         // Restore Zobrist hash
         self.zobrist_hash = undo.zobrist_hash;
+
+        // Restore incremental evaluation state
+        self.material = undo.material;
+        self.pst_mg = undo.pst_mg;
+        self.pst_eg = undo.pst_eg;
+        self.phase = undo.phase;
 
         // Switch active color back
         self.active_color = self.active_color.other_color();

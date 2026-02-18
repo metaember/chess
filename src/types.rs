@@ -578,6 +578,11 @@ pub struct UndoInfo {
     pub rook_info: Option<(usize, Position)>,
     /// Previous Zobrist hash
     pub zobrist_hash: u64,
+    /// Previous incremental evaluation state
+    pub material: [i32; 2],
+    pub pst_mg: [i32; 2],
+    pub pst_eg: [i32; 2],
+    pub phase: i32,
 }
 
 /// Information needed to undo a null move (pass to opponent without moving)
