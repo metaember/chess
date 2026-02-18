@@ -1379,7 +1379,7 @@ impl Board {
         // 5: check for checkmate or stalemate
         if my_possible_moves.len() == 0 {
             if current_checks.len() > 0 {
-                return Err(Status::Checkmate(color.other_color()));
+                return Err(Status::Checkmate(*color));
             } else {
                 return Err(Status::Stalemate);
             }
@@ -2756,7 +2756,7 @@ mod tests {
         b.draw_to_terminal();
         assert_eq!(b.active_color, Color::Black);
         let legal_moves = b.get_legal_moves(&b.active_color);
-        assert_eq!(legal_moves.unwrap_err(), Status::Checkmate(Color::White));
+        assert_eq!(legal_moves.unwrap_err(), Status::Checkmate(Color::Black));
     }
 
     #[test]
@@ -2775,7 +2775,7 @@ mod tests {
         b.draw_to_terminal();
         assert_eq!(b.active_color, Color::White);
         let legal_moves = b.get_legal_moves(&b.active_color);
-        assert_eq!(legal_moves.unwrap_err(), Status::Checkmate(Color::Black));
+        assert_eq!(legal_moves.unwrap_err(), Status::Checkmate(Color::White));
     }
 
     #[test]
@@ -3025,7 +3025,7 @@ mod tests {
         b.draw_to_terminal();
         assert_eq!(b.active_color, Color::White);
         let legal_moves = b.get_legal_moves(&b.active_color);
-        assert_eq!(legal_moves.unwrap_err(), Status::Checkmate(Color::Black));
+        assert_eq!(legal_moves.unwrap_err(), Status::Checkmate(Color::White));
     }
 
     #[test]

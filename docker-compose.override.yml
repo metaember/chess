@@ -1,0 +1,4 @@
+services:
+  rust-chess:
+    ports:
+      - "3000:3000"
