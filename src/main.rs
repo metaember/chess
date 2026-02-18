@@ -2,6 +2,8 @@ use clap::Parser;
 use color_eyre::eyre::Result;
 
 mod types;
+mod zobrist;
+mod tt;
 mod board;
 mod book;
 mod evaluate;

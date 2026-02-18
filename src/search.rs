@@ -3,6 +3,7 @@
 use crate::board::*;
 use crate::book::Book;
 use crate::evaluate::*;
+use crate::tt::{TranspositionTable, TTFlag};
 use crate::types::{Move, PieceType, Status};
 
 pub const MIN_SCORE: i32 = -1_000_000_000;
@@ -90,7 +91,310 @@ pub fn minimax_no_pruning(max_depth: u8, board: &Board) -> Result<SearchResult, 
     negamax(max_depth, board, alpha, beta, false, false, false)
 }
 
-/// Main minimax function
+/// Search with transposition table (takes mutable board to avoid clone)
+pub fn minimax_with_tt(
+    max_depth: u8,
+    board: &mut Board,
+    tt: &mut TranspositionTable,
+) -> Result<SearchResult, Vec<Move>> {
+    let (alpha, beta) = (MIN_SCORE, MAX_SCORE);
+    negamax_with_tt_mut(max_depth, board, alpha, beta, tt)
+}
+
+/// Iterative deepening search with transposition table
+/// Searches at depths 1, 2, 3, ... up to max_depth
+/// Each iteration benefits from TT entries from previous iterations
+/// Takes mutable board reference to avoid cloning - board state is preserved after search
+pub fn iterative_deepening(
+    max_depth: u8,
+    board: &mut Board,
+    tt: &mut TranspositionTable,
+) -> Result<SearchResult, Vec<Move>> {
+    let mut best_result: Option<SearchResult> = None;
+    let mut total_nodes = 0;
+    let mut total_quiescent_nodes = 0;
+
+    for depth in 1..=max_depth {
+        let result = negamax_with_tt_mut(depth, board, MIN_SCORE, MAX_SCORE, tt)?;
+        total_nodes += result.nodes_searched;
+        total_quiescent_nodes += result.quiescent_nodes_searched;
+
+        best_result = Some(SearchResult {
+            best_move: result.best_move,
+            best_score: result.best_score,
+            nodes_searched: total_nodes,
+            quiescent_nodes_searched: total_quiescent_nodes,
+            moves: result.moves,
+        });
+    }
+
+    Ok(best_result.unwrap())
+}
+
+/// Iterative deepening with time limit (in milliseconds)
+/// Returns the best result found within the time limit
+pub fn iterative_deepening_timed(
+    max_depth: u8,
+    board: &mut Board,
+    tt: &mut TranspositionTable,
+    max_time_ms: u64,
+) -> Result<SearchResult, Vec<Move>> {
+    use std::time::Instant;
+
+    let mut best_result: Option<SearchResult> = None;
+    let mut total_nodes = 0;
+    let mut total_quiescent_nodes = 0;
+    let start = Instant::now();
+
+    for depth in 1..=max_depth {
+        // Check if we've exceeded time limit
+        if start.elapsed().as_millis() as u64 > max_time_ms {
+            break;
+        }
+
+        let result = negamax_with_tt_mut(depth, board, MIN_SCORE, MAX_SCORE, tt)?;
+        total_nodes += result.nodes_searched;
+        total_quiescent_nodes += result.quiescent_nodes_searched;
+
+        best_result = Some(SearchResult {
+            best_move: result.best_move,
+            best_score: result.best_score,
+            nodes_searched: total_nodes,
+            quiescent_nodes_searched: total_quiescent_nodes,
+            moves: result.moves,
+        });
+    }
+
+    Ok(best_result.unwrap_or(SearchResult {
+        best_move: None,
+        best_score: 0,
+        nodes_searched: total_nodes,
+        quiescent_nodes_searched: total_quiescent_nodes,
+        moves: vec![],
+    }))
+}
+
+/// Internal negamax with TT support
+fn negamax_with_tt_mut(
+    max_depth: u8,
+    board: &mut Board,
+    alpha: i32,
+    beta: i32,
+    tt: &mut TranspositionTable,
+) -> Result<SearchResult, Vec<Move>> {
+    let original_alpha = alpha;
+    let mut alpha = alpha;
+
+    // Probe transposition table
+    if let Some((score, best_move)) = tt.probe(board.zobrist_hash, max_depth, alpha, beta) {
+        return Ok(SearchResult {
+            best_move,
+            best_score: score,
+            nodes_searched: 0,
+            quiescent_nodes_searched: 0,
+            moves: vec![],
+        });
+    }
+
+    if max_depth == 0 {
+        // Quiescence search at leaf
+        return negamax_captures_only_mut(board, alpha, beta);
+    }
+
+    // Null move pruning: if we can give the opponent a free move and still
+    // beat beta, we can prune this branch
+    // Conditions: not in check, sufficient depth, not at root
+    const NULL_MOVE_REDUCTION: u8 = 2;
+    let active_color = board.get_active_color();
+    if max_depth >= 3 && !board.is_in_check(active_color) && beta < MAX_SCORE - 1000 {
+        let undo = board.make_null_move();
+        // Search with reduced depth
+        let null_result = negamax_with_tt_mut(
+            max_depth - 1 - NULL_MOVE_REDUCTION,
+            board,
+            -beta,
+            -beta + 1, // Null window search
+            tt,
+        );
+        board.unmake_null_move(&undo);
+
+        if let Ok(result) = null_result {
+            // Negate because of negamax
+            let null_score = -result.best_score;
+            // If opponent can't beat beta even with a free move, prune
+            if null_score >= beta {
+                return Ok(SearchResult {
+                    best_move: None,
+                    best_score: beta,
+                    nodes_searched: result.nodes_searched,
+                    quiescent_nodes_searched: result.quiescent_nodes_searched,
+                    moves: vec![],
+                });
+            }
+        }
+    }
+
+    let legal_moves = match board.get_legal_moves(&board.get_active_color()) {
+        Ok(moves) => moves,
+        Err(Status::Checkmate(_)) => {
+            return Ok(SearchResult {
+                best_move: None,
+                best_score: MIN_SCORE,
+                nodes_searched: 0,
+                quiescent_nodes_searched: 0,
+                moves: vec![],
+            })
+        }
+        Err(Status::Stalemate) => {
+            return Ok(SearchResult {
+                best_move: None,
+                best_score: 0,
+                nodes_searched: 0,
+                quiescent_nodes_searched: 0,
+                moves: vec![],
+            })
+        }
+        _ => panic!("No legal moves, not a stalemate or a checkmate"),
+    };
+
+    // Move ordering: put TT best move first, then MVV-LVA
+    let tt_best_move = tt.get_best_move(board.zobrist_hash);
+    let legal_moves = {
+        let mut moves_and_scores: Vec<_> = legal_moves
+            .iter()
+            .map(|m| {
+                let score = if Some(*m) == tt_best_move {
+                    1_000_000 // TT move gets highest priority
+                } else {
+                    guess_move_value(board, m)
+                };
+                (m, score)
+            })
+            .collect();
+        moves_and_scores.sort_by(|a, b| b.1.cmp(&a.1));
+        moves_and_scores.iter().map(|(m, _)| **m).collect::<Vec<Move>>()
+    };
+
+    let mut current_best_move = legal_moves[0];
+    let mut current_best_score = MIN_SCORE;
+    let mut total_nodes_searched = 0;
+    let mut total_quiescent_nodes_searched = 0;
+    let mut current_moves = vec![];
+
+    // Late Move Reductions (LMR) parameters
+    const LMR_FULL_DEPTH_MOVES: usize = 4; // Number of moves to search at full depth
+    const LMR_REDUCTION_LIMIT: u8 = 3;     // Minimum depth to apply LMR
+    let in_check = board.is_in_check(active_color);
+
+    for (move_index, m) in legal_moves.iter().enumerate() {
+        if let Some(captured) = m.captured {
+            if captured.piece_type == PieceType::King {
+                return Err(vec![*m]);
+            }
+        }
+        let undo = board.make_move(m);
+
+        // Late Move Reductions: search later moves at reduced depth
+        // Conditions: not first few moves, sufficient depth, not in check, not a capture
+        let needs_full_search;
+        let res = if move_index >= LMR_FULL_DEPTH_MOVES
+            && max_depth >= LMR_REDUCTION_LIMIT
+            && !in_check
+            && m.captured.is_none()
+        {
+            // Search with reduced depth first
+            let reduced_result = negamax_with_tt_mut(max_depth - 2, board, -alpha - 1, -alpha, tt);
+
+            // If it beats alpha, we need to re-search at full depth
+            needs_full_search = match &reduced_result {
+                Ok(r) => -r.best_score > alpha,
+                Err(_) => true,
+            };
+
+            if needs_full_search {
+                negamax_with_tt_mut(max_depth - 1, board, -beta, -alpha, tt)
+            } else {
+                reduced_result
+            }
+        } else {
+            negamax_with_tt_mut(max_depth - 1, board, -beta, -alpha, tt)
+        };
+        board.unmake_move(&undo);
+
+        match res {
+            Ok(SearchResult {
+                best_move: _,
+                best_score: evaluation,
+                nodes_searched,
+                quiescent_nodes_searched,
+                moves,
+            }) => {
+                total_nodes_searched += nodes_searched;
+                total_quiescent_nodes_searched += quiescent_nodes_searched;
+                let evaluation = -evaluation;
+
+                if evaluation > current_best_score {
+                    current_best_score = evaluation;
+                    current_best_move = *m;
+                    current_moves = moves;
+                }
+
+                if evaluation >= beta {
+                    // Beta cutoff - store as lower bound
+                    tt.store(
+                        board.zobrist_hash,
+                        max_depth,
+                        evaluation,
+                        TTFlag::LowerBound,
+                        Some(*m),
+                    );
+                    return Ok(SearchResult {
+                        best_move: Some(*m),
+                        best_score: beta,
+                        nodes_searched: total_nodes_searched,
+                        quiescent_nodes_searched: total_quiescent_nodes_searched,
+                        moves: current_moves,
+                    });
+                }
+                alpha = alpha.max(evaluation);
+            }
+            Err(moves) => {
+                board.draw_to_terminal();
+                let mut cur_move_vec = vec![*m];
+                cur_move_vec.append(&mut moves.clone());
+                return Err(cur_move_vec);
+            }
+        }
+    }
+
+    // Determine TT flag
+    let flag = if current_best_score <= original_alpha {
+        TTFlag::UpperBound
+    } else {
+        TTFlag::Exact
+    };
+
+    // Store in TT
+    tt.store(
+        board.zobrist_hash,
+        max_depth,
+        current_best_score,
+        flag,
+        Some(current_best_move),
+    );
+
+    current_moves.push(current_best_move);
+
+    Ok(SearchResult {
+        best_move: Some(current_best_move),
+        best_score: current_best_score,
+        nodes_searched: total_nodes_searched,
+        quiescent_nodes_searched: total_quiescent_nodes_searched,
+        moves: current_moves,
+    })
+}
+
+/// Main minimax function (immutable wrapper)
 /// TODO: maybe discount further moves by a tiny bit to favor short mating sequences
 pub fn negamax(
     max_depth: u8,
@@ -101,10 +405,24 @@ pub fn negamax(
     use_move_ordering: bool,
     quiescence: bool,
 ) -> Result<SearchResult, Vec<Move>> {
+    let mut board = board.clone();
+    negamax_mut(max_depth, &mut board, alpha, beta, use_ab_pruning, use_move_ordering, quiescence)
+}
+
+/// Main minimax function (mutable version using make/unmake)
+fn negamax_mut(
+    max_depth: u8,
+    board: &mut Board,
+    alpha: i32,
+    beta: i32,
+    use_ab_pruning: bool,
+    use_move_ordering: bool,
+    quiescence: bool,
+) -> Result<SearchResult, Vec<Move>> {
     if max_depth == 0 {
         // If we've reached the maximum depth
         if quiescence {
-            return negamax_captures_only(board, alpha, beta);
+            return negamax_captures_only_mut(board, alpha, beta);
         } else {
             let score = evaluate_board(board);
             return Ok(SearchResult {
@@ -143,7 +461,7 @@ pub fn negamax(
         _ => panic!("No legal moves, not a stalemate or a checkmate"),
     };
 
-    // if using move ordersing, we sort the moves by their value heuristic here
+    // if using move ordering, we sort the moves by their value heuristic here
     let legal_moves = if use_move_ordering {
         let mut moves_and_scores = legal_moves
             .iter()
@@ -159,12 +477,11 @@ pub fn negamax(
         legal_moves
     };
 
-    let mut current_best_move = &legal_moves[0];
+    let mut current_best_move = legal_moves[0];
     let mut current_best_score = MIN_SCORE;
     let mut total_nodes_searched = 0;
     let mut total_quiescent_nodes_searched = 0;
     let mut current_moves = vec![];
-    let mut current_scores = vec![];
 
     for m in &legal_moves {
         if let Some(captured) = m.captured {
@@ -172,16 +489,18 @@ pub fn negamax(
                 return Err(vec![*m]);
             }
         }
-        let b = board.execute_move(&m);
-        let res = negamax(
+        let undo = board.make_move(m);
+        let res = negamax_mut(
             max_depth - 1,
-            &b,
+            board,
             -beta,
             -alpha,
             use_ab_pruning,
             use_move_ordering,
             quiescence,
         );
+        board.unmake_move(&undo);
+
         match res {
             Ok(SearchResult {
                 best_move: _, // best_move from prev iteration
@@ -196,7 +515,7 @@ pub fn negamax(
 
                 if evaluation > current_best_score {
                     current_best_score = evaluation;
-                    current_best_move = m;
+                    current_best_move = *m;
                     current_moves = moves;
                 };
 
@@ -212,7 +531,7 @@ pub fn negamax(
                 }
             }
             Err(moves) => {
-                b.draw_to_terminal();
+                board.draw_to_terminal();
                 let mut cur_move_vec = vec![*m];
                 cur_move_vec.append(&mut moves.clone());
                 return Err(cur_move_vec);
@@ -220,11 +539,10 @@ pub fn negamax(
         }
     }
 
-    current_moves.push(current_best_move.clone());
-    current_scores.push(current_best_score);
+    current_moves.push(current_best_move);
 
     Ok(SearchResult {
-        best_move: Some(*current_best_move),
+        best_move: Some(current_best_move),
         best_score: current_best_score,
         nodes_searched: total_nodes_searched,
         quiescent_nodes_searched: total_quiescent_nodes_searched,
@@ -237,13 +555,34 @@ pub fn negamax(
 /// metadata on the bast path found
 ///
 /// TODO: maybe add checks and promotions here as well?
+const MAX_QUIESCENCE_DEPTH: u8 = 6;
+
 pub fn negamax_captures_only(
     board: &Board,
     alpha: i32,
     beta: i32,
 ) -> Result<SearchResult, Vec<Move>> {
+    let mut board = board.clone();
+    negamax_captures_only_mut(&mut board, alpha, beta)
+}
+
+fn negamax_captures_only_mut(
+    board: &mut Board,
+    alpha: i32,
+    beta: i32,
+) -> Result<SearchResult, Vec<Move>> {
+    negamax_captures_only_mut_with_depth(board, alpha, beta, MAX_QUIESCENCE_DEPTH)
+}
+
+fn negamax_captures_only_mut_with_depth(
+    board: &mut Board,
+    alpha: i32,
+    beta: i32,
+    depth_remaining: u8,
+) -> Result<SearchResult, Vec<Move>> {
     let evaluation = evaluate_board(&board);
-    if evaluation > beta {
+    // Stand-pat: if current position is already good enough, we can stop
+    if evaluation >= beta {
         return Ok(SearchResult {
             best_move: None,
             best_score: beta,
@@ -253,49 +592,37 @@ pub fn negamax_captures_only(
         });
     }
 
+    // If we've reached max quiescence depth, return static evaluation
+    if depth_remaining == 0 {
+        return Ok(SearchResult {
+            best_move: None,
+            best_score: evaluation,
+            nodes_searched: 1,
+            quiescent_nodes_searched: 1,
+            moves: vec![],
+        });
+    }
+
     let mut alpha = alpha.max(evaluation);
 
-    let legal_moves = match board.get_legal_moves(&board.get_active_color()) {
-        Ok(moves) => moves,
-        Err(Status::Checkmate(_)) => {
-            return Ok(SearchResult {
-                best_move: None,
-                best_score: MIN_SCORE,
-                nodes_searched: 0,
-                quiescent_nodes_searched: 0,
-                moves: vec![],
-            })
-        }
-        Err(Status::Stalemate) => {
-            return Ok(SearchResult {
-                best_move: None,
-                best_score: 0,
-                nodes_searched: 0,
-                quiescent_nodes_searched: 0,
-                moves: vec![],
-            })
-        }
-        _ => panic!("No legal moves, not a stalemate or a checkmate"),
-    };
+    // Use optimized captures-only generation
+    let mut captures = board.get_legal_captures(&board.get_active_color());
 
-    // TODO: put this flag in the move generation to save on some copies
-    let captures = legal_moves
-        .into_iter()
-        .filter(|m| m.captured.is_some())
-        .collect::<Vec<Move>>();
+    // MVV-LVA ordering: sort by captured piece value (descending) - attacker value (ascending)
+    captures.sort_by_key(|m| {
+        let victim_value = m.captured.map_or(0, |_p| guess_move_value(board, m));
+        -victim_value // Negative for descending sort (best captures first)
+    });
 
     let mut current_best_move = None;
     let mut total_nodes_searched = 0;
     let mut total_quiescent_nodes_searched = 0;
     let mut current_moves = vec![];
-    let mut current_scores = vec![];
 
-    // TODO: use move ordering in the quiescence search??
     for m in captures {
-        // board.draw_to_terminal();
-        let b = board.execute_move(&m);
-        // b.draw_to_terminal();
-        let search_res = negamax_captures_only(&b, -beta, -alpha).unwrap();
+        let undo = board.make_move(&m);
+        let search_res = negamax_captures_only_mut_with_depth(board, -beta, -alpha, depth_remaining - 1).unwrap();
+        board.unmake_move(&undo);
 
         let evaluation = -search_res.best_score;
         total_nodes_searched += search_res.nodes_searched;
@@ -304,8 +631,7 @@ pub fn negamax_captures_only(
         if evaluation >= beta {
             current_best_move = Some(m);
             current_moves = search_res.moves;
-            current_moves.push(m.clone());
-            current_scores.push(beta);
+            current_moves.push(m);
 
             return Ok(SearchResult {
                 best_move: current_best_move,
@@ -326,10 +652,15 @@ pub fn negamax_captures_only(
     });
 }
 
-pub fn negamax_fast(deapth: i32, board: &Board, alpha: i32, beta: i32, quiescence: bool) -> i32 {
-    if deapth == 0 {
+pub fn negamax_fast(depth: i32, board: &Board, alpha: i32, beta: i32, quiescence: bool) -> i32 {
+    let mut board = board.clone();
+    negamax_fast_mut(depth, &mut board, alpha, beta, quiescence)
+}
+
+fn negamax_fast_mut(depth: i32, board: &mut Board, alpha: i32, beta: i32, quiescence: bool) -> i32 {
+    if depth == 0 {
         if quiescence {
-            return negamax_captures_only_fast(board, alpha, beta);
+            return negamax_captures_only_fast_mut(board, alpha, beta);
         }
         return evaluate_board(&board);
     };
@@ -348,8 +679,9 @@ pub fn negamax_fast(deapth: i32, board: &Board, alpha: i32, beta: i32, quiescenc
     let mut alpha = alpha;
 
     for m in legal_moves {
-        let b = board.execute_move(&m);
-        let evaluation = -negamax_fast(deapth - 1, &b, -beta, -alpha, quiescence);
+        let undo = board.make_move(&m);
+        let evaluation = -negamax_fast_mut(depth - 1, board, -beta, -alpha, quiescence);
+        board.unmake_move(&undo);
         if evaluation >= beta {
             return beta;
         }
@@ -363,33 +695,38 @@ pub fn negamax_fast(deapth: i32, board: &Board, alpha: i32, beta: i32, quiescenc
 ///
 /// TODO: maybe add checks and promotions here as well?
 pub fn negamax_captures_only_fast(board: &Board, alpha: i32, beta: i32) -> i32 {
+    let mut board = board.clone();
+    negamax_captures_only_fast_mut(&mut board, alpha, beta)
+}
+
+fn negamax_captures_only_fast_mut(board: &mut Board, alpha: i32, beta: i32) -> i32 {
+    negamax_captures_only_fast_mut_with_depth(board, alpha, beta, MAX_QUIESCENCE_DEPTH)
+}
+
+fn negamax_captures_only_fast_mut_with_depth(board: &mut Board, alpha: i32, beta: i32, depth_remaining: u8) -> i32 {
     let evaluation = evaluate_board(&board);
-    if evaluation > beta {
+    // Stand-pat: if current position is already good enough, we can stop
+    if evaluation >= beta {
         return beta;
     }
+
+    // If we've reached max quiescence depth, return static evaluation
+    if depth_remaining == 0 {
+        return evaluation;
+    }
+
     let mut alpha = alpha.max(evaluation);
 
-    let legal_moves = match board.get_legal_moves(&board.get_active_color()) {
-        Ok(moves) => moves,
-        Err(Status::Checkmate(_)) => {
-            return MIN_SCORE;
-        }
-        Err(Status::Stalemate) => {
-            return 0;
-        }
-        _ => panic!("No legal moves, not a stalemate or a checkmate"),
-    };
+    // Use optimized captures-only generation
+    let mut captures = board.get_legal_captures(&board.get_active_color());
 
-    let captures = legal_moves
-        .into_iter()
-        .filter(|m| m.captured.is_some())
-        .collect::<Vec<Move>>();
-
-    // TODO: use move ordering in the quiescence search??
+    // MVV-LVA ordering: sort by captured piece value (descending) - attacker value (ascending)
+    captures.sort_by_key(|m| -guess_move_value(board, m));
 
     for m in captures {
-        let b = board.execute_move(&m);
-        let evaluation = -negamax_captures_only_fast(&b, -beta, -alpha);
+        let undo = board.make_move(&m);
+        let evaluation = -negamax_captures_only_fast_mut_with_depth(board, -beta, -alpha, depth_remaining - 1);
+        board.unmake_move(&undo);
         if evaluation >= beta {
             return beta;
         }

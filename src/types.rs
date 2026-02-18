@@ -553,3 +553,38 @@ impl RaysForBoard {
 }
 
 // static RAYS_FOR_BOARD: RaysForBoard = RaysForBoard::new();
+
+/// Information needed to undo a move. Stored during make_move, used in unmake_move.
+#[derive(Debug, Clone)]
+pub struct UndoInfo {
+    /// The move that was made
+    pub mv: Move,
+    /// Previous castling rights
+    pub castle_kingside_white: bool,
+    pub castle_queenside_white: bool,
+    pub castle_kingside_black: bool,
+    pub castle_queenside_black: bool,
+    /// Previous en passant target
+    pub en_passant_target: Option<Position>,
+    /// Previous halfmove clock
+    pub halfmove_clock: u32,
+    /// The piece index in the pieces Vec that was moved
+    pub moved_piece_index: usize,
+    /// The index of the captured piece (if any) in the pieces Vec
+    pub captured_piece_index: Option<usize>,
+    /// Original piece type (for undoing promotion)
+    pub original_piece_type: PieceType,
+    /// For castling: the rook's index and original position
+    pub rook_info: Option<(usize, Position)>,
+    /// Previous Zobrist hash
+    pub zobrist_hash: u64,
+}
+
+/// Information needed to undo a null move (pass to opponent without moving)
+#[derive(Debug, Clone)]
+pub struct NullMoveUndo {
+    /// Previous en passant target
+    pub en_passant_target: Option<Position>,
+    /// Previous Zobrist hash
+    pub zobrist_hash: u64,
+}
