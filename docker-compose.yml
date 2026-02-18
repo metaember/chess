@@ -1,0 +1,10 @@
+services:
+  rust-chess:
+    build: .
+    container_name: rust-chess
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M

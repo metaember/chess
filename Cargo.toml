@@ -15,6 +15,9 @@ rand = "0.8.5"
 rayon = "1.8.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+tower-http = { version = "0.5", features = ["fs", "cors"] }
 
 [dev-dependencies]
 criterion = { version = "0.4", features = ["html_reports"] }
@@ -23,6 +26,14 @@ pretty_assertions = "1.4.0"
 [[bin]]
 name = "generate_stockfish_reference"
 path = "src/bin/generate_stockfish_reference.rs"
+
+[[bin]]
+name = "web_server"
+path = "src/bin/web_server.rs"
+
+[[bin]]
+name = "benchmark_timing"
+path = "src/bin/benchmark_timing.rs"
 
 [[bench]]
 name = "benchmarks"

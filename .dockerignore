@@ -1,0 +1,11 @@
+target/
+web/
+web-app/node_modules/
+web-app/dist/
+.git/
+.gitignore
+*.md
+games/
+flamescope.json
+.vscode/
+.DS_Store

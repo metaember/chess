@@ -1,0 +1,17 @@
+services:
+  rust-chess:
+    labels:
+      - "traefik.enable=true"
+      - "my_traefik.proxy_network=public"
+      - "traefik.http.routers.rust-chess.rule=Host(`chess.chrls.io`)"
+      - "traefik.http.routers.rust-chess.entrypoints=websecure"
+      - "traefik.http.routers.rust-chess.tls.certresolver=cloudflare"
+      - "traefik.http.routers.rust-chess.middlewares=rust-chess-auth"
+      - "traefik.http.middlewares.rust-chess-auth.basicauth.users=${BASIC_AUTH_USERS}"
+      - "traefik.http.services.rust-chess.loadbalancer.server.port=3000"
+    networks:
+      - traefik-public
+
+networks:
+  traefik-public:
+    external: true
