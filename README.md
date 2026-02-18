@@ -5,13 +5,13 @@ Chess bot written in rust
 
 ### Speed Optimizations
 
-- [ ] **Incremental PST Evaluation**
+- [x] **Incremental PST Evaluation** ✓ DONE
 
-  Currently the evaluation function iterates all pieces on every leaf node, which is O(n_pieces) per eval call. Instead, maintain a running piece-square table score that updates incrementally during `make_move`/`unmake_move`. When a piece moves, subtract its old square value and add its new square value. When a piece is captured, subtract its value. This reduces evaluation to O(1) per move.
+  ~~Currently the evaluation function iterates all pieces on every leaf node, which is O(n_pieces) per eval call.~~ Now maintains running PST scores that update incrementally during `make_move`/`unmake_move`. Evaluation is now O(1) per position.
 
-- [ ] **Remove `pieces: Vec<Piece>` Redundancy**
+- [x] **Remove `pieces: Vec<Piece>` Redundancy** ✓ PARTIAL
 
-  The board maintains both bitboards AND a `pieces` vector. The `find_piece_index()` function does a linear scan O(n) on every move. Since bitboards already encode piece positions, remove the vector entirely and iterate pieces via `BitboardIter` over `piece_bb[color][piece_type]`. This eliminates the sync overhead and linear scans.
+  Added `iter_pieces()` method using bitboards. Updated hot paths (evaluation, material counting, pin detection) to use bitboards. The pieces Vec is still used in make/unmake_move but is no longer on the critical evaluation path.
 
 - [ ] **Lazy/Incremental Attack Map Updates**
 
@@ -27,9 +27,9 @@ Chess bot written in rust
 
 ### Strength Optimizations
 
-- [ ] **Enable Endgame PST Tables**
+- [x] **Enable Endgame PST Tables** ✓ DONE
 
-  The codebase defines `PAWNS_END` and `KING_END` tables but `is_endgame` is hardcoded to `false`. Implement tapered evaluation with phase detection based on remaining material: `phase = (queens*4 + rooks*2 + bishops + knights) / 24`. Interpolate between middlegame and endgame scores: `score = (mg * phase + eg * (1-phase))`. This properly handles king activation and pawn advancement in endgames.
+  ~~The codebase defines `PAWNS_END` and `KING_END` tables but `is_endgame` is hardcoded to `false`.~~ Now uses tapered evaluation with phase detection: `phase = (queens*4 + rooks*2 + bishops + knights)`. Interpolates between middlegame and endgame PST scores based on remaining material.
 
 - [ ] **Killer Move Heuristic**
 
@@ -69,19 +69,19 @@ Chess bot written in rust
 
 ### Implementation Priority
 
-| Phase | Task | Type | Expected Impact |
-|-------|------|------|-----------------|
-| 1 | Enable endgame PST interpolation | Strength | Quick win, minimal code |
-| 2 | Incremental PST evaluation | Speed | 15-20% faster |
-| 3 | Remove `pieces` Vec | Speed | 10-15% faster |
-| 4 | Killer moves + history heuristic | Strength | Much better move ordering |
-| 5 | Lazy/incremental attack maps | Speed | 10-20% faster |
-| 6 | PVS search | Strength | Better node efficiency |
-| 7 | Check extensions | Strength | Avoids horizon effects |
-| 8 | Magic bitboards | Speed | ~2x faster movegen |
-| 9 | SEE pruning | Strength | Smaller quiescence tree |
-| 10 | Futility pruning | Strength | Smaller search tree |
-| 11 | Improved eval terms | Strength | Better positional play |
+| Phase | Task | Type | Expected Impact | Status |
+|-------|------|------|-----------------|--------|
+| 1 | Enable endgame PST interpolation | Strength | Quick win, minimal code | ✓ Done |
+| 2 | Incremental PST evaluation | Speed | 15-20% faster | ✓ Done |
+| 3 | Remove `pieces` Vec | Speed | 10-15% faster | ✓ Partial |
+| 4 | Killer moves + history heuristic | Strength | Much better move ordering | |
+| 5 | Lazy/incremental attack maps | Speed | 10-20% faster | |
+| 6 | PVS search | Strength | Better node efficiency | |
+| 7 | Check extensions | Strength | Avoids horizon effects | |
+| 8 | Magic bitboards | Speed | ~2x faster movegen | |
+| 9 | SEE pruning | Strength | Smaller quiescence tree | |
+| 10 | Futility pruning | Strength | Smaller search tree | |
+| 11 | Improved eval terms | Strength | Better positional play | |
 
 
 
