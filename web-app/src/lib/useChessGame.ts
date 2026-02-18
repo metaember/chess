@@ -22,7 +22,7 @@ const initialState: ChessGameState = {
   gameId: null,
   board: null,
   playerColor: 'white',
-  depth: 4,
+  depth: 5, // Expert difficulty
   isFlipped: false,
   selectedSquare: null,
   lastMove: null,
