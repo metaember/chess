@@ -4,6 +4,7 @@ use color_eyre::eyre::Result;
 mod types;
 mod zobrist;
 mod tt;
+mod bitboard;
 mod board;
 mod book;
 mod evaluate;

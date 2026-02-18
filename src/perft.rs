@@ -1,6 +1,6 @@
 use crate::board::Board;
 
-
+/// Original perft implementation (slower, uses execute_move which clones)
 pub fn run_perft_test(board: &Board, depth: u8) -> i64 {
     if depth == 0 {
         return 1;
@@ -18,6 +18,32 @@ pub fn run_perft_test(board: &Board, depth: u8) -> i64 {
         // stalemate or checkmate
         return 0;
     }
+}
+
+/// Optimized perft using make_move/unmake_move (in-place) and bulk counting
+pub fn run_perft_fast(board: &mut Board, depth: u8) -> u64 {
+    if depth == 0 {
+        return 1;
+    }
+
+    let moves = match board.get_legal_moves(&board.get_active_color()) {
+        Ok(moves) => moves,
+        Err(_) => return 0, // checkmate or stalemate
+    };
+
+    // Bulk counting optimization: at depth 1, just return the move count
+    // instead of making/unmaking each move
+    if depth == 1 {
+        return moves.len() as u64;
+    }
+
+    let mut nodes = 0u64;
+    for m in moves {
+        let undo = board.make_move(&m);
+        nodes += run_perft_fast(board, depth - 1);
+        board.unmake_move(&undo);
+    }
+    nodes
 }
 
 /// Perft from starting position
@@ -66,6 +92,7 @@ fn get_perft_expected_node_count(depth: u8) -> i64 {
 mod tests {
     use super::*;
     use crate::board::Board;
+    use std::time::Instant;
 
     const MAX_DEPTH: u8 = 6;
 
@@ -76,6 +103,28 @@ mod tests {
             println!("Depth {}", depth);
             let expected_node_count = get_perft_expected_node_count(depth);
             let node_count = run_perft_test(&board, depth);
+            assert_eq!(expected_node_count, node_count);
+        }
+    }
+
+    #[test]
+    fn perft_start_fast() {
+        let mut board = Board::new();
+        for depth in 0..=MAX_DEPTH {
+            let expected_node_count = get_perft_expected_node_count(depth) as u64;
+
+            let start = Instant::now();
+            let node_count = run_perft_fast(&mut board, depth);
+            let elapsed = start.elapsed();
+
+            let nps = if elapsed.as_secs_f64() > 0.0 {
+                node_count as f64 / elapsed.as_secs_f64() / 1_000_000.0
+            } else {
+                0.0
+            };
+
+            println!("Depth {}: {} nodes in {:?} ({:.2} M nodes/sec)",
+                     depth, node_count, elapsed, nps);
             assert_eq!(expected_node_count, node_count);
         }
     }
@@ -94,7 +143,6 @@ mod tests {
     fn perft_pos_5() {
         let board = Board::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8");
 
-
         let expected = vec![0, 44, 1_486, 62_379, 2_103_487, 89_941_194];
 
         for depth in 1..=expected.len() {
@@ -104,4 +152,26 @@ mod tests {
         }
     }
 
+    #[test]
+    fn perft_pos_5_fast() {
+        let mut board = Board::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8");
+
+        let expected: Vec<u64> = vec![0, 44, 1_486, 62_379, 2_103_487, 89_941_194];
+
+        for depth in 1..expected.len() {
+            let start = Instant::now();
+            let node_count = run_perft_fast(&mut board, depth as u8);
+            let elapsed = start.elapsed();
+
+            let nps = if elapsed.as_secs_f64() > 0.0 {
+                node_count as f64 / elapsed.as_secs_f64() / 1_000_000.0
+            } else {
+                0.0
+            };
+
+            println!("Depth {}: {} nodes in {:?} ({:.2} M nodes/sec)",
+                     depth, node_count, elapsed, nps);
+            assert_eq!(expected[depth], node_count);
+        }
+    }
 }
