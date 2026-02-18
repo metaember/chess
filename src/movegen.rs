@@ -1,16 +1,12 @@
 use crate::types::{Piece, Position};
 
+use crate::bitboard::{
+    pos_to_sq, position_to_bb, sq_to_bb, sq_to_position, ATTACK_TABLES, BitboardIter,
+};
 use crate::board::Board;
 use crate::types::*;
 
 const MAX_MOVES: usize = 218;
-
-/// The squares observed by the pawn.
-/// One of these should not be
-struct PawnObserved {
-    left: Option<Vec<Move>>,
-    right: Option<Vec<Move>>,
-}
 
 pub struct MoveGenerator<'a> {
     board: &'a Board,
@@ -41,518 +37,525 @@ impl<'a> MoveGenerator<'a> {
     }
 
     fn collect_with_mode(&mut self, observed_mode: bool, captures_only: bool) -> Vec<Move> {
-        let dominated_pieces: Vec<Piece> = self
-            .board
-            .pieces
-            .iter()
-            .filter(|p| p.color == self.color)
-            .copied()
-            .collect();
-        for piece in dominated_pieces.iter() {
-            self.get_pseudo_moves(piece, observed_mode, captures_only);
-        }
+        // Use bitboard-based move generation
+        self.collect_with_mode_bb(observed_mode, captures_only)
+    }
+
+    /// Bitboard-based move generation - much faster than piece iteration
+    fn collect_with_mode_bb(&mut self, observed_mode: bool, captures_only: bool) -> Vec<Move> {
+        let occupied = self.board.get_occupied();
+        let friendly = self.board.get_pieces_bb(self.color);
+        let enemy = self.board.get_pieces_bb(self.color.other_color());
+
+        // Get opponent king position for xray attacks in observed mode
+        let opponent_king_bb = if observed_mode {
+            self.board.get_piece_bb(self.color.other_color(), PieceType::King)
+        } else {
+            0
+        };
+        let occupied_no_king = occupied & !opponent_king_bb;
+
+        // Generate knight moves
+        self.generate_knight_moves_bb(occupied, friendly, enemy, observed_mode, captures_only);
+
+        // Generate king moves
+        self.generate_king_moves_bb(occupied, friendly, enemy, observed_mode, captures_only);
+
+        // Generate rook moves
+        self.generate_rook_moves_bb(occupied_no_king, friendly, enemy, observed_mode, captures_only);
+
+        // Generate bishop moves
+        self.generate_bishop_moves_bb(occupied_no_king, friendly, enemy, observed_mode, captures_only);
+
+        // Generate queen moves (rook + bishop)
+        self.generate_queen_moves_bb(occupied_no_king, friendly, enemy, observed_mode, captures_only);
+
+        // Generate pawn moves
+        self.generate_pawn_moves_bb(occupied, friendly, enemy, observed_mode, captures_only);
+
         std::mem::take(&mut self.moves)
     }
 
-    /// Get a vector of all pseudo valid moves for the side `color`.
-    ///
-    /// We define a pseudo valid move to be a move that obeys the piece move directions,
-    /// stays on the board, does not skip over pieces, etc, but does not check for
-    /// checks, pins etc.
-    ///
-    /// If `bserved_mode` is True, then we check all squares that are attacked by `color`,
-    /// including squares that we have pieces of our own color on, and including squares that
-    /// are "past" the opponent king for sliding pieces.
+    /// Generate knight moves using bitboards
+    fn generate_knight_moves_bb(
+        &mut self,
+        _occupied: u64,
+        friendly: u64,
+        enemy: u64,
+        observed_mode: bool,
+        captures_only: bool,
+    ) {
+        let knights = self.board.get_piece_bb(self.color, PieceType::Knight);
 
-    /// Get a vector of pseudo valid moves for the piece `piece`.
-    /// If `captures_only` is true, only generate capture moves (for quiescence search).
-    fn get_pseudo_moves(&mut self, piece: &Piece, observed_mode: bool, captures_only: bool) {
-        match piece.piece_type {
-            PieceType::Pawn => {
-                if observed_mode {
-                    // In observed mode, generate all diagonal squares the pawn could attack
-                    let pos = &piece.position;
-                    let next_rank = pawn_step_forward(pos.rank, piece.color);
+        for from_sq in BitboardIter(knights) {
+            let attacks = ATTACK_TABLES.knight[from_sq as usize];
+            let from_pos = sq_to_position(from_sq);
+            let piece = Piece {
+                color: self.color,
+                piece_type: PieceType::Knight,
+                position: from_pos,
+            };
 
-                    // Left diagonal
-                    if pos.file > 1 {
-                        let left_pos = Position { rank: next_rank, file: pos.file - 1 };
-                        let captured = self.board.piece_at_position(&left_pos).copied();
-                        self.moves.push(Move {
-                            piece: *piece,
-                            from: piece.position,
-                            to: left_pos,
-                            captured,
-                            move_flag: MoveFlag::Regular,
-                        });
-                    }
-                    // Right diagonal
-                    if pos.file < 8 {
-                        let right_pos = Position { rank: next_rank, file: pos.file + 1 };
-                        let captured = self.board.piece_at_position(&right_pos).copied();
-                        self.moves.push(Move {
-                            piece: *piece,
-                            from: piece.position,
-                            to: right_pos,
-                            captured,
-                            move_flag: MoveFlag::Regular,
-                        });
-                    }
-                } else if captures_only {
-                    // Only generate pawn captures, skip pushes
-                    self.get_pseudo_pawn_captures(piece);
-                } else {
-                    self.get_pseudo_pawn_pushes(piece);
-                    self.get_pseudo_pawn_captures(piece);
-                }
-            }
-            PieceType::Rook => self.get_pseudo_rook_moves(piece, observed_mode, captures_only),
-            PieceType::Knight => self.get_pseudo_knight_moves(piece, observed_mode, captures_only),
-            PieceType::Bishop => self.get_pseudo_bishop_moves(piece, observed_mode, captures_only),
-            PieceType::Queen => {
-                self.get_pseudo_bishop_moves(piece, observed_mode, captures_only);
-                self.get_pseudo_rook_moves(piece, observed_mode, captures_only);
-            }
-            PieceType::King => self.get_pseudo_king_moves(piece, observed_mode, captures_only),
-        };
-    }
+            // In observed mode, include squares with friendly pieces
+            let valid_targets = if observed_mode {
+                attacks
+            } else {
+                attacks & !friendly
+            };
 
-    /// Squares the pawn *could* capture if there is a piece there
-    fn get_pawn_observed_squares(&mut self, piece: &Piece) -> PawnObserved {
-        let pos = &piece.position;
+            // In captures_only mode, only target enemy pieces
+            let targets = if captures_only {
+                valid_targets & enemy
+            } else {
+                valid_targets
+            };
 
-        if (piece.color == Color::White && piece.position.rank >= 8)
-            || (piece.color == Color::Black && piece.position.rank <= 1)
-        {
-            panic!("Pawn is on a promotion square, should not move from here.")
-        }
-
-        let next_rank = pawn_step_forward(pos.rank, piece.color);
-        let promotion_rank = if piece.color == Color::White { 8 } else { 1 };
-        let ep_rank = if piece.color == Color::White { 6 } else { 3 };
-
-        let left_pos = Position {
-            rank: next_rank,
-            file: pos.file - 1,
-        };
-        let left_move = build_pawn_move(self.board, *piece, left_pos);
-
-        let right_pos = Position {
-            rank: next_rank,
-            file: pos.file + 1,
-        };
-        let right_move = build_pawn_move(self.board, *piece, right_pos);
-
-        return PawnObserved {
-            left: left_move,
-            right: right_move,
-        };
-    }
-
-    /// Get the observed squares for the pawn, and filter out the ones with
-    /// a friendly piece there
-    fn get_pseudo_pawn_captures(&mut self, pawn: &Piece) {
-        let observed = self.get_pawn_observed_squares(pawn);
-
-        if let Some(left) = observed.left {
-            for m in left {
-                if m.captured.is_some_and(|p| p.color != pawn.color) {
-                    self.moves.push(m)
-                }
-            }
-        }
-
-        if let Some(right) = observed.right {
-            for m in right {
-                if m.captured.is_some_and(|p| p.color != pawn.color) {
-                    self.moves.push(m)
-                }
+            for to_sq in BitboardIter(targets) {
+                let to_pos = sq_to_position(to_sq);
+                let captured = self.board.piece_at_position(&to_pos).copied();
+                self.moves.push(Move {
+                    piece,
+                    from: from_pos,
+                    to: to_pos,
+                    captured,
+                    move_flag: MoveFlag::Regular,
+                });
             }
         }
     }
 
-    /// get the valid pushes for a pawn
-    fn get_pseudo_pawn_pushes(&mut self, piece: &Piece) {
-        let pos = &piece.position;
-
-        if (piece.color == Color::White && piece.position.rank >= 8)
-            || (piece.color == Color::Black && piece.position.rank <= 1)
-        {
-            panic!("Pawn is on a promotion square, should not move from here.")
-        }
-
-        // move one square forward, requires no piece there
-        let one_step = pawn_step_forward(pos.rank, piece.color);
-        let one_step_pos = Position {
-            rank: one_step,
-            file: piece.position.file,
-        };
-
-        if let Some(moves) = build_pawn_move(self.board, *piece, one_step_pos) {
-            self.moves.extend(moves);
-        } else {
-            // If one step is blocked, can't do two step either
+    /// Generate king moves using bitboards (excluding castling)
+    fn generate_king_moves_bb(
+        &mut self,
+        _occupied: u64,
+        friendly: u64,
+        enemy: u64,
+        observed_mode: bool,
+        captures_only: bool,
+    ) {
+        let king_bb = self.board.get_piece_bb(self.color, PieceType::King);
+        if king_bb == 0 {
             return;
         }
 
-        // potential double push at start pos
-        let two_step = pawn_step_forward(one_step, piece.color);
-        let two_step_pos = Position {
-            rank: two_step,
-            file: piece.position.file,
+        let from_sq = king_bb.trailing_zeros() as u8;
+        let attacks = ATTACK_TABLES.king[from_sq as usize];
+        let from_pos = sq_to_position(from_sq);
+        let piece = Piece {
+            color: self.color,
+            piece_type: PieceType::King,
+            position: from_pos,
         };
-        if let Some(moves) = build_pawn_move(self.board, *piece, two_step_pos) {
-            self.moves.extend(moves);
-        }
-    }
 
-    fn get_pseudo_rook_moves(&mut self, piece: &Piece, observed_mode: bool, captures_only: bool) {
-        let pos = &piece.position;
-
-        // up
-        for rank in (pos.rank + 1)..=8 {
-            let candidate = Position {
-                rank,
-                file: pos.file,
-            };
-            let potential_move = self.check_move_target(piece, &candidate, observed_mode);
-            match potential_move {
-                PotentialMove::Invalid => break,
-                PotentialMove::Valid(maybe_other) => {
-                    // Skip non-captures if captures_only mode
-                    if !captures_only || maybe_other.is_some() {
-                        self.moves.push(Move {
-                            piece: *piece,
-                            from: piece.position,
-                            to: candidate,
-                            captured: maybe_other,
-                            move_flag: MoveFlag::Regular,
-                        });
-                    }
-                    if !potential_move.continue_search_in_direction() {
-                        break;
-                    }
-                }
-            }
-        }
-        // down
-        for rank in (1..pos.rank).rev() {
-            let candidate = Position {
-                rank,
-                file: pos.file,
-            };
-            let potential_move = self.check_move_target(piece, &candidate, observed_mode);
-            match potential_move {
-                PotentialMove::Invalid => break,
-                PotentialMove::Valid(maybe_other) => {
-                    if !captures_only || maybe_other.is_some() {
-                        self.moves.push(Move {
-                            piece: *piece,
-                            from: piece.position,
-                            to: candidate,
-                            captured: maybe_other,
-                            move_flag: MoveFlag::Regular,
-                        });
-                    }
-                    if !potential_move.continue_search_in_direction() {
-                        break;
-                    }
-                }
-            }
-        }
-
-        // right
-        for file in (pos.file + 1)..=8 {
-            let candidate = Position {
-                rank: pos.rank,
-                file,
-            };
-            let potential_move = self.check_move_target(piece, &candidate, observed_mode);
-            match potential_move {
-                PotentialMove::Invalid => break,
-                PotentialMove::Valid(maybe_other) => {
-                    if !captures_only || maybe_other.is_some() {
-                        self.moves.push(Move {
-                            piece: *piece,
-                            from: piece.position,
-                            to: candidate,
-                            captured: maybe_other,
-                            move_flag: MoveFlag::Regular,
-                        });
-                    }
-                    if !potential_move.continue_search_in_direction() {
-                        break;
-                    }
-                }
-            }
-        }
-        // left
-        for file in (1..pos.file).rev() {
-            let candidate = Position {
-                rank: pos.rank,
-                file,
-            };
-            let potential_move = self.check_move_target(piece, &candidate, observed_mode);
-            match potential_move {
-                PotentialMove::Invalid => break,
-                PotentialMove::Valid(maybe_other) => {
-                    if !captures_only || maybe_other.is_some() {
-                        self.moves.push(Move {
-                            piece: *piece,
-                            from: piece.position,
-                            to: candidate,
-                            captured: maybe_other,
-                            move_flag: MoveFlag::Regular,
-                        });
-                    }
-                    if !potential_move.continue_search_in_direction() {
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    fn get_pseudo_bishop_moves(&mut self, piece: &Piece, observed_mode: bool, captures_only: bool) {
-        let pos = &piece.position;
-
-        let directions = [(1, 1), (1, -1), (-1, 1), (-1, -1)];
-
-        for direction in directions {
-            let mut cur_rank = pos.rank as i8 + direction.0;
-            let mut cur_file = pos.file as i8 + direction.1;
-
-            while 1 <= cur_rank && cur_rank <= 8 && 1 <= cur_file && cur_file <= 8 {
-                let candidate = Position {
-                    rank: cur_rank as u8,
-                    file: cur_file as u8,
-                };
-                let potential_move = self.check_move_target(piece, &candidate, observed_mode);
-                match potential_move {
-                    PotentialMove::Invalid => break,
-                    PotentialMove::Valid(maybe_other) => {
-                        // Skip non-captures if captures_only mode
-                        if !captures_only || maybe_other.is_some() {
-                            self.moves.push(Move {
-                                piece: *piece,
-                                from: piece.position,
-                                to: candidate,
-                                captured: maybe_other,
-                                move_flag: MoveFlag::Regular,
-                            });
-                        }
-                        if maybe_other.is_some() {
-                            break;
-                        }
-                    }
-                }
-                cur_rank += direction.0;
-                cur_file += direction.1;
-            }
-        }
-    }
-
-    // This funciton will check if the `piece` can move to `candidate_pos`. If so, it returns
-    // a bool indicating if it's valid, if it's a capture, and a bool indicating if further search along
-    // this axis is required.
-    fn check_move_target(
-        &self,
-        piece: &Piece,
-        candidate_pos: &Position,
-        observed_mode: bool,
-    ) -> PotentialMove {
-        match self.board.piece_at_position(candidate_pos) {
-            Some(other_piece) => {
-                if piece.color == other_piece.color {
-                    // this is not a valid move and no need to search further in this direction
-                    if observed_mode {
-                        // this is not a legal move, we return it when `observed_mode` is true
-                        // to allow us to check if a friendly piece is protected.
-                        return PotentialMove::Valid(Some(*other_piece));
-                    } else {
-                        return PotentialMove::Invalid;
-                    }
-                } else {
-                    // this is a valid move, it's a capture! no need to look any further
-                    if observed_mode && other_piece.piece_type == PieceType::King {
-                        // except if we don't want to include the opponent king
-                        return PotentialMove::Valid(None);
-                    }
-                    return PotentialMove::Valid(Some(*other_piece));
-                }
-            }
-            // no piece here, so it's a valid move (not a capture)
-            // and we can keep searching in this direction
-            None => return PotentialMove::Valid(None),
+        let valid_targets = if observed_mode {
+            attacks
+        } else {
+            attacks & !friendly
         };
-    }
 
-    // TODO: add type annotations to make this only take knight pieces
-    // TODO: same for the other functions above
-    fn get_pseudo_knight_moves(&mut self, piece: &Piece, observed_mode: bool, captures_only: bool) {
-        for (rank_delta, file_delta) in
-            std::iter::zip([-2, -2, -1, -1, 1, 1, 2, 2], [-1, 1, -2, 2, -2, 2, -1, 1])
-        {
-            let future_rank: i8 = piece.position.rank as i8 + rank_delta;
-            let future_file: i8 = piece.position.file as i8 + file_delta;
-            if future_rank >= 1 && future_rank <= 8 && future_file >= 1 && future_file <= 8 {
-                let future_rank = future_rank as u8;
-                let future_file = future_file as u8;
-                let maybe_other_piece = self.board.piece_at(future_rank, future_file);
-                if maybe_other_piece.is_some_and(|p| p.color == piece.color && !observed_mode) {
-                    continue;
-                }
-                // Skip non-captures if captures_only mode
-                if captures_only && maybe_other_piece.is_none() {
-                    continue;
-                }
-                self.moves.push(Move {
-                    piece: *piece,
-                    from: piece.position,
-                    to: Position {
-                        rank: future_rank,
-                        file: future_file,
-                    },
-                    captured: maybe_other_piece.map(|p| *p),
-                    move_flag: MoveFlag::Regular,
-                })
-            }
+        let targets = if captures_only {
+            valid_targets & enemy
+        } else {
+            valid_targets
+        };
+
+        for to_sq in BitboardIter(targets) {
+            let to_pos = sq_to_position(to_sq);
+            let captured = self.board.piece_at_position(&to_pos).copied();
+            self.moves.push(Move {
+                piece,
+                from: from_pos,
+                to: to_pos,
+                captured,
+                move_flag: MoveFlag::Regular,
+            });
+        }
+
+        // Generate castling moves (only if not captures_only)
+        if !captures_only {
+            self.generate_castling_moves(&piece);
         }
     }
 
-    fn get_pseudo_king_moves(&mut self, king: &Piece, observed_mode: bool, captures_only: bool) {
-        for (rank_delta, file_delta) in std::iter::zip(
-            [-1, -1, -1, 0, 0, 1, 1, 1],
-            [-1, 0, 1, -1, 1, -1, 0, 1],
-        ) {
-            let future_rank: i8 = king.position.rank as i8 + rank_delta;
-            let future_file: i8 = king.position.file as i8 + file_delta;
-            if future_rank >= 1 && future_rank <= 8 && future_file >= 1 && future_file <= 8 {
-                let maybe_other_piece = self.board.piece_at(future_rank as u8, future_file as u8);
-                match maybe_other_piece {
-                    Some(other_piece) => match king.color == other_piece.color {
-                        true => {
-                            // same color, invalid move
-                            if observed_mode {
-                                // this is not a legal move, we return it when `observed_mode` is true
-                                // to allow us to check if a friendly piece is protected.
-                                self.moves.push(Move {
-                                    piece: *king,
-                                    from: king.position,
-                                    to: Position {
-                                        rank: future_rank as u8,
-                                        file: future_file as u8,
-                                    },
-                                    captured: Some(*other_piece),
-                                    move_flag: MoveFlag::Regular,
-                                });
-                            } else {
-                                continue;
-                            }
-                        }
-                        false => self.moves.push(Move {
+    /// Generate castling moves
+    fn generate_castling_moves(&mut self, king: &Piece) {
+        let occupied = self.board.get_occupied();
+
+        match self.color {
+            Color::White => {
+                // Kingside castling
+                if self.board.castle_kingside_white {
+                    let rook_sq = sq_to_bb(pos_to_sq(1, 8));
+                    let f1 = sq_to_bb(pos_to_sq(1, 6));
+                    let g1 = sq_to_bb(pos_to_sq(1, 7));
+                    let rook_bb = self.board.get_piece_bb(Color::White, PieceType::Rook);
+
+                    if (rook_bb & rook_sq) != 0 && (occupied & (f1 | g1)) == 0 {
+                        self.moves.push(Move {
                             piece: *king,
                             from: king.position,
-                            to: Position {
-                                rank: future_rank as u8,
-                                file: future_file as u8,
-                            },
-                            captured: Some(*other_piece),
-                            move_flag: MoveFlag::Regular,
-                        }),
-                    },
-                    None => {
-                        // Skip non-captures if captures_only mode
-                        if !captures_only {
+                            to: Position { rank: 1, file: 7 },
+                            captured: None,
+                            move_flag: MoveFlag::CastleKingside,
+                        });
+                    }
+                }
+                // Queenside castling
+                if self.board.castle_queenside_white {
+                    let rook_sq = sq_to_bb(pos_to_sq(1, 1));
+                    let b1 = sq_to_bb(pos_to_sq(1, 2));
+                    let c1 = sq_to_bb(pos_to_sq(1, 3));
+                    let d1 = sq_to_bb(pos_to_sq(1, 4));
+                    let rook_bb = self.board.get_piece_bb(Color::White, PieceType::Rook);
+
+                    if (rook_bb & rook_sq) != 0 && (occupied & (b1 | c1 | d1)) == 0 {
+                        self.moves.push(Move {
+                            piece: *king,
+                            from: king.position,
+                            to: Position { rank: 1, file: 3 },
+                            captured: None,
+                            move_flag: MoveFlag::CastleQueenside,
+                        });
+                    }
+                }
+            }
+            Color::Black => {
+                // Kingside castling
+                if self.board.castle_kingside_black {
+                    let rook_sq = sq_to_bb(pos_to_sq(8, 8));
+                    let f8 = sq_to_bb(pos_to_sq(8, 6));
+                    let g8 = sq_to_bb(pos_to_sq(8, 7));
+                    let rook_bb = self.board.get_piece_bb(Color::Black, PieceType::Rook);
+
+                    if (rook_bb & rook_sq) != 0 && (occupied & (f8 | g8)) == 0 {
+                        self.moves.push(Move {
+                            piece: *king,
+                            from: king.position,
+                            to: Position { rank: 8, file: 7 },
+                            captured: None,
+                            move_flag: MoveFlag::CastleKingside,
+                        });
+                    }
+                }
+                // Queenside castling
+                if self.board.castle_queenside_black {
+                    let rook_sq = sq_to_bb(pos_to_sq(8, 1));
+                    let b8 = sq_to_bb(pos_to_sq(8, 2));
+                    let c8 = sq_to_bb(pos_to_sq(8, 3));
+                    let d8 = sq_to_bb(pos_to_sq(8, 4));
+                    let rook_bb = self.board.get_piece_bb(Color::Black, PieceType::Rook);
+
+                    if (rook_bb & rook_sq) != 0 && (occupied & (b8 | c8 | d8)) == 0 {
+                        self.moves.push(Move {
+                            piece: *king,
+                            from: king.position,
+                            to: Position { rank: 8, file: 3 },
+                            captured: None,
+                            move_flag: MoveFlag::CastleQueenside,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    /// Generate rook moves using bitboards
+    fn generate_rook_moves_bb(
+        &mut self,
+        occupied: u64,
+        friendly: u64,
+        enemy: u64,
+        observed_mode: bool,
+        captures_only: bool,
+    ) {
+        let rooks = self.board.get_piece_bb(self.color, PieceType::Rook);
+
+        for from_sq in BitboardIter(rooks) {
+            let attacks = ATTACK_TABLES.rook_attacks(from_sq, occupied);
+            let from_pos = sq_to_position(from_sq);
+            let piece = Piece {
+                color: self.color,
+                piece_type: PieceType::Rook,
+                position: from_pos,
+            };
+
+            let valid_targets = if observed_mode {
+                attacks
+            } else {
+                attacks & !friendly
+            };
+
+            let targets = if captures_only {
+                valid_targets & enemy
+            } else {
+                valid_targets
+            };
+
+            for to_sq in BitboardIter(targets) {
+                let to_pos = sq_to_position(to_sq);
+                let captured = self.board.piece_at_position(&to_pos).copied();
+                self.moves.push(Move {
+                    piece,
+                    from: from_pos,
+                    to: to_pos,
+                    captured,
+                    move_flag: MoveFlag::Regular,
+                });
+            }
+        }
+    }
+
+    /// Generate bishop moves using bitboards
+    fn generate_bishop_moves_bb(
+        &mut self,
+        occupied: u64,
+        friendly: u64,
+        enemy: u64,
+        observed_mode: bool,
+        captures_only: bool,
+    ) {
+        let bishops = self.board.get_piece_bb(self.color, PieceType::Bishop);
+
+        for from_sq in BitboardIter(bishops) {
+            let attacks = ATTACK_TABLES.bishop_attacks(from_sq, occupied);
+            let from_pos = sq_to_position(from_sq);
+            let piece = Piece {
+                color: self.color,
+                piece_type: PieceType::Bishop,
+                position: from_pos,
+            };
+
+            let valid_targets = if observed_mode {
+                attacks
+            } else {
+                attacks & !friendly
+            };
+
+            let targets = if captures_only {
+                valid_targets & enemy
+            } else {
+                valid_targets
+            };
+
+            for to_sq in BitboardIter(targets) {
+                let to_pos = sq_to_position(to_sq);
+                let captured = self.board.piece_at_position(&to_pos).copied();
+                self.moves.push(Move {
+                    piece,
+                    from: from_pos,
+                    to: to_pos,
+                    captured,
+                    move_flag: MoveFlag::Regular,
+                });
+            }
+        }
+    }
+
+    /// Generate queen moves using bitboards
+    fn generate_queen_moves_bb(
+        &mut self,
+        occupied: u64,
+        friendly: u64,
+        enemy: u64,
+        observed_mode: bool,
+        captures_only: bool,
+    ) {
+        let queens = self.board.get_piece_bb(self.color, PieceType::Queen);
+
+        for from_sq in BitboardIter(queens) {
+            let attacks = ATTACK_TABLES.queen_attacks(from_sq, occupied);
+            let from_pos = sq_to_position(from_sq);
+            let piece = Piece {
+                color: self.color,
+                piece_type: PieceType::Queen,
+                position: from_pos,
+            };
+
+            let valid_targets = if observed_mode {
+                attacks
+            } else {
+                attacks & !friendly
+            };
+
+            let targets = if captures_only {
+                valid_targets & enemy
+            } else {
+                valid_targets
+            };
+
+            for to_sq in BitboardIter(targets) {
+                let to_pos = sq_to_position(to_sq);
+                let captured = self.board.piece_at_position(&to_pos).copied();
+                self.moves.push(Move {
+                    piece,
+                    from: from_pos,
+                    to: to_pos,
+                    captured,
+                    move_flag: MoveFlag::Regular,
+                });
+            }
+        }
+    }
+
+    /// Generate pawn moves using bitboards
+    fn generate_pawn_moves_bb(
+        &mut self,
+        occupied: u64,
+        _friendly: u64,
+        enemy: u64,
+        observed_mode: bool,
+        captures_only: bool,
+    ) {
+        let pawns = self.board.get_piece_bb(self.color, PieceType::Pawn);
+        let color_idx = self.color as usize;
+
+        // Pawn attack generation for observed mode
+        if observed_mode {
+            for from_sq in BitboardIter(pawns) {
+                let attacks = ATTACK_TABLES.pawn[color_idx][from_sq as usize];
+                let from_pos = sq_to_position(from_sq);
+                let piece = Piece {
+                    color: self.color,
+                    piece_type: PieceType::Pawn,
+                    position: from_pos,
+                };
+
+                for to_sq in BitboardIter(attacks) {
+                    let to_pos = sq_to_position(to_sq);
+                    let captured = self.board.piece_at_position(&to_pos).copied();
+                    self.moves.push(Move {
+                        piece,
+                        from: from_pos,
+                        to: to_pos,
+                        captured,
+                        move_flag: MoveFlag::Regular,
+                    });
+                }
+            }
+            return;
+        }
+
+        // Regular pawn move generation
+        for from_sq in BitboardIter(pawns) {
+            let from_pos = sq_to_position(from_sq);
+            let piece = Piece {
+                color: self.color,
+                piece_type: PieceType::Pawn,
+                position: from_pos,
+            };
+
+            // Pawn captures
+            let attacks = ATTACK_TABLES.pawn[color_idx][from_sq as usize];
+            let capture_targets = attacks & enemy;
+
+            for to_sq in BitboardIter(capture_targets) {
+                let to_pos = sq_to_position(to_sq);
+                let captured = self.board.piece_at_position(&to_pos).copied();
+
+                // Check for promotion
+                let promotion_rank = if self.color == Color::White { 8 } else { 1 };
+                if to_pos.rank == promotion_rank {
+                    for promo_type in PIECES_CAN_PROMOTE_TO {
+                        self.moves.push(Move {
+                            piece,
+                            from: from_pos,
+                            to: to_pos,
+                            captured,
+                            move_flag: MoveFlag::Promotion(promo_type),
+                        });
+                    }
+                } else {
+                    self.moves.push(Move {
+                        piece,
+                        from: from_pos,
+                        to: to_pos,
+                        captured,
+                        move_flag: MoveFlag::Regular,
+                    });
+                }
+            }
+
+            // En passant captures
+            if let Some(ep_target) = self.board.en_passant_target {
+                let ep_bb = position_to_bb(&ep_target);
+                if (attacks & ep_bb) != 0 {
+                    // Find the captured pawn (it's on our rank, at the ep file)
+                    let captured_pos = Position {
+                        rank: from_pos.rank,
+                        file: ep_target.file,
+                    };
+                    let captured = self.board.piece_at_position(&captured_pos).copied();
+                    self.moves.push(Move {
+                        piece,
+                        from: from_pos,
+                        to: ep_target,
+                        captured,
+                        move_flag: MoveFlag::EnPassantCapture,
+                    });
+                }
+            }
+
+            // Pawn pushes (skip if captures_only)
+            if captures_only {
+                continue;
+            }
+
+            let one_step = pawn_step_forward(from_pos.rank, self.color);
+            let one_step_pos = Position {
+                rank: one_step,
+                file: from_pos.file,
+            };
+            let one_step_bb = position_to_bb(&one_step_pos);
+
+            // One step forward (must be empty)
+            if (occupied & one_step_bb) == 0 {
+                let promotion_rank = if self.color == Color::White { 8 } else { 1 };
+                if one_step == promotion_rank {
+                    for promo_type in PIECES_CAN_PROMOTE_TO {
+                        self.moves.push(Move {
+                            piece,
+                            from: from_pos,
+                            to: one_step_pos,
+                            captured: None,
+                            move_flag: MoveFlag::Promotion(promo_type),
+                        });
+                    }
+                } else {
+                    self.moves.push(Move {
+                        piece,
+                        from: from_pos,
+                        to: one_step_pos,
+                        captured: None,
+                        move_flag: MoveFlag::Regular,
+                    });
+
+                    // Two step forward from starting position
+                    let start_rank = if self.color == Color::White { 2 } else { 7 };
+                    if from_pos.rank == start_rank {
+                        let two_step = pawn_step_forward(one_step, self.color);
+                        let two_step_pos = Position {
+                            rank: two_step,
+                            file: from_pos.file,
+                        };
+                        let two_step_bb = position_to_bb(&two_step_pos);
+
+                        if (occupied & two_step_bb) == 0 {
+                            let ep_square = Position {
+                                rank: one_step,
+                                file: from_pos.file,
+                            };
                             self.moves.push(Move {
-                                piece: *king,
-                                from: king.position,
-                                to: Position {
-                                    rank: future_rank as u8,
-                                    file: future_file as u8,
-                                },
+                                piece,
+                                from: from_pos,
+                                to: two_step_pos,
                                 captured: None,
-                                move_flag: MoveFlag::Regular,
-                            })
+                                move_flag: MoveFlag::DoublePawnPush(ep_square),
+                            });
                         }
                     }
                 }
             }
         }
-        // Skip castles in captures_only mode (castling is never a capture)
-        if captures_only {
-            return;
-        }
-        // castles
-        // the relevant squares being free from opponent observed squares is checked in the legal moves function
-        match king.color {
-            Color::White => {
-                if self.board.castle_kingside_white
-                    // piece at rook position is our rook, not captured or anything
-                    && self.board.piece_at(1, 8).is_some_and(|p| p.piece_type == PieceType::Rook && p.color == Color::White)
-                    // the way is free
-                    && self.board.piece_at(1, 7).is_none()
-                    && self.board.piece_at(1, 6).is_none()
-                {
-                    self.moves.push(Move {
-                        piece: *king,
-                        from: king.position,
-                        to: Position { rank: 1, file: 7 },
-                        captured: None,
-                        move_flag: MoveFlag::CastleKingside,
-                    })
-                }
-                if self.board.castle_queenside_white
-                    // piece at rook position is our rook, not captured or anything
-                    && self.board.piece_at(1, 1).is_some_and(|p| p.piece_type == PieceType::Rook && p.color == Color::White)
-                    // the way is free
-                    && self.board.piece_at(1, 2).is_none()
-                    && self.board.piece_at(1, 3).is_none()
-                    && self.board.piece_at(1, 4).is_none()
-                {
-                    self.moves.push(Move {
-                        piece: *king,
-                        from: king.position,
-                        to: Position { rank: 1, file: 3 },
-                        captured: None,
-                        move_flag: MoveFlag::CastleQueenside,
-                    })
-                };
-            }
-            Color::Black => {
-                if self.board.castle_kingside_black
-                    // piece at rook position is our rook, not captured or anything
-                    && self.board.piece_at(8, 8).is_some_and(|p| p.piece_type == PieceType::Rook && p.color == Color::Black)
-                    // the way is free
-                    && self.board.piece_at(8, 7).is_none()
-                    && self.board.piece_at(8, 6).is_none()
-                {
-                    self.moves.push(Move {
-                        piece: *king,
-                        from: king.position,
-                        to: Position { rank: 8, file: 7 },
-                        captured: None,
-                        move_flag: MoveFlag::CastleKingside,
-                    })
-                }
-                if self.board.castle_queenside_black
-                    // piece at rook position is our rook, not captured or anything
-                    && self.board.piece_at(8, 1).is_some_and(|p| p.piece_type == PieceType::Rook && p.color == Color::Black)
-                    // the way is free
-                    && self.board.piece_at(8, 2).is_none()
-                    && self.board.piece_at(8, 3).is_none()
-                    && self.board.piece_at(8, 4).is_none()
-                {
-                    self.moves.push(Move {
-                        piece: *king,
-                        from: king.position,
-                        to: Position { rank: 8, file: 3 },
-                        captured: None,
-                        move_flag: MoveFlag::CastleQueenside,
-                    })
-                };
-            }
-        };
     }
 
     /// Compute `color`'s pinned pieces, as well as the list of squares they can move to
@@ -649,145 +652,11 @@ impl<'a> MoveGenerator<'a> {
     }
 }
 
-fn build_pawn_move(board: &Board, piece: Piece, to: Position) -> Option<Vec<Move>> {
-    let promotion_rank = if piece.color == Color::White { 8 } else { 1 };
-    let ep_rank = if piece.color == Color::White { 6 } else { 3 };
-
-    if to.file == 0 || to.file == 9 {
-        // no moving off the edge of the board
-        return None;
-    }
-
-    // pushes
-    if to.file == piece.position.file {
-        if to.rank == pawn_step_forward(piece.position.rank, piece.color) {
-            // regular push
-            if board.piece_at(to.rank, to.file).is_some() {
-                // can't push if there is a piece there
-                return None;
-            }
-            // promotion push
-            if to.rank == promotion_rank {
-                return Some(
-                    PIECES_CAN_PROMOTE_TO
-                        .iter()
-                        .map(|piece_type| Move {
-                            piece,
-                            from: piece.position,
-                            to,
-                            captured: None,
-                            move_flag: MoveFlag::Promotion(*piece_type),
-                        })
-                        .collect(),
-                );
-            }
-            // regular one-step push (non-promotion)
-            return Some(vec![Move {
-                piece,
-                from: piece.position,
-                to,
-                captured: None,
-                move_flag: MoveFlag::Regular,
-            }]);
-        }
-        // two step push from start pos only
-        let start_rank = if piece.color == Color::White { 2 } else { 7 };
-        let one_step = pawn_step_forward(piece.position.rank, piece.color);
-        let two_step = pawn_step_forward(one_step, piece.color);
-
-        if piece.position.rank == start_rank
-            && board.piece_at(one_step, piece.position.file).is_none()
-            && board.piece_at(two_step, piece.position.file).is_none()
-        {
-            return Some(vec![Move {
-                piece: piece,
-                from: piece.position,
-                to,
-                captured: None,
-                move_flag: MoveFlag::DoublePawnPush(Position {
-                    rank: one_step,
-                    file: piece.position.file,
-                }),
-            }]);
-        }
-        return None;
-    }
-
-    // captures
-    if let Some(other_piece) = board.piece_at(to.rank, to.file) {
-        if to.rank == promotion_rank {
-            return Some(
-                PIECES_CAN_PROMOTE_TO
-                    .iter()
-                    .map(|piece_type| Move {
-                        piece,
-                        from: piece.position,
-                        to,
-                        captured: Some(*other_piece),
-                        move_flag: MoveFlag::Promotion(*piece_type),
-                    })
-                    .collect(),
-            );
-        } else {
-            return Some(vec![Move {
-                piece,
-                from: piece.position,
-                to,
-                captured: Some(*other_piece),
-                move_flag: MoveFlag::Regular,
-            }]);
-        }
-    }
-
-    // ep captures
-    if to.rank == ep_rank
-        && board.en_passant_target
-            == Some(Position {
-                rank: to.rank,
-                file: to.file,
-            })
-    {
-        // En passant capture
-        let captured_piece = board
-            .piece_at(piece.position.rank, to.file)
-            .expect("Should have piece at the en passant target");
-        if captured_piece.piece_type != PieceType::Pawn {
-            panic!("En passant capture should be a pawn")
-        }
-
-        return Some(vec![Move {
-            piece: piece,
-            from: piece.position,
-            to,
-            captured: Some(*captured_piece),
-            move_flag: MoveFlag::EnPassantCapture,
-        }]);
-    };
-    None
-}
-
 /// Direction of pawn movement for given color
 pub fn pawn_step_forward(rank: u8, color: Color) -> u8 {
     match color {
         Color::White => rank + 1,
         Color::Black => rank - 1,
-    }
-}
-
-/// Potential move, either valid, in which case has a bool inicating
-/// if it's a capture
-enum PotentialMove {
-    Valid(Option<Piece>),
-    Invalid,
-}
-
-impl PotentialMove {
-    fn continue_search_in_direction(&self) -> bool {
-        match self {
-            PotentialMove::Invalid => false,
-            PotentialMove::Valid(Some(_)) => false,
-            PotentialMove::Valid(None) => true,
-        }
     }
 }
 

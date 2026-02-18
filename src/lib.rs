@@ -1,6 +1,7 @@
 pub mod types;
 pub mod zobrist;
 pub mod tt;
+pub mod bitboard;
 pub mod movegen;
 pub mod board;
 pub mod evaluate;
