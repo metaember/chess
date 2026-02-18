@@ -1,16 +1,36 @@
 use crate::board::Board;
 use crate::types::{Color, Move, Piece, PieceType};
 
+/// Maximum game phase value (all major/minor pieces on board)
+/// Queens = 4, Rooks = 2, Bishops = 1, Knights = 1
+/// Total: 2*4 + 4*2 + 4*1 + 4*1 = 8 + 8 + 4 + 4 = 24
+pub const MAX_PHASE: i32 = 24;
+
+/// Phase weights for each piece type
+pub const PHASE_WEIGHTS: [i32; 6] = [
+    0, // Pawn
+    2, // Rook
+    1, // Knight
+    1, // Bishop
+    4, // Queen
+    0, // King
+];
+
 pub struct Material {
     pub white_material: i32,
-    pub white_piece_location_adjustment: i32,
+    pub white_pst_mg: i32, // middlegame PST score
+    pub white_pst_eg: i32, // endgame PST score
     pub white_pawn_material: i32,
     pub white_piece_material: i32,
 
     pub black_material: i32,
-    pub black_piece_location_adjustment: i32,
+    pub black_pst_mg: i32, // middlegame PST score
+    pub black_pst_eg: i32, // endgame PST score
     pub black_pawn_material: i32,
     pub black_piece_material: i32,
+
+    /// Game phase (0 = endgame, MAX_PHASE = opening/middlegame)
+    pub phase: i32,
 }
 
 impl Material {
@@ -18,14 +38,21 @@ impl Material {
         self.white_material - self.black_material
     }
 
-    pub fn get_location_adjusted_material_difference(&self) -> i32 {
-        self.white_material + self.white_piece_location_adjustment
-            - self.black_material
-            - self.black_piece_location_adjustment
+    /// Get tapered evaluation score (interpolates between middlegame and endgame)
+    pub fn get_tapered_score(&self) -> i32 {
+        let mg_score = self.white_material + self.white_pst_mg
+            - self.black_material - self.black_pst_mg;
+        let eg_score = self.white_material + self.white_pst_eg
+            - self.black_material - self.black_pst_eg;
+
+        // Interpolate between mg and eg based on phase
+        // phase = MAX_PHASE means full middlegame, phase = 0 means full endgame
+        let phase = self.phase.clamp(0, MAX_PHASE);
+        (mg_score * phase + eg_score * (MAX_PHASE - phase)) / MAX_PHASE
     }
 
-    fn piece_to_material(piece: &Piece) -> i32 {
-        match piece.piece_type {
+    pub fn piece_to_material(piece_type: PieceType) -> i32 {
+        match piece_type {
             PieceType::Pawn => 100,
             PieceType::Rook => 500,
             PieceType::Knight => 300,
@@ -35,22 +62,32 @@ impl Material {
         }
     }
 
+    pub fn piece_to_phase(piece_type: PieceType) -> i32 {
+        PHASE_WEIGHTS[piece_type_to_index(piece_type)]
+    }
+
     pub fn compute_material(board: &Board) -> Material {
         let mut white_material = 0;
         let mut black_material = 0;
-        let mut white_piece_location_adjustment = 0;
-        let mut black_piece_location_adjustment = 0;
+        let mut white_pst_mg = 0;
+        let mut white_pst_eg = 0;
+        let mut black_pst_mg = 0;
+        let mut black_pst_eg = 0;
         let mut white_pawn_material = 0;
         let mut black_pawn_material = 0;
         let mut white_piece_material = 0;
         let mut black_piece_material = 0;
+        let mut phase = 0;
 
         for piece in &board.pieces {
-            let current_piece_material = Material::piece_to_material(&piece);
+            let current_piece_material = Material::piece_to_material(piece.piece_type);
+            phase += Material::piece_to_phase(piece.piece_type);
+
             match piece.color {
                 Color::White => {
                     white_material += current_piece_material;
-                    white_piece_location_adjustment += get_piece_adjustment_value(&piece, false);
+                    white_pst_mg += get_piece_pst_value(&piece, false);
+                    white_pst_eg += get_piece_pst_value(&piece, true);
                     if piece.piece_type == PieceType::Pawn {
                         white_pawn_material += current_piece_material;
                     } else {
@@ -59,7 +96,8 @@ impl Material {
                 }
                 Color::Black => {
                     black_material += current_piece_material;
-                    black_piece_location_adjustment += get_piece_adjustment_value(&piece, false);
+                    black_pst_mg += get_piece_pst_value(&piece, false);
+                    black_pst_eg += get_piece_pst_value(&piece, true);
                     if piece.piece_type == PieceType::Pawn {
                         black_pawn_material += current_piece_material;
                     } else {
@@ -70,20 +108,36 @@ impl Material {
         }
         Material {
             white_material,
-            white_piece_location_adjustment,
+            white_pst_mg,
+            white_pst_eg,
             white_pawn_material,
             white_piece_material,
             black_material,
-            black_piece_location_adjustment,
+            black_pst_mg,
+            black_pst_eg,
             black_pawn_material,
             black_piece_material,
+            phase,
         }
+    }
+}
+
+/// Convert PieceType to index for phase weights array
+#[inline(always)]
+fn piece_type_to_index(pt: PieceType) -> usize {
+    match pt {
+        PieceType::Pawn => 0,
+        PieceType::Rook => 1,
+        PieceType::Knight => 2,
+        PieceType::Bishop => 3,
+        PieceType::Queen => 4,
+        PieceType::King => 5,
     }
 }
 
 pub fn evaluate_board(board: &Board) -> i32 {
     let material = Material::compute_material(board);
-    let unsigned_score = material.get_location_adjusted_material_difference();
+    let unsigned_score = material.get_tapered_score();
     if board.get_active_color() == Color::White {
         unsigned_score
     } else {
@@ -97,8 +151,8 @@ pub fn guess_move_value(_board: &Board, mv: &Move) -> i32 {
 
     if let Some(captured_piece) = mv.captured {
         score += material_difference_multiplier
-            * (Material::piece_to_material(&captured_piece)
-                - Material::piece_to_material(&mv.piece));
+            * (Material::piece_to_material(captured_piece.piece_type)
+                - Material::piece_to_material(mv.piece.piece_type));
     };
 
     // TODO: add promotion bonus equal to the value of the promoted piece
@@ -109,22 +163,29 @@ pub fn guess_move_value(_board: &Board, mv: &Move) -> i32 {
     score
 }
 
-fn get_piece_adjustment_value(piece: &Piece, is_endgame: bool) -> i32 {
-    let raw_table = get_raw_adjustemnt_table(piece, is_endgame);
+/// Get PST value for a piece (used in Material::compute_material)
+fn get_piece_pst_value(piece: &Piece, is_endgame: bool) -> i32 {
+    get_pst_value(piece.piece_type, piece.color, piece.position.rank, piece.position.file, is_endgame)
+}
+
+/// Get PST value given piece type, color, and position
+/// This is the core PST lookup function used by both evaluation and incremental updates
+pub fn get_pst_value(piece_type: PieceType, color: Color, rank: u8, file: u8, is_endgame: bool) -> i32 {
+    let raw_table = get_raw_pst_table(piece_type, is_endgame);
     // PST tables are stored with rank 8 at index 0-7 and rank 1 at index 56-63
     // (from White's perspective, looking at the board with rank 1 at bottom)
-    let index = match piece.color {
+    let index = match color {
         // White: rank 8 -> indices 0-7, rank 1 -> indices 56-63
-        Color::White => (8 - piece.position.rank) * 8 + piece.position.file - 1,
+        Color::White => (8 - rank) * 8 + file - 1,
         // Black: mirror perspective - rank 1 -> indices 0-7, rank 8 -> indices 56-63
         // This ensures Black's home rank (8) uses same values as White's home rank (1)
-        Color::Black => (piece.position.rank - 1) * 8 + piece.position.file - 1,
+        Color::Black => (rank - 1) * 8 + file - 1,
     };
     raw_table[index as usize]
 }
 
-fn get_raw_adjustemnt_table(piece: &Piece, is_endgame: bool) -> &[i32; 8 * 8] {
-    match piece.piece_type {
+fn get_raw_pst_table(piece_type: PieceType, is_endgame: bool) -> &'static [i32; 64] {
+    match piece_type {
         PieceType::Pawn => {
             if is_endgame {
                 &PAWNS_END
@@ -235,8 +296,8 @@ mod tests {
                 };
 
                 // These should not panic - if index is out of bounds, we'll crash
-                let white_value = get_piece_adjustment_value(&white_piece, false);
-                let black_value = get_piece_adjustment_value(&black_piece, false);
+                let white_value = get_piece_pst_value(&white_piece, false);
+                let black_value = get_piece_pst_value(&black_piece, false);
 
                 // Values should be in reasonable range
                 assert!(
@@ -275,8 +336,8 @@ mod tests {
             position: Position { rank: 5, file: 5 },
         };
 
-        let white_value = get_piece_adjustment_value(&white_pawn_e4, false);
-        let black_value = get_piece_adjustment_value(&black_pawn_e5, false);
+        let white_value = get_piece_pst_value(&white_pawn_e4, false);
+        let black_value = get_piece_pst_value(&black_pawn_e5, false);
 
         assert_eq!(
             white_value, black_value,
@@ -301,8 +362,8 @@ mod tests {
             position: Position { rank: 1, file: 1 }, // a1
         };
 
-        let center_value = get_piece_adjustment_value(&knight_center, false);
-        let edge_value = get_piece_adjustment_value(&knight_edge, false);
+        let center_value = get_piece_pst_value(&knight_center, false);
+        let edge_value = get_piece_pst_value(&knight_edge, false);
 
         assert!(
             center_value > edge_value,
@@ -328,12 +389,20 @@ mod tests {
 
         // PST adjustments should also be equal (symmetric position)
         assert_eq!(
-            material.white_piece_location_adjustment,
-            material.black_piece_location_adjustment,
-            "Starting position PST adjustments should be equal. \
+            material.white_pst_mg,
+            material.black_pst_mg,
+            "Starting position PST adjustments (middlegame) should be equal. \
              White = {}, Black = {}",
-            material.white_piece_location_adjustment,
-            material.black_piece_location_adjustment
+            material.white_pst_mg,
+            material.black_pst_mg
+        );
+        assert_eq!(
+            material.white_pst_eg,
+            material.black_pst_eg,
+            "Starting position PST adjustments (endgame) should be equal. \
+             White = {}, Black = {}",
+            material.white_pst_eg,
+            material.black_pst_eg
         );
 
         // Overall evaluation should be 0
@@ -384,8 +453,8 @@ mod tests {
 
         // The raw material difference should be the same regardless of side to move
         assert_eq!(
-            mat_white.get_location_adjusted_material_difference(),
-            mat_black.get_location_adjusted_material_difference(),
+            mat_white.get_tapered_score(),
+            mat_black.get_tapered_score(),
             "Raw material difference should not depend on side to move"
         );
 
@@ -432,10 +501,10 @@ mod tests {
                     };
 
                     // Should not panic
-                    let _white_val = get_piece_adjustment_value(&white_piece, false);
-                    let _black_val = get_piece_adjustment_value(&black_piece, false);
-                    let _white_val_end = get_piece_adjustment_value(&white_piece, true);
-                    let _black_val_end = get_piece_adjustment_value(&black_piece, true);
+                    let _white_val = get_piece_pst_value(&white_piece, false);
+                    let _black_val = get_piece_pst_value(&black_piece, false);
+                    let _white_val_end = get_piece_pst_value(&white_piece, true);
+                    let _black_val_end = get_piece_pst_value(&black_piece, true);
                 }
             }
         }
@@ -455,8 +524,8 @@ mod tests {
             position: Position { rank: 6, file: 4 }, // d6
         };
 
-        let rank_2_value = get_piece_adjustment_value(&pawn_rank_2, false);
-        let rank_6_value = get_piece_adjustment_value(&pawn_rank_6, false);
+        let rank_2_value = get_piece_pst_value(&pawn_rank_2, false);
+        let rank_6_value = get_piece_pst_value(&pawn_rank_6, false);
 
         assert!(
             rank_6_value > rank_2_value,
