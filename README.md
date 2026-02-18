@@ -31,13 +31,13 @@ Chess bot written in rust
 
   ~~The codebase defines `PAWNS_END` and `KING_END` tables but `is_endgame` is hardcoded to `false`.~~ Now uses tapered evaluation with phase detection: `phase = (queens*4 + rooks*2 + bishops + knights)`. Interpolates between middlegame and endgame PST scores based on remaining material.
 
-- [ ] **Killer Move Heuristic**
+- [x] **Killer Move Heuristic** ✓ DONE
 
-  Track the last 2 quiet moves that caused a beta cutoff at each ply depth. When ordering moves, prioritize these "killer moves" after the TT move and captures. Killers are often good in sibling nodes because similar positions have similar refutations. Store as `[[Option<Move>; 2]; MAX_PLY]`.
+  ~~Track the last 2 quiet moves that caused a beta cutoff at each ply depth.~~ Implemented in `SearchState` struct. Stores 2 killer moves per ply, prioritized in move ordering after TT move and captures (90,000 for first killer, 80,000 for second).
 
-- [ ] **History Heuristic**
+- [x] **History Heuristic** ✓ DONE
 
-  Maintain a `[Color][From][To]` table that accumulates a bonus each time a quiet move causes a beta cutoff, scaled by depth². Use these history scores to order quiet moves after killers. This learns which moves are generally good across the search tree, improving move ordering over time.
+  ~~Maintain a `[Color][From][To]` table that accumulates a bonus each time a quiet move causes a beta cutoff, scaled by depth².~~ Implemented in `SearchState`. History scores indexed by `[color][from_sq][to_sq]`, used for quiet move ordering. Scores aged at each depth iteration to gradually forget old information.
 
 - [ ] **Principal Variation Search (PVS)**
 
@@ -74,7 +74,7 @@ Chess bot written in rust
 | 1 | Enable endgame PST interpolation | Strength | Quick win, minimal code | ✓ Done |
 | 2 | Incremental PST evaluation | Speed | 15-20% faster | ✓ Done |
 | 3 | Remove `pieces` Vec | Speed | 10-15% faster | ✓ Partial |
-| 4 | Killer moves + history heuristic | Strength | Much better move ordering | |
+| 4 | Killer moves + history heuristic | Strength | Much better move ordering | ✓ Done |
 | 5 | Lazy/incremental attack maps | Speed | 10-20% faster | |
 | 6 | PVS search | Strength | Better node efficiency | |
 | 7 | Check extensions | Strength | Avoids horizon effects | |

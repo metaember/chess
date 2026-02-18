@@ -4,10 +4,116 @@ use crate::board::*;
 use crate::book::Book;
 use crate::evaluate::*;
 use crate::tt::{TranspositionTable, TTFlag};
-use crate::types::{Move, PieceType, Status};
+use crate::types::{Color, Move, PieceType, Position, Status};
 
 pub const MIN_SCORE: i32 = -1_000_000_000;
 pub const MAX_SCORE: i32 = 1_000_000_000;
+
+/// Maximum search depth for killer move storage
+pub const MAX_PLY: usize = 64;
+
+/// Search state containing killer moves and history heuristic
+pub struct SearchState {
+    /// Killer moves: 2 quiet moves per ply that caused beta cutoffs
+    /// These are moves that were good in sibling nodes and might be good here too
+    pub killer_moves: [[Option<Move>; 2]; MAX_PLY],
+
+    /// History heuristic: [color][from_square][to_square] -> score
+    /// Accumulates bonuses for quiet moves that cause beta cutoffs
+    pub history: [[[i32; 64]; 64]; 2],
+}
+
+impl SearchState {
+    pub fn new() -> Self {
+        SearchState {
+            killer_moves: [[None; 2]; MAX_PLY],
+            history: [[[0; 64]; 64]; 2],
+        }
+    }
+
+    /// Store a killer move at the given ply
+    /// If the move is already the first killer, do nothing
+    /// Otherwise, shift first killer to second and store new move as first
+    pub fn store_killer(&mut self, ply: usize, mv: Move) {
+        if ply >= MAX_PLY {
+            return;
+        }
+        // Don't store if it's already the first killer
+        if self.killer_moves[ply][0] == Some(mv) {
+            return;
+        }
+        // Shift first to second, store new as first
+        self.killer_moves[ply][1] = self.killer_moves[ply][0];
+        self.killer_moves[ply][0] = Some(mv);
+    }
+
+    /// Check if a move is a killer at the given ply
+    pub fn is_killer(&self, ply: usize, mv: &Move) -> bool {
+        if ply >= MAX_PLY {
+            return false;
+        }
+        self.killer_moves[ply][0] == Some(*mv) || self.killer_moves[ply][1] == Some(*mv)
+    }
+
+    /// Get killer move priority (0 = first killer, 1 = second killer, None = not a killer)
+    pub fn killer_priority(&self, ply: usize, mv: &Move) -> Option<usize> {
+        if ply >= MAX_PLY {
+            return None;
+        }
+        if self.killer_moves[ply][0] == Some(*mv) {
+            Some(0)
+        } else if self.killer_moves[ply][1] == Some(*mv) {
+            Some(1)
+        } else {
+            None
+        }
+    }
+
+    /// Add history bonus for a quiet move that caused a beta cutoff
+    /// Bonus is scaled by depth² (deeper cutoffs are more valuable)
+    pub fn add_history_bonus(&mut self, color: Color, from: Position, to: Position, depth: u8) {
+        let color_idx = color as usize;
+        let from_sq = position_to_square(from);
+        let to_sq = position_to_square(to);
+        let bonus = (depth as i32) * (depth as i32);
+
+        // Cap history values to prevent overflow
+        let new_value = self.history[color_idx][from_sq][to_sq].saturating_add(bonus);
+        self.history[color_idx][from_sq][to_sq] = new_value.min(10000);
+    }
+
+    /// Get history score for a move
+    pub fn get_history_score(&self, color: Color, from: Position, to: Position) -> i32 {
+        let color_idx = color as usize;
+        let from_sq = position_to_square(from);
+        let to_sq = position_to_square(to);
+        self.history[color_idx][from_sq][to_sq]
+    }
+
+    /// Age history scores (call at start of new search)
+    /// Divides all scores by 2 to gradually forget old information
+    pub fn age_history(&mut self) {
+        for color in 0..2 {
+            for from in 0..64 {
+                for to in 0..64 {
+                    self.history[color][from][to] /= 2;
+                }
+            }
+        }
+    }
+}
+
+impl Default for SearchState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Convert position to square index (0-63)
+#[inline]
+fn position_to_square(pos: Position) -> usize {
+    ((pos.rank - 1) * 8 + (pos.file - 1)) as usize
+}
 
 #[derive(Debug)]
 pub struct SearchResult {
@@ -98,7 +204,8 @@ pub fn minimax_with_tt(
     tt: &mut TranspositionTable,
 ) -> Result<SearchResult, Vec<Move>> {
     let (alpha, beta) = (MIN_SCORE, MAX_SCORE);
-    negamax_with_tt_mut(max_depth, board, alpha, beta, tt)
+    let mut search_state = SearchState::new();
+    negamax_with_tt_mut(max_depth, board, alpha, beta, tt, &mut search_state, 0)
 }
 
 /// Iterative deepening search with transposition table
@@ -113,9 +220,13 @@ pub fn iterative_deepening(
     let mut best_result: Option<SearchResult> = None;
     let mut total_nodes = 0;
     let mut total_quiescent_nodes = 0;
+    let mut search_state = SearchState::new();
 
     for depth in 1..=max_depth {
-        let result = negamax_with_tt_mut(depth, board, MIN_SCORE, MAX_SCORE, tt)?;
+        // Age history at the start of each new depth iteration
+        search_state.age_history();
+
+        let result = negamax_with_tt_mut(depth, board, MIN_SCORE, MAX_SCORE, tt, &mut search_state, 0)?;
         total_nodes += result.nodes_searched;
         total_quiescent_nodes += result.quiescent_nodes_searched;
 
@@ -144,6 +255,7 @@ pub fn iterative_deepening_timed(
     let mut best_result: Option<SearchResult> = None;
     let mut total_nodes = 0;
     let mut total_quiescent_nodes = 0;
+    let mut search_state = SearchState::new();
     let start = Instant::now();
 
     for depth in 1..=max_depth {
@@ -152,7 +264,10 @@ pub fn iterative_deepening_timed(
             break;
         }
 
-        let result = negamax_with_tt_mut(depth, board, MIN_SCORE, MAX_SCORE, tt)?;
+        // Age history at the start of each new depth iteration
+        search_state.age_history();
+
+        let result = negamax_with_tt_mut(depth, board, MIN_SCORE, MAX_SCORE, tt, &mut search_state, 0)?;
         total_nodes += result.nodes_searched;
         total_quiescent_nodes += result.quiescent_nodes_searched;
 
@@ -181,6 +296,8 @@ fn negamax_with_tt_mut(
     alpha: i32,
     beta: i32,
     tt: &mut TranspositionTable,
+    search_state: &mut SearchState,
+    ply: usize,
 ) -> Result<SearchResult, Vec<Move>> {
     let original_alpha = alpha;
     let mut alpha = alpha;
@@ -215,6 +332,8 @@ fn negamax_with_tt_mut(
             -beta,
             -beta + 1, // Null window search
             tt,
+            search_state,
+            ply + 1,
         );
         board.unmake_null_move(&undo);
 
@@ -257,7 +376,11 @@ fn negamax_with_tt_mut(
         _ => panic!("No legal moves, not a stalemate or a checkmate"),
     };
 
-    // Move ordering: put TT best move first, then MVV-LVA
+    // Move ordering priority:
+    // 1. TT best move (1_000_000)
+    // 2. Captures with MVV-LVA scoring (100_000 + mvv_lva)
+    // 3. Killer moves (90_000 for first killer, 80_000 for second)
+    // 4. Quiet moves with history score
     let tt_best_move = tt.get_best_move(board.zobrist_hash);
     let legal_moves = {
         let mut moves_and_scores: Vec<_> = legal_moves
@@ -265,8 +388,15 @@ fn negamax_with_tt_mut(
             .map(|m| {
                 let score = if Some(*m) == tt_best_move {
                     1_000_000 // TT move gets highest priority
+                } else if m.captured.is_some() {
+                    // Captures: MVV-LVA scoring + high base
+                    100_000 + guess_move_value(board, m)
+                } else if let Some(killer_idx) = search_state.killer_priority(ply, m) {
+                    // Killer moves: first killer = 90_000, second = 80_000
+                    90_000 - (killer_idx as i32 * 10_000)
                 } else {
-                    guess_move_value(board, m)
+                    // Quiet moves: history score
+                    search_state.get_history_score(active_color, m.from, m.to)
                 };
                 (m, score)
             })
@@ -303,7 +433,7 @@ fn negamax_with_tt_mut(
             && m.captured.is_none()
         {
             // Search with reduced depth first
-            let reduced_result = negamax_with_tt_mut(max_depth - 2, board, -alpha - 1, -alpha, tt);
+            let reduced_result = negamax_with_tt_mut(max_depth - 2, board, -alpha - 1, -alpha, tt, search_state, ply + 1);
 
             // If it beats alpha, we need to re-search at full depth
             needs_full_search = match &reduced_result {
@@ -312,12 +442,12 @@ fn negamax_with_tt_mut(
             };
 
             if needs_full_search {
-                negamax_with_tt_mut(max_depth - 1, board, -beta, -alpha, tt)
+                negamax_with_tt_mut(max_depth - 1, board, -beta, -alpha, tt, search_state, ply + 1)
             } else {
                 reduced_result
             }
         } else {
-            negamax_with_tt_mut(max_depth - 1, board, -beta, -alpha, tt)
+            negamax_with_tt_mut(max_depth - 1, board, -beta, -alpha, tt, search_state, ply + 1)
         };
         board.unmake_move(&undo);
 
@@ -348,6 +478,13 @@ fn negamax_with_tt_mut(
                         TTFlag::LowerBound,
                         Some(*m),
                     );
+
+                    // Update killer moves and history for quiet moves (non-captures)
+                    if m.captured.is_none() {
+                        search_state.store_killer(ply, *m);
+                        search_state.add_history_bonus(active_color, m.from, m.to, max_depth);
+                    }
+
                     return Ok(SearchResult {
                         best_move: Some(*m),
                         best_score: beta,
