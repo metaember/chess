@@ -4,6 +4,7 @@ use axum::{
     routing::post,
     Json, Router,
 };
+use rand::Rng;
 use rust_chess::board::Board;
 use rust_chess::search::minimax;
 use rust_chess::types::{Color, MoveFlag, PieceType, Position, Status};
@@ -11,11 +12,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant, SystemTime};
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 
 const MAX_GAMES: usize = 1000;
 const GAME_TTL: Duration = Duration::from_secs(48 * 60 * 60); // 48 hours
+const MAX_DEPTH: u8 = 8;
+const DEFAULT_DEPTH: u8 = 5; // Expert difficulty
 
 // Individual game state
 struct GameState {
@@ -94,12 +97,8 @@ struct EngineStats {
 }
 
 fn generate_game_id() -> String {
-    use std::time::UNIX_EPOCH;
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    format!("{:x}", timestamp)
+    let bytes: [u8; 16] = rand::thread_rng().gen();
+    bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 fn cleanup_games(games: &mut HashMap<String, GameState>) {
@@ -201,7 +200,7 @@ async fn new_game(
         _ => Color::White,
     };
 
-    let depth = req.depth.unwrap_or(4);
+    let depth = req.depth.unwrap_or(DEFAULT_DEPTH).min(MAX_DEPTH);
     let game_id = generate_game_id();
 
     let mut board = Board::new();
@@ -224,7 +223,7 @@ async fn new_game(
     };
 
     {
-        let mut games = state.games.write().unwrap();
+        let mut games = state.games.write().unwrap_or_else(|e| e.into_inner());
         cleanup_games(&mut games);
         games.insert(game_id.clone(), game_state);
     }
@@ -236,7 +235,7 @@ async fn make_move(
     State(state): State<AppState>,
     Json(req): Json<MakeMoveRequest>,
 ) -> Result<Json<MakeMoveResponse>, (StatusCode, String)> {
-    let mut games = state.games.write().unwrap();
+    let mut games = state.games.write().unwrap_or_else(|e| e.into_inner());
 
     let game = match games.get_mut(&req.game_id) {
         Some(g) => g,
@@ -458,10 +457,7 @@ async fn main() {
         games: Arc::new(RwLock::new(HashMap::new())),
     };
 
-    let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+    let cors = CorsLayer::new();
 
     let app = Router::new()
         .route("/api/new-game", post(new_game))
