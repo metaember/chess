@@ -341,6 +341,47 @@ impl Board {
         (mg_score * phase + eg_score * (MAX_PHASE - phase)) / MAX_PHASE
     }
 
+    /// Iterate over all pieces on the board using bitboards.
+    /// This is more efficient than maintaining a separate Vec<Piece>.
+    pub fn iter_pieces(&self) -> impl Iterator<Item = Piece> + '_ {
+        const PIECE_TYPES: [PieceType; 6] = [
+            PieceType::Pawn,
+            PieceType::Rook,
+            PieceType::Knight,
+            PieceType::Bishop,
+            PieceType::Queen,
+            PieceType::King,
+        ];
+        const COLORS: [Color; 2] = [Color::White, Color::Black];
+
+        COLORS.into_iter().flat_map(move |color| {
+            PIECE_TYPES.into_iter().flat_map(move |piece_type| {
+                let bb = self.piece_bb[color as usize][piece_type_to_index(piece_type)];
+                BitboardIter(bb).map(move |sq| {
+                    let rank = (sq / 8) as u8 + 1;
+                    let file = (sq % 8) as u8 + 1;
+                    Piece {
+                        color,
+                        piece_type,
+                        position: Position { rank, file },
+                    }
+                })
+            })
+        })
+    }
+
+    /// Count total number of pieces on the board
+    #[inline]
+    pub fn piece_count(&self) -> u32 {
+        self.occupied.count_ones()
+    }
+
+    /// Count pieces of a specific color
+    #[inline]
+    pub fn piece_count_for_color(&self, color: Color) -> u32 {
+        self.get_pieces_bb(color).count_ones()
+    }
+
     pub fn to_fen(&self) -> String {
         let mut fen = "".to_string();
         for rank in 0..8 {
@@ -441,46 +482,24 @@ impl Board {
     }
 
     pub fn check_for_insufficient_material(&self) -> Option<Status> {
-        let white_pieces: Vec<_> = self
-            .pieces
-            .iter()
-            .filter(|p| p.color == Color::White)
-            .collect();
-        let black_pieces: Vec<_> = self
-            .pieces
-            .iter()
-            .filter(|p| p.color == Color::Black)
-            .collect();
+        // Use bitboard population count for efficiency
+        let white_piece_count = self.get_pieces_bb(Color::White).count_ones();
+        let black_piece_count = self.get_pieces_bb(Color::Black).count_ones();
 
-        if white_pieces.len() >= 3 || black_pieces.len() >= 3 {
+        if white_piece_count >= 3 || black_piece_count >= 3 {
             return None;
         }
 
-        let white_bishop_count = white_pieces
-            .iter()
-            .filter(|p| p.piece_type == PieceType::Bishop)
-            .count();
+        let white_bishop_count = self.get_piece_bb(Color::White, PieceType::Bishop).count_ones();
+        let black_bishop_count = self.get_piece_bb(Color::Black, PieceType::Bishop).count_ones();
+        let white_knight_count = self.get_piece_bb(Color::White, PieceType::Knight).count_ones();
+        let black_knight_count = self.get_piece_bb(Color::Black, PieceType::Knight).count_ones();
 
-        let black_bishop_count = black_pieces
-            .iter()
-            .filter(|p| p.piece_type == PieceType::Bishop)
-            .count();
+        let black_insufficient = black_piece_count == 1
+            || (black_piece_count == 2 && (black_knight_count == 1 || black_bishop_count == 1));
 
-        let white_knight_count = white_pieces
-            .iter()
-            .filter(|p| p.piece_type == PieceType::Knight)
-            .count();
-
-        let black_knight_count = black_pieces
-            .iter()
-            .filter(|p| p.piece_type == PieceType::Knight)
-            .count();
-
-        let black_insufficient = black_pieces.len() == 1
-            || black_pieces.len() == 2 && { black_knight_count == 1 || black_bishop_count == 1 };
-
-        let white_insufficient = white_pieces.len() == 1
-            || white_pieces.len() == 2 && { white_knight_count == 1 || white_bishop_count == 1 };
+        let white_insufficient = white_piece_count == 1
+            || (white_piece_count == 2 && (white_knight_count == 1 || white_bishop_count == 1));
 
         if black_insufficient && white_insufficient {
             Some(Status::InsufficientMaterial)
@@ -1354,30 +1373,7 @@ impl Board {
         // Use bitboard for fast check detection
         let is_in_check = self.is_in_check(*color);
 
-        let my_pieces: Vec<&Piece> = self.pieces.iter().filter(|p| p.color == *color).collect();
-        // TODO: reimplement piece subsetting optimization for double check
-        let _pieces_to_compute_moves_for = match current_checks.len() {
-            0 => my_pieces,
-            // but only onto squares that block or capture the attacking piece, or king move
-            1 => my_pieces,
-            // double check, only the king can move
-            _ => vec![&my_king],
-        };
-
-        // 3: check all legal moves from the pieces we can legally move
-        // first get all valid moves
-
-        // TODO: reimplement the piece subsettting if we're in double check
-
-        // let mut my_possible_moves: Vec<_> = pieces_to_compute_moves_for
-        //     .into_iter()
-        //     .map(|p| self.get_pseudo_moves(&p, false))
-        //     .flatten()
-        //     // castling out of check is not allowed
-        //     .filter(|m| !(is_in_check && (m.move_flag == MoveFlag::CastleKingside || m.move_flag == MoveFlag::CastleQueenside)))
-        //     .collect();
-
-        // TODO OPTIM: make sure that this return of the vec is not a copy
+        // Generate all pseudo-legal moves using bitboard-based MoveGenerator
         let mut my_possible_moves: Vec<_> = MoveGenerator::new(self, *color)
             .collect()
             .into_iter()
@@ -2106,30 +2102,22 @@ mod tests {
         let pins = MoveGenerator::new(&b, Color::White).get_pins(&Color::White);
         assert_eq!(pins.len(), 2);
 
-        assert_eq!(pins[0].piece.piece_type, PieceType::Rook);
-        assert_eq!(pins[0].piece.position, Position { rank: 6, file: 4 });
-        pins[0]
-            .valid_responses
-            .iter()
-            .for_each(|p| println!("{}", p.to_algebraic()));
-        assert_eq!(pins[0].valid_responses.len(), 2);
+        // Find pin for rook on d6 (order-independent)
+        let pin_d6 = pins.iter().find(|p| p.piece.position == Position { rank: 6, file: 4 }).unwrap();
+        assert_eq!(pin_d6.piece.piece_type, PieceType::Rook);
+        pin_d6.valid_responses.iter().for_each(|p| println!("{}", p.to_algebraic()));
+        assert_eq!(pin_d6.valid_responses.len(), 2);
         for pos in vec!["d7", "d8"] {
-            assert!(pins[0]
-                .valid_responses
-                .contains(&Position::from_algebraic(pos)));
+            assert!(pin_d6.valid_responses.contains(&Position::from_algebraic(pos)));
         }
 
-        assert_eq!(pins[1].piece.piece_type, PieceType::Rook);
-        assert_eq!(pins[1].piece.position, Position { rank: 4, file: 4 });
-        pins[1]
-            .valid_responses
-            .iter()
-            .for_each(|p| println!("{}", p.to_algebraic()));
-        assert_eq!(pins[1].valid_responses.len(), 2);
+        // Find pin for rook on d4 (order-independent)
+        let pin_d4 = pins.iter().find(|p| p.piece.position == Position { rank: 4, file: 4 }).unwrap();
+        assert_eq!(pin_d4.piece.piece_type, PieceType::Rook);
+        pin_d4.valid_responses.iter().for_each(|p| println!("{}", p.to_algebraic()));
+        assert_eq!(pin_d4.valid_responses.len(), 2);
         for pos in vec!["d2", "d3"] {
-            assert!(pins[1]
-                .valid_responses
-                .contains(&Position::from_algebraic(pos)));
+            assert!(pin_d4.valid_responses.contains(&Position::from_algebraic(pos)));
         }
     }
 

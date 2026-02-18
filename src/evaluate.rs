@@ -79,7 +79,7 @@ impl Material {
         let mut black_piece_material = 0;
         let mut phase = 0;
 
-        for piece in &board.pieces {
+        for piece in board.iter_pieces() {
             let current_piece_material = Material::piece_to_material(piece.piece_type);
             phase += Material::piece_to_phase(piece.piece_type);
 

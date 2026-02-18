@@ -564,18 +564,17 @@ impl<'a> MoveGenerator<'a> {
     /// where the piece would maintain protection of the king, by blocking the ray or capturing
     /// the pinning piece.
     pub fn get_pins(&self, color: &Color) -> Vec<PinnedPiece> {
-        let opponent_sliding_pieces: Vec<&Piece> = self
+        // Use iter_pieces() to iterate over opponent's sliding pieces
+        let opponent_sliding_pieces: Vec<Piece> = self
             .board
-            .pieces
-            .iter()
+            .iter_pieces()
             .filter(|p| p.color == color.other_color() && p.piece_type.is_sliding())
             .collect();
 
         let king = self.board.get_king(*color);
-        // TODO OPTIM: make this a vec with size init
         let mut pins: Vec<PinnedPiece> = vec![];
 
-        for piece in opponent_sliding_pieces {
+        for piece in &opponent_sliding_pieces {
             match piece.piece_type {
                 PieceType::Rook => {
                     if let Some(pin) = self.get_rook_pins(&king, piece) {
