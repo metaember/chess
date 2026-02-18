@@ -28,14 +28,19 @@ impl<'a> MoveGenerator<'a> {
     }
 
     pub fn collect(&mut self) -> Vec<Move> {
-        self.collect_with_mode(false)
+        self.collect_with_mode(false, false)
     }
 
     pub fn collect_observed(&mut self) -> Vec<Move> {
-        self.collect_with_mode(true)
+        self.collect_with_mode(true, false)
     }
 
-    fn collect_with_mode(&mut self, observed_mode: bool) -> Vec<Move> {
+    /// Collect only capture moves (for quiescence search)
+    pub fn collect_captures(&mut self) -> Vec<Move> {
+        self.collect_with_mode(false, true)
+    }
+
+    fn collect_with_mode(&mut self, observed_mode: bool, captures_only: bool) -> Vec<Move> {
         let dominated_pieces: Vec<Piece> = self
             .board
             .pieces
@@ -44,7 +49,7 @@ impl<'a> MoveGenerator<'a> {
             .copied()
             .collect();
         for piece in dominated_pieces.iter() {
-            self.get_pseudo_moves(piece, observed_mode);
+            self.get_pseudo_moves(piece, observed_mode, captures_only);
         }
         std::mem::take(&mut self.moves)
     }
@@ -60,7 +65,8 @@ impl<'a> MoveGenerator<'a> {
     /// are "past" the opponent king for sliding pieces.
 
     /// Get a vector of pseudo valid moves for the piece `piece`.
-    fn get_pseudo_moves(&mut self, piece: &Piece, observed_mode: bool) {
+    /// If `captures_only` is true, only generate capture moves (for quiescence search).
+    fn get_pseudo_moves(&mut self, piece: &Piece, observed_mode: bool, captures_only: bool) {
         match piece.piece_type {
             PieceType::Pawn => {
                 if observed_mode {
@@ -92,19 +98,22 @@ impl<'a> MoveGenerator<'a> {
                             move_flag: MoveFlag::Regular,
                         });
                     }
+                } else if captures_only {
+                    // Only generate pawn captures, skip pushes
+                    self.get_pseudo_pawn_captures(piece);
                 } else {
                     self.get_pseudo_pawn_pushes(piece);
                     self.get_pseudo_pawn_captures(piece);
                 }
             }
-            PieceType::Rook => self.get_pseudo_rook_moves(piece, observed_mode),
-            PieceType::Knight => self.get_pseudo_knight_moves(piece, observed_mode),
-            PieceType::Bishop => self.get_pseudo_bishop_moves(piece, observed_mode),
+            PieceType::Rook => self.get_pseudo_rook_moves(piece, observed_mode, captures_only),
+            PieceType::Knight => self.get_pseudo_knight_moves(piece, observed_mode, captures_only),
+            PieceType::Bishop => self.get_pseudo_bishop_moves(piece, observed_mode, captures_only),
             PieceType::Queen => {
-                self.get_pseudo_bishop_moves(piece, observed_mode);
-                self.get_pseudo_rook_moves(piece, observed_mode);
+                self.get_pseudo_bishop_moves(piece, observed_mode, captures_only);
+                self.get_pseudo_rook_moves(piece, observed_mode, captures_only);
             }
-            PieceType::King => self.get_pseudo_king_moves(piece, observed_mode),
+            PieceType::King => self.get_pseudo_king_moves(piece, observed_mode, captures_only),
         };
     }
 
@@ -197,7 +206,7 @@ impl<'a> MoveGenerator<'a> {
         }
     }
 
-    fn get_pseudo_rook_moves(&mut self, piece: &Piece, observed_mode: bool) {
+    fn get_pseudo_rook_moves(&mut self, piece: &Piece, observed_mode: bool, captures_only: bool) {
         let pos = &piece.position;
 
         // up
@@ -210,13 +219,16 @@ impl<'a> MoveGenerator<'a> {
             match potential_move {
                 PotentialMove::Invalid => break,
                 PotentialMove::Valid(maybe_other) => {
-                    self.moves.push(Move {
-                        piece: *piece,
-                        from: piece.position,
-                        to: candidate,
-                        captured: maybe_other,
-                        move_flag: MoveFlag::Regular,
-                    });
+                    // Skip non-captures if captures_only mode
+                    if !captures_only || maybe_other.is_some() {
+                        self.moves.push(Move {
+                            piece: *piece,
+                            from: piece.position,
+                            to: candidate,
+                            captured: maybe_other,
+                            move_flag: MoveFlag::Regular,
+                        });
+                    }
                     if !potential_move.continue_search_in_direction() {
                         break;
                     }
@@ -233,13 +245,15 @@ impl<'a> MoveGenerator<'a> {
             match potential_move {
                 PotentialMove::Invalid => break,
                 PotentialMove::Valid(maybe_other) => {
-                    self.moves.push(Move {
-                        piece: *piece,
-                        from: piece.position,
-                        to: candidate,
-                        captured: maybe_other,
-                        move_flag: MoveFlag::Regular,
-                    });
+                    if !captures_only || maybe_other.is_some() {
+                        self.moves.push(Move {
+                            piece: *piece,
+                            from: piece.position,
+                            to: candidate,
+                            captured: maybe_other,
+                            move_flag: MoveFlag::Regular,
+                        });
+                    }
                     if !potential_move.continue_search_in_direction() {
                         break;
                     }
@@ -257,13 +271,15 @@ impl<'a> MoveGenerator<'a> {
             match potential_move {
                 PotentialMove::Invalid => break,
                 PotentialMove::Valid(maybe_other) => {
-                    self.moves.push(Move {
-                        piece: *piece,
-                        from: piece.position,
-                        to: candidate,
-                        captured: maybe_other,
-                        move_flag: MoveFlag::Regular,
-                    });
+                    if !captures_only || maybe_other.is_some() {
+                        self.moves.push(Move {
+                            piece: *piece,
+                            from: piece.position,
+                            to: candidate,
+                            captured: maybe_other,
+                            move_flag: MoveFlag::Regular,
+                        });
+                    }
                     if !potential_move.continue_search_in_direction() {
                         break;
                     }
@@ -280,13 +296,15 @@ impl<'a> MoveGenerator<'a> {
             match potential_move {
                 PotentialMove::Invalid => break,
                 PotentialMove::Valid(maybe_other) => {
-                    self.moves.push(Move {
-                        piece: *piece,
-                        from: piece.position,
-                        to: candidate,
-                        captured: maybe_other,
-                        move_flag: MoveFlag::Regular,
-                    });
+                    if !captures_only || maybe_other.is_some() {
+                        self.moves.push(Move {
+                            piece: *piece,
+                            from: piece.position,
+                            to: candidate,
+                            captured: maybe_other,
+                            move_flag: MoveFlag::Regular,
+                        });
+                    }
                     if !potential_move.continue_search_in_direction() {
                         break;
                     }
@@ -295,7 +313,7 @@ impl<'a> MoveGenerator<'a> {
         }
     }
 
-    fn get_pseudo_bishop_moves(&mut self, piece: &Piece, observed_mode: bool) {
+    fn get_pseudo_bishop_moves(&mut self, piece: &Piece, observed_mode: bool, captures_only: bool) {
         let pos = &piece.position;
 
         let directions = [(1, 1), (1, -1), (-1, 1), (-1, -1)];
@@ -313,13 +331,16 @@ impl<'a> MoveGenerator<'a> {
                 match potential_move {
                     PotentialMove::Invalid => break,
                     PotentialMove::Valid(maybe_other) => {
-                        self.moves.push(Move {
-                            piece: *piece,
-                            from: piece.position,
-                            to: candidate,
-                            captured: maybe_other,
-                            move_flag: MoveFlag::Regular,
-                        });
+                        // Skip non-captures if captures_only mode
+                        if !captures_only || maybe_other.is_some() {
+                            self.moves.push(Move {
+                                piece: *piece,
+                                from: piece.position,
+                                to: candidate,
+                                captured: maybe_other,
+                                move_flag: MoveFlag::Regular,
+                            });
+                        }
                         if maybe_other.is_some() {
                             break;
                         }
@@ -368,7 +389,7 @@ impl<'a> MoveGenerator<'a> {
 
     // TODO: add type annotations to make this only take knight pieces
     // TODO: same for the other functions above
-    fn get_pseudo_knight_moves(&mut self, piece: &Piece, observed_mode: bool) {
+    fn get_pseudo_knight_moves(&mut self, piece: &Piece, observed_mode: bool, captures_only: bool) {
         for (rank_delta, file_delta) in
             std::iter::zip([-2, -2, -1, -1, 1, 1, 2, 2], [-1, 1, -2, 2, -2, 2, -1, 1])
         {
@@ -380,23 +401,26 @@ impl<'a> MoveGenerator<'a> {
                 let maybe_other_piece = self.board.piece_at(future_rank, future_file);
                 if maybe_other_piece.is_some_and(|p| p.color == piece.color && !observed_mode) {
                     continue;
-                } else {
-                    self.moves.push(Move {
-                        piece: *piece,
-                        from: piece.position,
-                        to: Position {
-                            rank: future_rank,
-                            file: future_file,
-                        },
-                        captured: maybe_other_piece.map(|p| *p),
-                        move_flag: MoveFlag::Regular,
-                    })
                 }
+                // Skip non-captures if captures_only mode
+                if captures_only && maybe_other_piece.is_none() {
+                    continue;
+                }
+                self.moves.push(Move {
+                    piece: *piece,
+                    from: piece.position,
+                    to: Position {
+                        rank: future_rank,
+                        file: future_file,
+                    },
+                    captured: maybe_other_piece.map(|p| *p),
+                    move_flag: MoveFlag::Regular,
+                })
             }
         }
     }
 
-    fn get_pseudo_king_moves(&mut self, king: &Piece, observed_mode: bool) {
+    fn get_pseudo_king_moves(&mut self, king: &Piece, observed_mode: bool, captures_only: bool) {
         for (rank_delta, file_delta) in std::iter::zip(
             [-1, -1, -1, 0, 0, 1, 1, 1],
             [-1, 0, 1, -1, 1, -1, 0, 1],
@@ -437,18 +461,27 @@ impl<'a> MoveGenerator<'a> {
                             move_flag: MoveFlag::Regular,
                         }),
                     },
-                    None => self.moves.push(Move {
-                        piece: *king,
-                        from: king.position,
-                        to: Position {
-                            rank: future_rank as u8,
-                            file: future_file as u8,
-                        },
-                        captured: None,
-                        move_flag: MoveFlag::Regular,
-                    }),
+                    None => {
+                        // Skip non-captures if captures_only mode
+                        if !captures_only {
+                            self.moves.push(Move {
+                                piece: *king,
+                                from: king.position,
+                                to: Position {
+                                    rank: future_rank as u8,
+                                    file: future_file as u8,
+                                },
+                                captured: None,
+                                move_flag: MoveFlag::Regular,
+                            })
+                        }
+                    }
                 }
             }
+        }
+        // Skip castles in captures_only mode (castling is never a capture)
+        if captures_only {
+            return;
         }
         // castles
         // the relevant squares being free from opponent observed squares is checked in the legal moves function

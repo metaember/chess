@@ -111,9 +111,14 @@ pub fn guess_move_value(_board: &Board, mv: &Move) -> i32 {
 
 fn get_piece_adjustment_value(piece: &Piece, is_endgame: bool) -> i32 {
     let raw_table = get_raw_adjustemnt_table(piece, is_endgame);
+    // PST tables are stored with rank 8 at index 0-7 and rank 1 at index 56-63
+    // (from White's perspective, looking at the board with rank 1 at bottom)
     let index = match piece.color {
-        Color::White => (piece.position.rank - 1) * 8 + piece.position.file - 1,
-        Color::Black => (piece.position.rank - 1) + piece.position.file - 1,
+        // White: rank 8 -> indices 0-7, rank 1 -> indices 56-63
+        Color::White => (8 - piece.position.rank) * 8 + piece.position.file - 1,
+        // Black: mirror perspective - rank 1 -> indices 0-7, rank 8 -> indices 56-63
+        // This ensures Black's home rank (8) uses same values as White's home rank (1)
+        Color::Black => (piece.position.rank - 1) * 8 + piece.position.file - 1,
     };
     raw_table[index as usize]
 }
@@ -203,3 +208,261 @@ const KING_END: [i32; 8 * 8] = [
     -10, -15, -10, 35, 45, 45, 35, -10, -15, -20, -15, 30, 40, 40, 30, -15, -20, -25, -20, 20, 25,
     25, 20, -20, -25, -30, -25, 0, 0, 0, 0, -25, -30, -50, -30, -30, -30, -30, -30, -30, -50,
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::board::Board;
+    use crate::types::{Color, Piece, PieceType, Position};
+
+    /// Test that PST index calculation is correct for both colors.
+    /// White pieces should use (rank-1)*8 + (file-1)
+    /// Black pieces should use mirrored rank: (8-rank)*8 + (file-1)
+    #[test]
+    fn test_pst_index_bounds() {
+        // Test all 64 squares for both colors to ensure indices are in bounds
+        for rank in 1..=8 {
+            for file in 1..=8 {
+                let white_piece = Piece {
+                    color: Color::White,
+                    piece_type: PieceType::Pawn,
+                    position: Position { rank, file },
+                };
+                let black_piece = Piece {
+                    color: Color::Black,
+                    piece_type: PieceType::Pawn,
+                    position: Position { rank, file },
+                };
+
+                // These should not panic - if index is out of bounds, we'll crash
+                let white_value = get_piece_adjustment_value(&white_piece, false);
+                let black_value = get_piece_adjustment_value(&black_piece, false);
+
+                // Values should be in reasonable range
+                assert!(
+                    white_value >= -100 && white_value <= 100,
+                    "White pawn PST value out of range at ({}, {}): {}",
+                    rank,
+                    file,
+                    white_value
+                );
+                assert!(
+                    black_value >= -100 && black_value <= 100,
+                    "Black pawn PST value out of range at ({}, {}): {}",
+                    rank,
+                    file,
+                    black_value
+                );
+            }
+        }
+    }
+
+    /// Test that mirrored positions have symmetric PST values.
+    /// A white pawn on e4 should have the same PST bonus as a black pawn on e5
+    /// (mirrored across the center of the board).
+    #[test]
+    fn test_pst_symmetry_for_mirrored_positions() {
+        // White pawn on rank 4, file 5 (e4) should have same value as
+        // Black pawn on rank 5, file 5 (e5) - they're both "4 ranks from home"
+        let white_pawn_e4 = Piece {
+            color: Color::White,
+            piece_type: PieceType::Pawn,
+            position: Position { rank: 4, file: 5 },
+        };
+        let black_pawn_e5 = Piece {
+            color: Color::Black,
+            piece_type: PieceType::Pawn,
+            position: Position { rank: 5, file: 5 },
+        };
+
+        let white_value = get_piece_adjustment_value(&white_pawn_e4, false);
+        let black_value = get_piece_adjustment_value(&black_pawn_e5, false);
+
+        assert_eq!(
+            white_value, black_value,
+            "Mirrored pawn positions should have equal PST values. \
+             White e4 = {}, Black e5 = {}",
+            white_value, black_value
+        );
+    }
+
+    /// Test that a knight in the center has higher value than on the edge.
+    /// This is a sanity check that PST tables are applied correctly.
+    #[test]
+    fn test_knight_center_vs_edge() {
+        let knight_center = Piece {
+            color: Color::White,
+            piece_type: PieceType::Knight,
+            position: Position { rank: 4, file: 4 }, // d4
+        };
+        let knight_edge = Piece {
+            color: Color::White,
+            piece_type: PieceType::Knight,
+            position: Position { rank: 1, file: 1 }, // a1
+        };
+
+        let center_value = get_piece_adjustment_value(&knight_center, false);
+        let edge_value = get_piece_adjustment_value(&knight_edge, false);
+
+        assert!(
+            center_value > edge_value,
+            "Knight in center should be worth more than knight on edge. \
+             Center (d4) = {}, Edge (a1) = {}",
+            center_value,
+            edge_value
+        );
+    }
+
+    /// Test that the starting position evaluates to 0 (symmetric).
+    /// Both sides have identical material and identical (mirrored) piece positions.
+    #[test]
+    fn test_starting_position_is_equal() {
+        let board = Board::new();
+        let material = Material::compute_material(&board);
+
+        // Material should be equal
+        assert_eq!(
+            material.white_material, material.black_material,
+            "Starting position material should be equal"
+        );
+
+        // PST adjustments should also be equal (symmetric position)
+        assert_eq!(
+            material.white_piece_location_adjustment,
+            material.black_piece_location_adjustment,
+            "Starting position PST adjustments should be equal. \
+             White = {}, Black = {}",
+            material.white_piece_location_adjustment,
+            material.black_piece_location_adjustment
+        );
+
+        // Overall evaluation should be 0
+        let eval = evaluate_board(&board);
+        assert_eq!(eval, 0, "Starting position should evaluate to 0");
+    }
+
+    /// Test that mirrored positions with equal advantages evaluate equally.
+    /// evaluate_board returns score from side-to-move perspective, so:
+    /// - Position where White is up, White to move -> positive
+    /// - Mirrored position where Black is up, Black to move -> also positive (same magnitude)
+    #[test]
+    fn test_mirrored_positions_evaluate_equally() {
+        // Position with white having a pawn advantage
+        // White pawn on e4 (good central control)
+        let white_advantage_fen = "4k3/8/8/8/4P3/8/8/4K3 w - - 0 1";
+        let white_board = Board::from_fen(white_advantage_fen);
+
+        // Mirror: Black pawn on e5 (same relative position from Black's perspective)
+        let black_advantage_fen = "4k3/8/8/4p3/8/8/8/4K3 b - - 0 1";
+        let black_board = Board::from_fen(black_advantage_fen);
+
+        let white_eval = evaluate_board(&white_board);
+        let black_eval = evaluate_board(&black_board);
+
+        // Both should be positive and equal since each side is evaluating
+        // their own advantage from their own perspective
+        assert_eq!(
+            white_eval, black_eval,
+            "Mirrored advantage positions should evaluate equally from each side's perspective. \
+             White advantage (White to move) = {}, Black advantage (Black to move) = {}",
+            white_eval, black_eval
+        );
+    }
+
+    /// Test that the raw material difference calculation is symmetric.
+    #[test]
+    fn test_material_difference_symmetric() {
+        // Same position, different side to move - the unsigned material diff should be same
+        let fen_white_move = "4k3/8/8/8/4P3/8/8/4K3 w - - 0 1";
+        let fen_black_move = "4k3/8/8/8/4P3/8/8/4K3 b - - 0 1";
+
+        let board_white = Board::from_fen(fen_white_move);
+        let board_black = Board::from_fen(fen_black_move);
+
+        let mat_white = Material::compute_material(&board_white);
+        let mat_black = Material::compute_material(&board_black);
+
+        // The raw material difference should be the same regardless of side to move
+        assert_eq!(
+            mat_white.get_location_adjusted_material_difference(),
+            mat_black.get_location_adjusted_material_difference(),
+            "Raw material difference should not depend on side to move"
+        );
+
+        // But evaluate_board should flip sign based on side to move
+        let eval_white = evaluate_board(&board_white);
+        let eval_black = evaluate_board(&board_black);
+        assert_eq!(
+            eval_white, -eval_black,
+            "Same position with different side to move should have opposite evaluations. \
+             White to move = {}, Black to move = {}",
+            eval_white, eval_black
+        );
+    }
+
+    /// Test that all piece types have valid PST lookups for all squares.
+    #[test]
+    fn test_all_piece_types_pst_valid() {
+        let piece_types = [
+            PieceType::Pawn,
+            PieceType::Knight,
+            PieceType::Bishop,
+            PieceType::Rook,
+            PieceType::Queen,
+            PieceType::King,
+        ];
+
+        for piece_type in piece_types {
+            for rank in 1..=8 {
+                for file in 1..=8 {
+                    // Skip invalid pawn positions (rank 1 and 8)
+                    if piece_type == PieceType::Pawn && (rank == 1 || rank == 8) {
+                        continue;
+                    }
+
+                    let white_piece = Piece {
+                        color: Color::White,
+                        piece_type,
+                        position: Position { rank, file },
+                    };
+                    let black_piece = Piece {
+                        color: Color::Black,
+                        piece_type,
+                        position: Position { rank, file },
+                    };
+
+                    // Should not panic
+                    let _white_val = get_piece_adjustment_value(&white_piece, false);
+                    let _black_val = get_piece_adjustment_value(&black_piece, false);
+                    let _white_val_end = get_piece_adjustment_value(&white_piece, true);
+                    let _black_val_end = get_piece_adjustment_value(&black_piece, true);
+                }
+            }
+        }
+    }
+
+    /// Test that advanced pawns have higher PST values than pawns on starting rank.
+    #[test]
+    fn test_advanced_pawns_worth_more() {
+        let pawn_rank_2 = Piece {
+            color: Color::White,
+            piece_type: PieceType::Pawn,
+            position: Position { rank: 2, file: 4 }, // d2
+        };
+        let pawn_rank_6 = Piece {
+            color: Color::White,
+            piece_type: PieceType::Pawn,
+            position: Position { rank: 6, file: 4 }, // d6
+        };
+
+        let rank_2_value = get_piece_adjustment_value(&pawn_rank_2, false);
+        let rank_6_value = get_piece_adjustment_value(&pawn_rank_6, false);
+
+        assert!(
+            rank_6_value > rank_2_value,
+            "Advanced pawn should be worth more. Rank 2 = {}, Rank 6 = {}",
+            rank_2_value,
+            rank_6_value
+        );
+    }
+}

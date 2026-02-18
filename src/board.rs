@@ -1,8 +1,10 @@
 use crate::movegen::{MoveGenerator, PinnedPiece};
 use crate::types::*;
+use crate::zobrist::ZOBRIST_KEYS;
 
 pub const STARTING_POSITION_FEN: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
+#[derive(Clone)]
 pub struct Board {
     pub pieces: Vec<Piece>,
     // who's move it is
@@ -19,6 +21,8 @@ pub struct Board {
     board_to_piece: [[Option<Piece>; 8]; 8],
     pub white_king_position: Position,
     pub black_king_position: Position,
+    /// Zobrist hash of the position for transposition table lookups
+    pub zobrist_hash: u64,
 }
 
 impl Board {
@@ -81,6 +85,38 @@ impl Board {
 
         let fullmove_clock: u32 = parts[5].parse().expect("Fullmove clock should be a u32");
 
+        // Compute initial Zobrist hash
+        let mut zobrist_hash: u64 = 0;
+
+        // Hash all pieces
+        for piece in &pieces {
+            zobrist_hash ^= ZOBRIST_KEYS.piece_key(piece.color, piece.piece_type, &piece.position);
+        }
+
+        // Hash side to move
+        if active_color == Color::Black {
+            zobrist_hash ^= ZOBRIST_KEYS.side_to_move;
+        }
+
+        // Hash castling rights
+        if castle_kingside_white {
+            zobrist_hash ^= ZOBRIST_KEYS.castle_kingside_white;
+        }
+        if castle_queenside_white {
+            zobrist_hash ^= ZOBRIST_KEYS.castle_queenside_white;
+        }
+        if castle_kingside_black {
+            zobrist_hash ^= ZOBRIST_KEYS.castle_kingside_black;
+        }
+        if castle_queenside_black {
+            zobrist_hash ^= ZOBRIST_KEYS.castle_queenside_black;
+        }
+
+        // Hash en passant file
+        if let Some(ep) = en_passant_target {
+            zobrist_hash ^= ZOBRIST_KEYS.en_passant[(ep.file - 1) as usize];
+        }
+
         Board {
             pieces,
             active_color,
@@ -94,6 +130,7 @@ impl Board {
             board_to_piece,
             white_king_position,
             black_king_position,
+            zobrist_hash,
         }
     }
 
@@ -477,10 +514,45 @@ impl Board {
 
         let move_is_irriversible =
             selected_move.captured.is_some() || selected_move.piece.piece_type == PieceType::Pawn;
-        // TODO: update the other states too
+
+        let new_active_color = self.active_color.other_color();
+        let new_castle_kingside_white = self.castle_kingside_white && castle_kingside_white;
+        let new_castle_queenside_white = self.castle_queenside_white && castle_queenside_white;
+        let new_castle_kingside_black = self.castle_kingside_black && castle_kingside_black;
+        let new_castle_queenside_black = self.castle_queenside_black && castle_queenside_black;
+        let new_en_passant_target = if let MoveFlag::DoublePawnPush(ep_target) = selected_move.move_flag {
+            Some(ep_target)
+        } else {
+            None
+        };
+
+        // Compute Zobrist hash for new position
+        let mut zobrist_hash: u64 = 0;
+        for piece in &pieces {
+            zobrist_hash ^= ZOBRIST_KEYS.piece_key(piece.color, piece.piece_type, &piece.position);
+        }
+        if new_active_color == Color::Black {
+            zobrist_hash ^= ZOBRIST_KEYS.side_to_move;
+        }
+        if new_castle_kingside_white {
+            zobrist_hash ^= ZOBRIST_KEYS.castle_kingside_white;
+        }
+        if new_castle_queenside_white {
+            zobrist_hash ^= ZOBRIST_KEYS.castle_queenside_white;
+        }
+        if new_castle_kingside_black {
+            zobrist_hash ^= ZOBRIST_KEYS.castle_kingside_black;
+        }
+        if new_castle_queenside_black {
+            zobrist_hash ^= ZOBRIST_KEYS.castle_queenside_black;
+        }
+        if let Some(ep) = new_en_passant_target {
+            zobrist_hash ^= ZOBRIST_KEYS.en_passant[(ep.file - 1) as usize];
+        }
+
         Board {
             pieces,
-            active_color: self.active_color.other_color(),
+            active_color: new_active_color,
             halfmove_clock: if move_is_irriversible {
                 0
             } else {
@@ -492,21 +564,338 @@ impl Board {
                 } else {
                     0
                 },
-            castle_kingside_white: self.castle_kingside_white && castle_kingside_white,
-            castle_queenside_white: self.castle_queenside_white && castle_queenside_white,
-            castle_kingside_black: self.castle_kingside_black && castle_kingside_black,
-            castle_queenside_black: self.castle_queenside_black && castle_queenside_black,
-            en_passant_target: if let MoveFlag::DoublePawnPush(ep_target) = selected_move.move_flag
-            {
-                Some(ep_target)
-            } else {
-                None
-            },
+            castle_kingside_white: new_castle_kingside_white,
+            castle_queenside_white: new_castle_queenside_white,
+            castle_kingside_black: new_castle_kingside_black,
+            castle_queenside_black: new_castle_queenside_black,
+            en_passant_target: new_en_passant_target,
             board_to_piece,
             white_king_position,
             black_king_position,
-            ..*self
+            zobrist_hash,
         }
+    }
+
+    /// Make a move in-place, returning undo information to restore the position.
+    /// This is much faster than execute_move() which clones the entire board.
+    pub fn make_move(&mut self, mv: &Move) -> UndoInfo {
+        // Save state for undo
+        let undo = UndoInfo {
+            mv: *mv,
+            castle_kingside_white: self.castle_kingside_white,
+            castle_queenside_white: self.castle_queenside_white,
+            castle_kingside_black: self.castle_kingside_black,
+            castle_queenside_black: self.castle_queenside_black,
+            en_passant_target: self.en_passant_target,
+            halfmove_clock: self.halfmove_clock,
+            moved_piece_index: self.find_piece_index(&mv.piece).expect("Moving piece not found"),
+            captured_piece_index: mv.captured.map(|cap| {
+                self.find_piece_index(&cap).expect("Captured piece not found")
+            }),
+            original_piece_type: mv.piece.piece_type,
+            rook_info: None,
+            zobrist_hash: self.zobrist_hash,
+        };
+
+        let mut undo = undo;
+
+        // Update Zobrist hash: remove piece from old position
+        self.zobrist_hash ^= ZOBRIST_KEYS.piece_key(mv.piece.color, mv.piece.piece_type, &mv.from);
+
+        // Clear the from square on the board array
+        self.board_to_piece[(mv.from.rank - 1) as usize][(mv.from.file - 1) as usize] = None;
+
+        // Handle captures (remove captured piece)
+        if let Some(cap_idx) = undo.captured_piece_index {
+            let captured = mv.captured.unwrap();
+            // Update Zobrist hash: remove captured piece
+            self.zobrist_hash ^= ZOBRIST_KEYS.piece_key(captured.color, captured.piece_type, &captured.position);
+            // Clear the captured piece's square
+            self.board_to_piece[(captured.position.rank - 1) as usize]
+                [(captured.position.file - 1) as usize] = None;
+            // Remove from pieces Vec (swap_remove is O(1))
+            self.pieces.swap_remove(cap_idx);
+            // If the moved piece was swapped, update its index
+            if cap_idx < self.pieces.len() && undo.moved_piece_index == self.pieces.len() {
+                undo.moved_piece_index = cap_idx;
+            }
+        }
+
+        // Handle castling
+        match mv.move_flag {
+            MoveFlag::CastleKingside | MoveFlag::CastleQueenside => {
+                let castle_rank = match mv.piece.color {
+                    Color::White => 1,
+                    Color::Black => 8,
+                };
+                let old_rook_file = match mv.move_flag {
+                    MoveFlag::CastleKingside => 8,
+                    MoveFlag::CastleQueenside => 1,
+                    _ => unreachable!(),
+                };
+                let new_rook_file = match mv.move_flag {
+                    MoveFlag::CastleKingside => 6,
+                    MoveFlag::CastleQueenside => 4,
+                    _ => unreachable!(),
+                };
+
+                let old_rook_pos = Position {
+                    rank: castle_rank,
+                    file: old_rook_file,
+                };
+                let new_rook_pos = Position {
+                    rank: castle_rank,
+                    file: new_rook_file,
+                };
+
+                // Find the rook
+                let rook_idx = self
+                    .pieces
+                    .iter()
+                    .position(|p| {
+                        p.piece_type == PieceType::Rook
+                            && p.color == mv.piece.color
+                            && p.position == old_rook_pos
+                    })
+                    .expect("Castling rook not found");
+
+                undo.rook_info = Some((rook_idx, old_rook_pos));
+
+                // Update Zobrist hash: move rook
+                self.zobrist_hash ^= ZOBRIST_KEYS.piece_key(mv.piece.color, PieceType::Rook, &old_rook_pos);
+                self.zobrist_hash ^= ZOBRIST_KEYS.piece_key(mv.piece.color, PieceType::Rook, &new_rook_pos);
+
+                // Update rook position
+                self.pieces[rook_idx].position = new_rook_pos;
+                self.board_to_piece[(old_rook_pos.rank - 1) as usize]
+                    [(old_rook_pos.file - 1) as usize] = None;
+                self.board_to_piece[(new_rook_pos.rank - 1) as usize]
+                    [(new_rook_pos.file - 1) as usize] = Some(self.pieces[rook_idx]);
+            }
+            _ => {}
+        }
+
+        // Update the moving piece's position
+        // Re-fetch the piece index in case it changed due to swap_remove
+        let piece_idx = if undo.captured_piece_index.is_some() {
+            self.pieces
+                .iter()
+                .position(|p| *p == mv.piece)
+                .expect("Moving piece not found after capture removal")
+        } else {
+            undo.moved_piece_index
+        };
+
+        self.pieces[piece_idx].position = mv.to;
+
+        // Handle promotion
+        let final_piece_type = if let MoveFlag::Promotion(promoted_to_type) = mv.move_flag {
+            self.pieces[piece_idx].piece_type = promoted_to_type;
+            promoted_to_type
+        } else {
+            mv.piece.piece_type
+        };
+
+        // Update Zobrist hash: add piece to new position (with correct type after promotion)
+        self.zobrist_hash ^= ZOBRIST_KEYS.piece_key(mv.piece.color, final_piece_type, &mv.to);
+
+        // Update the destination square on the board array
+        self.board_to_piece[(mv.to.rank - 1) as usize][(mv.to.file - 1) as usize] =
+            Some(self.pieces[piece_idx]);
+
+        // Update castling rights and Zobrist hash
+        if mv.piece.piece_type == PieceType::King {
+            match mv.piece.color {
+                Color::White => {
+                    if self.castle_kingside_white {
+                        self.zobrist_hash ^= ZOBRIST_KEYS.castle_kingside_white;
+                        self.castle_kingside_white = false;
+                    }
+                    if self.castle_queenside_white {
+                        self.zobrist_hash ^= ZOBRIST_KEYS.castle_queenside_white;
+                        self.castle_queenside_white = false;
+                    }
+                }
+                Color::Black => {
+                    if self.castle_kingside_black {
+                        self.zobrist_hash ^= ZOBRIST_KEYS.castle_kingside_black;
+                        self.castle_kingside_black = false;
+                    }
+                    if self.castle_queenside_black {
+                        self.zobrist_hash ^= ZOBRIST_KEYS.castle_queenside_black;
+                        self.castle_queenside_black = false;
+                    }
+                }
+            }
+        } else if mv.piece.piece_type == PieceType::Rook {
+            match mv.piece.color {
+                Color::White => {
+                    if mv.from.rank == 1 && mv.from.file == 1 && self.castle_queenside_white {
+                        self.zobrist_hash ^= ZOBRIST_KEYS.castle_queenside_white;
+                        self.castle_queenside_white = false;
+                    }
+                    if mv.from.rank == 1 && mv.from.file == 8 && self.castle_kingside_white {
+                        self.zobrist_hash ^= ZOBRIST_KEYS.castle_kingside_white;
+                        self.castle_kingside_white = false;
+                    }
+                }
+                Color::Black => {
+                    if mv.from.rank == 8 && mv.from.file == 1 && self.castle_queenside_black {
+                        self.zobrist_hash ^= ZOBRIST_KEYS.castle_queenside_black;
+                        self.castle_queenside_black = false;
+                    }
+                    if mv.from.rank == 8 && mv.from.file == 8 && self.castle_kingside_black {
+                        self.zobrist_hash ^= ZOBRIST_KEYS.castle_kingside_black;
+                        self.castle_kingside_black = false;
+                    }
+                }
+            }
+        }
+
+        // Update king positions
+        if mv.piece.piece_type == PieceType::King {
+            match mv.piece.color {
+                Color::White => self.white_king_position = mv.to,
+                Color::Black => self.black_king_position = mv.to,
+            }
+        }
+
+        // Update en passant target and Zobrist hash
+        // First, remove old en passant from hash
+        if let Some(old_ep) = self.en_passant_target {
+            self.zobrist_hash ^= ZOBRIST_KEYS.en_passant[(old_ep.file - 1) as usize];
+        }
+        // Then, set new en passant and add to hash
+        self.en_passant_target = if let MoveFlag::DoublePawnPush(ep_target) = mv.move_flag {
+            self.zobrist_hash ^= ZOBRIST_KEYS.en_passant[(ep_target.file - 1) as usize];
+            Some(ep_target)
+        } else {
+            None
+        };
+
+        // Update halfmove clock
+        let move_is_irreversible =
+            mv.captured.is_some() || mv.piece.piece_type == PieceType::Pawn;
+        self.halfmove_clock = if move_is_irreversible {
+            0
+        } else {
+            self.halfmove_clock + 1
+        };
+
+        // Update fullmove clock (increments after Black's move)
+        if self.active_color == Color::Black {
+            self.fullmove_clock += 1;
+        }
+
+        // Switch active color and update Zobrist hash
+        self.zobrist_hash ^= ZOBRIST_KEYS.side_to_move;
+        self.active_color = self.active_color.other_color();
+
+        undo
+    }
+
+    /// Unmake a move, restoring the position to before the move was made.
+    pub fn unmake_move(&mut self, undo: &UndoInfo) {
+        let mv = &undo.mv;
+
+        // Restore Zobrist hash
+        self.zobrist_hash = undo.zobrist_hash;
+
+        // Switch active color back
+        self.active_color = self.active_color.other_color();
+
+        // Restore fullmove clock
+        if self.active_color == Color::Black {
+            self.fullmove_clock -= 1;
+        }
+
+        // Restore halfmove clock
+        self.halfmove_clock = undo.halfmove_clock;
+
+        // Restore en passant target
+        self.en_passant_target = undo.en_passant_target;
+
+        // Restore king position
+        if mv.piece.piece_type == PieceType::King {
+            match mv.piece.color {
+                Color::White => self.white_king_position = mv.from,
+                Color::Black => self.black_king_position = mv.from,
+            }
+        }
+
+        // Restore castling rights
+        self.castle_kingside_white = undo.castle_kingside_white;
+        self.castle_queenside_white = undo.castle_queenside_white;
+        self.castle_kingside_black = undo.castle_kingside_black;
+        self.castle_queenside_black = undo.castle_queenside_black;
+
+        // Find the piece that moved (it's now at the destination)
+        let piece_idx = self
+            .pieces
+            .iter()
+            .position(|p| {
+                p.position == mv.to
+                    && p.color == mv.piece.color
+                    && (p.piece_type == mv.piece.piece_type
+                        || matches!(mv.move_flag, MoveFlag::Promotion(_)))
+            })
+            .expect("Moved piece not found during unmake");
+
+        // Clear the destination square
+        self.board_to_piece[(mv.to.rank - 1) as usize][(mv.to.file - 1) as usize] = None;
+
+        // Restore original piece type (undo promotion)
+        self.pieces[piece_idx].piece_type = undo.original_piece_type;
+
+        // Move piece back to original position
+        self.pieces[piece_idx].position = mv.from;
+        self.board_to_piece[(mv.from.rank - 1) as usize][(mv.from.file - 1) as usize] =
+            Some(self.pieces[piece_idx]);
+
+        // Handle castling - restore rook position
+        if let Some((_, old_rook_pos)) = undo.rook_info {
+            let new_rook_pos = match mv.move_flag {
+                MoveFlag::CastleKingside => Position {
+                    rank: old_rook_pos.rank,
+                    file: 6,
+                },
+                MoveFlag::CastleQueenside => Position {
+                    rank: old_rook_pos.rank,
+                    file: 4,
+                },
+                _ => unreachable!(),
+            };
+
+            // Find the rook at its new position
+            let rook_idx = self
+                .pieces
+                .iter()
+                .position(|p| {
+                    p.piece_type == PieceType::Rook
+                        && p.color == mv.piece.color
+                        && p.position == new_rook_pos
+                })
+                .expect("Castling rook not found during unmake");
+
+            // Move rook back
+            self.pieces[rook_idx].position = old_rook_pos;
+            self.board_to_piece[(new_rook_pos.rank - 1) as usize]
+                [(new_rook_pos.file - 1) as usize] = None;
+            self.board_to_piece[(old_rook_pos.rank - 1) as usize]
+                [(old_rook_pos.file - 1) as usize] = Some(self.pieces[rook_idx]);
+        }
+
+        // Restore captured piece
+        if let Some(captured) = mv.captured {
+            self.pieces.push(captured);
+            self.board_to_piece[(captured.position.rank - 1) as usize]
+                [(captured.position.file - 1) as usize] = Some(captured);
+        }
+    }
+
+    /// Find the index of a piece in the pieces Vec
+    fn find_piece_index(&self, piece: &Piece) -> Option<usize> {
+        self.pieces.iter().position(|p| p == piece)
     }
 
     /// Get the vector of all legal moves for side `color`. This accounts for checks, pins, etc.
@@ -765,6 +1154,80 @@ impl Board {
         Ok(my_possible_moves)
     }
 
+    /// Get all legal capture moves for the given color.
+    /// This is an optimized version for quiescence search that only generates captures.
+    pub fn get_legal_captures(&self, color: &Color) -> Vec<Move> {
+        // Get opponent attacks for king safety checks
+        let opponent_potential_moves = self.get_all_pseudo_moves(color.other_color(), true);
+
+        let my_king = self.get_king(*color);
+        let current_checks: Vec<&Move> = opponent_potential_moves
+            .iter()
+            .filter(|m| m.to == my_king.position)
+            .collect();
+
+        // Generate only capture pseudo-moves
+        let mut my_possible_captures: Vec<_> = MoveGenerator::new(self, *color)
+            .collect_captures()
+            .into_iter()
+            .collect();
+
+        // Double check: only king can move
+        if current_checks.len() >= 2 {
+            my_possible_captures = my_possible_captures
+                .into_iter()
+                .filter(|m| m.piece.piece_type == PieceType::King)
+                .collect();
+        }
+
+        // Single check: filter to moves that capture the checking piece or king moves
+        if current_checks.len() == 1 {
+            let checking_piece = current_checks[0].piece;
+
+            my_possible_captures = my_possible_captures
+                .into_iter()
+                .filter(|m| {
+                    // Capture of the checking piece is valid
+                    if m.captured.is_some_and(|p| p == checking_piece) {
+                        return true;
+                    }
+                    // King captures are valid (will filter for safety below)
+                    if m.piece.piece_type == PieceType::King {
+                        return true;
+                    }
+                    false
+                })
+                .collect();
+        }
+
+        // Get pins
+        let pin_movegen = MoveGenerator::new(self, *color);
+        let pins = pin_movegen.get_pins(color);
+
+        // Filter for legality
+        my_possible_captures
+            .into_iter()
+            // King cannot capture into check
+            .filter(|m| match m.piece.piece_type {
+                PieceType::King => !opponent_potential_moves.iter().any(|om| om.to == m.to),
+                _ => true,
+            })
+            // Pinned pieces can only capture along pin ray
+            .filter(|m| {
+                for PinnedPiece {
+                    piece: pinned_piece,
+                    valid_responses,
+                } in pins.iter()
+                {
+                    if *pinned_piece == m.piece {
+                        return valid_responses.iter().any(|&x| x == m.to);
+                    }
+                }
+                true
+            })
+            .collect()
+    }
+
     pub fn get_all_pseudo_moves(&self, color: Color, observed_mode: bool) -> Vec<Move> {
         let mut move_generator = MoveGenerator::new(self, color);
         if observed_mode {
@@ -813,6 +1276,45 @@ impl Board {
 
     pub fn draw_to_terminal(&self) {
         println!("{}", self.draw_board());
+    }
+
+    /// Check if the given color's king is in check
+    pub fn is_in_check(&self, color: Color) -> bool {
+        let king_pos = self.get_king_position(color);
+        let opponent_moves = self.get_all_pseudo_moves(color.other_color(), true);
+        opponent_moves.iter().any(|m| m.to == king_pos)
+    }
+
+    /// Make a null move (pass turn to opponent without moving)
+    /// Used for null move pruning in search
+    /// Returns undo info to restore the position
+    pub fn make_null_move(&mut self) -> NullMoveUndo {
+        let undo = NullMoveUndo {
+            en_passant_target: self.en_passant_target,
+            zobrist_hash: self.zobrist_hash,
+        };
+
+        // Clear en passant (it's no longer valid after a null move)
+        if let Some(ep) = self.en_passant_target {
+            self.zobrist_hash ^= ZOBRIST_KEYS.en_passant[(ep.file - 1) as usize];
+        }
+        self.en_passant_target = None;
+
+        // Switch side to move
+        self.active_color = self.active_color.other_color();
+        self.zobrist_hash ^= ZOBRIST_KEYS.side_to_move;
+
+        undo
+    }
+
+    /// Unmake a null move, restoring the position
+    pub fn unmake_null_move(&mut self, undo: &NullMoveUndo) {
+        // Restore side to move
+        self.active_color = self.active_color.other_color();
+
+        // Restore en passant and hash
+        self.en_passant_target = undo.en_passant_target;
+        self.zobrist_hash = undo.zobrist_hash;
     }
 }
 
@@ -2359,5 +2861,279 @@ mod tests {
         assert_eq!(legal_moves.len(), 1);
         assert_eq!(legal_moves[0].piece.piece_type, PieceType::King);
         assert_eq!(legal_moves[0].to, Position::from_algebraic("b2"));
+    }
+
+    #[test]
+    fn test_make_unmake_simple_move() {
+        let mut b = Board::from_fen(STARTING_POSITION_FEN);
+        let original_fen = b.to_fen();
+
+        // Make a pawn move e2-e4
+        let moves = b.get_legal_moves(&Color::White).unwrap();
+        let e2e4 = moves
+            .iter()
+            .find(|m| m.from == Position::from_algebraic("e2") && m.to == Position::from_algebraic("e4"))
+            .unwrap()
+            .clone();
+
+        let undo = b.make_move(&e2e4);
+
+        // Verify the move was made
+        assert_eq!(b.active_color, Color::Black);
+        assert!(b.piece_at_position(&Position::from_algebraic("e2")).is_none());
+        assert!(b.piece_at_position(&Position::from_algebraic("e4")).is_some());
+        assert_eq!(
+            b.en_passant_target,
+            Some(Position::from_algebraic("e3"))
+        );
+
+        // Unmake and verify state is restored
+        b.unmake_move(&undo);
+        assert_eq!(b.to_fen(), original_fen);
+    }
+
+    #[test]
+    fn test_make_unmake_capture() {
+        // Position with a capturable piece
+        let mut b = Board::from_fen("rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 2");
+        let original_fen = b.to_fen();
+        let original_piece_count = b.pieces.len();
+
+        // Capture e4xd5
+        let moves = b.get_legal_moves(&Color::White).unwrap();
+        let capture = moves
+            .iter()
+            .find(|m| m.from == Position::from_algebraic("e4") && m.to == Position::from_algebraic("d5"))
+            .unwrap()
+            .clone();
+
+        assert!(capture.captured.is_some());
+
+        let undo = b.make_move(&capture);
+
+        // Verify capture happened
+        assert_eq!(b.pieces.len(), original_piece_count - 1);
+        assert!(b.piece_at_position(&Position::from_algebraic("d5")).is_some());
+        assert_eq!(
+            b.piece_at_position(&Position::from_algebraic("d5")).unwrap().color,
+            Color::White
+        );
+
+        // Unmake and verify
+        b.unmake_move(&undo);
+        assert_eq!(b.to_fen(), original_fen);
+        assert_eq!(b.pieces.len(), original_piece_count);
+    }
+
+    #[test]
+    fn test_make_unmake_castling_kingside() {
+        let mut b = Board::from_fen("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1");
+        let original_fen = b.to_fen();
+
+        let moves = b.get_legal_moves(&Color::White).unwrap();
+        let castle = moves
+            .iter()
+            .find(|m| m.move_flag == MoveFlag::CastleKingside)
+            .unwrap()
+            .clone();
+
+        let undo = b.make_move(&castle);
+
+        // Verify castling happened
+        assert_eq!(b.white_king_position, Position::from_algebraic("g1"));
+        assert!(b.piece_at_position(&Position::from_algebraic("f1")).is_some()); // Rook
+        assert!(b.piece_at_position(&Position::from_algebraic("g1")).is_some()); // King
+        assert!(b.piece_at_position(&Position::from_algebraic("h1")).is_none()); // Old rook square
+        assert!(b.piece_at_position(&Position::from_algebraic("e1")).is_none()); // Old king square
+        assert!(!b.castle_kingside_white);
+        assert!(!b.castle_queenside_white);
+
+        // Unmake and verify
+        b.unmake_move(&undo);
+        assert_eq!(b.to_fen(), original_fen);
+    }
+
+    #[test]
+    fn test_make_unmake_castling_queenside() {
+        let mut b = Board::from_fen("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1");
+        let original_fen = b.to_fen();
+
+        let moves = b.get_legal_moves(&Color::White).unwrap();
+        let castle = moves
+            .iter()
+            .find(|m| m.move_flag == MoveFlag::CastleQueenside)
+            .unwrap()
+            .clone();
+
+        let undo = b.make_move(&castle);
+
+        // Verify castling happened
+        assert_eq!(b.white_king_position, Position::from_algebraic("c1"));
+        assert!(b.piece_at_position(&Position::from_algebraic("d1")).is_some()); // Rook
+        assert!(b.piece_at_position(&Position::from_algebraic("c1")).is_some()); // King
+        assert!(b.piece_at_position(&Position::from_algebraic("a1")).is_none()); // Old rook square
+        assert!(b.piece_at_position(&Position::from_algebraic("e1")).is_none()); // Old king square
+
+        // Unmake and verify
+        b.unmake_move(&undo);
+        assert_eq!(b.to_fen(), original_fen);
+    }
+
+    #[test]
+    fn test_make_unmake_promotion() {
+        let mut b = Board::from_fen("8/P7/8/8/8/8/8/4K2k w - - 0 1");
+        let original_fen = b.to_fen();
+
+        let moves = b.get_legal_moves(&Color::White).unwrap();
+        let promotion = moves
+            .iter()
+            .find(|m| matches!(m.move_flag, MoveFlag::Promotion(PieceType::Queen)))
+            .unwrap()
+            .clone();
+
+        let undo = b.make_move(&promotion);
+
+        // Verify promotion
+        let promoted_piece = b.piece_at_position(&Position::from_algebraic("a8")).unwrap();
+        assert_eq!(promoted_piece.piece_type, PieceType::Queen);
+
+        // Unmake and verify
+        b.unmake_move(&undo);
+        assert_eq!(b.to_fen(), original_fen);
+        let pawn = b.piece_at_position(&Position::from_algebraic("a7")).unwrap();
+        assert_eq!(pawn.piece_type, PieceType::Pawn);
+    }
+
+    #[test]
+    fn test_make_unmake_en_passant() {
+        // Position where white can capture en passant
+        let mut b = Board::from_fen("rnbqkbnr/ppp1p1pp/8/3pPp2/8/8/PPPP1PPP/RNBQKBNR w KQkq f6 0 3");
+        let original_fen = b.to_fen();
+        let original_piece_count = b.pieces.len();
+
+        let moves = b.get_legal_moves(&Color::White).unwrap();
+        let ep_capture = moves
+            .iter()
+            .find(|m| m.move_flag == MoveFlag::EnPassantCapture)
+            .unwrap()
+            .clone();
+
+        let undo = b.make_move(&ep_capture);
+
+        // Verify en passant capture
+        assert!(b.piece_at_position(&Position::from_algebraic("f5")).is_none()); // Captured pawn gone
+        assert!(b.piece_at_position(&Position::from_algebraic("f6")).is_some()); // Capturing pawn arrived
+        assert_eq!(b.pieces.len(), original_piece_count - 1);
+
+        // Unmake and verify
+        b.unmake_move(&undo);
+        assert_eq!(b.to_fen(), original_fen);
+        assert_eq!(b.pieces.len(), original_piece_count);
+    }
+
+    #[test]
+    fn test_make_unmake_sequence() {
+        // Test a sequence of moves and unmakes
+        let mut b = Board::from_fen(STARTING_POSITION_FEN);
+        let original_fen = b.to_fen();
+
+        let mut undos = Vec::new();
+
+        // Make several moves
+        for _ in 0..4 {
+            let moves = b.get_legal_moves(&b.get_active_color()).unwrap();
+            if moves.is_empty() {
+                break;
+            }
+            let mv = moves[0].clone();
+            undos.push(b.make_move(&mv));
+        }
+
+        // Unmake all moves
+        while let Some(undo) = undos.pop() {
+            b.unmake_move(&undo);
+        }
+
+        assert_eq!(b.to_fen(), original_fen);
+    }
+
+    #[test]
+    fn test_make_unmake_matches_execute_move() {
+        // Verify make_move produces the same board state as execute_move
+        let positions = [
+            STARTING_POSITION_FEN,
+            "r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1",
+            "rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 2",
+        ];
+
+        for fen in positions {
+            let mut b1 = Board::from_fen(fen);
+            let b2 = Board::from_fen(fen);
+
+            let moves = b1.get_legal_moves(&b1.get_active_color()).unwrap();
+            for mv in moves.iter().take(5) {
+                // Test first 5 moves
+                let expected = b2.execute_move(mv);
+                let undo = b1.make_move(mv);
+
+                assert_eq!(b1.to_fen(), expected.to_fen(), "FEN mismatch for move {} in position {}", mv.to_algebraic(), fen);
+                assert_eq!(b1.zobrist_hash, expected.zobrist_hash, "Zobrist hash mismatch for move {} in position {}", mv.to_algebraic(), fen);
+
+                b1.unmake_move(&undo);
+            }
+        }
+    }
+
+    #[test]
+    fn test_zobrist_hash_restored_on_unmake() {
+        let positions = [
+            STARTING_POSITION_FEN,
+            "r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1",
+            "rnbqkbnr/ppp1pppp/8/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 2", // EP position
+            "8/P7/8/8/8/8/8/4K2k w - - 0 1", // Promotion position
+        ];
+
+        for fen in positions {
+            let mut b = Board::from_fen(fen);
+            let original_hash = b.zobrist_hash;
+
+            let moves = b.get_legal_moves(&b.get_active_color()).unwrap();
+            for mv in &moves {
+                let undo = b.make_move(mv);
+                // Hash should have changed (unless it's an extremely rare collision)
+                b.unmake_move(&undo);
+                assert_eq!(b.zobrist_hash, original_hash, "Hash not restored after unmake for move {} in position {}", mv.to_algebraic(), fen);
+            }
+        }
+    }
+
+    #[test]
+    fn test_zobrist_hash_consistency_across_move_sequences() {
+        // Verify that reaching the same position through different move orders produces the same hash
+        let mut b1 = Board::from_fen(STARTING_POSITION_FEN);
+        let mut b2 = Board::from_fen(STARTING_POSITION_FEN);
+
+        // Sequence 1: e4, e5
+        let e4 = b1.get_legal_moves(&Color::White).unwrap().into_iter()
+            .find(|m| m.from == Position::from_algebraic("e2") && m.to == Position::from_algebraic("e4"))
+            .unwrap();
+        b1.make_move(&e4);
+        let e5 = b1.get_legal_moves(&Color::Black).unwrap().into_iter()
+            .find(|m| m.from == Position::from_algebraic("e7") && m.to == Position::from_algebraic("e5"))
+            .unwrap();
+        b1.make_move(&e5);
+
+        // Same sequence on b2
+        let e4 = b2.get_legal_moves(&Color::White).unwrap().into_iter()
+            .find(|m| m.from == Position::from_algebraic("e2") && m.to == Position::from_algebraic("e4"))
+            .unwrap();
+        b2.make_move(&e4);
+        let e5 = b2.get_legal_moves(&Color::Black).unwrap().into_iter()
+            .find(|m| m.from == Position::from_algebraic("e7") && m.to == Position::from_algebraic("e5"))
+            .unwrap();
+        b2.make_move(&e5);
+
+        assert_eq!(b1.zobrist_hash, b2.zobrist_hash, "Same position should have same hash");
+        assert_eq!(b1.to_fen(), b2.to_fen());
     }
 }
