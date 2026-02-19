@@ -59,13 +59,15 @@ Chess bot written in rust
 
   ~~At low depths (1-2 ply from leaf), if the static evaluation plus a margin is still below alpha, skip searching quiet moves entirely.~~ Implemented in `negamax_with_tt_mut`. At depths 1-2, skips quiet moves (non-captures, non-promotions) if static_eval + margin < alpha. Margins: depth 1 = 200cp, depth 2 = 500cp. Not applied when in check or for the first move.
 
-- [ ] **Improved Evaluation Terms**
+- [ ] **Improved Evaluation Terms** ⚠️ ATTEMPTED
 
-  The current eval is material + PST only. Add:
-  - **Pawn structure**: Penalize doubled pawns (-10), isolated pawns (-20), bonus for passed pawns (+20 to +100 by rank)
+  The current eval is material + PST only. Attempted to add bishop pair (+30) and pawn structure (doubled/isolated penalties) but found that accessing `piece_bb` from within `evaluate_board` causes cache misses (piece_bb is 96 bytes away from the incrementally-updated material/PST fields). This caused 200-300% slowdown at depths 5-6 due to the high frequency of evaluation calls in quiescence search. To enable these terms, the solution is either:
+  1. **Incremental tracking**: Add bishop/pawn counts to Board struct, update during make/unmake_move
+  2. **Pawn hash table**: Cache pawn structure scores since pawns move infrequently
+
+  Potential improvements (not yet implemented):
   - **Mobility**: Count pseudo-legal moves per piece, bonus for more active pieces
   - **King safety**: Bonus for pawn shield in front of castled king, penalty for open files near king
-  - **Bishop pair**: +30 bonus for having both bishops
 
 ### Implementation Priority
 
@@ -81,7 +83,9 @@ Chess bot written in rust
 | 8 | Magic bitboards | Speed | ~2x faster movegen | |
 | 9 | SEE pruning | Strength | Smaller quiescence tree | ✓ Done |
 | 10 | Futility pruning | Strength | Smaller search tree | ✓ Done |
-| 11 | Improved eval terms | Strength | Better positional play | |
+| 11 | Improved eval terms | Strength | Better positional play | ⚠️ Attempted |
 
+## Attribution
 
+- **Chess piece images**: [CBurnett piece set](https://github.com/lichess-org/lila/tree/master/public/piece/cburnett) from Lichess, licensed under [GPLv2+](https://www.gnu.org/licenses/gpl-2.0.html)
 

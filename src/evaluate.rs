@@ -136,8 +136,9 @@ fn piece_type_to_index(pt: PieceType) -> usize {
 }
 
 pub fn evaluate_board(board: &Board) -> i32 {
-    // Use incrementally maintained evaluation scores
+    // Use incrementally maintained evaluation scores (material + PST)
     let unsigned_score = board.get_tapered_score();
+
     if board.get_active_color() == Color::White {
         unsigned_score
     } else {

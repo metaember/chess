@@ -53,6 +53,14 @@ export const PIECES: Record<string, string> = {
   'p': '♟', 'r': '♜', 'n': '♞', 'b': '♝', 'q': '♛', 'k': '♚'
 }
 
+// Lichess CBurnett piece images (GPLv2+)
+export const PIECE_IMAGES: Record<string, string> = {
+  'P': '/pieces/wP.svg', 'R': '/pieces/wR.svg', 'N': '/pieces/wN.svg',
+  'B': '/pieces/wB.svg', 'Q': '/pieces/wQ.svg', 'K': '/pieces/wK.svg',
+  'p': '/pieces/bP.svg', 'r': '/pieces/bR.svg', 'n': '/pieces/bN.svg',
+  'b': '/pieces/bB.svg', 'q': '/pieces/bQ.svg', 'k': '/pieces/bK.svg'
+}
+
 export function parseFen(fen: string): Record<string, string> {
   const position = fen.split(' ')[0]
   const rows = position.split('/')
