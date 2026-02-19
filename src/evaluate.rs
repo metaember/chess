@@ -1,5 +1,5 @@
 use crate::board::Board;
-use crate::types::{Color, Move, Piece, PieceType};
+use crate::types::{Color, Move, MoveFlag, Piece, PieceType};
 
 /// Maximum game phase value (all major/minor pieces on board)
 /// Queens = 4, Rooks = 2, Bishops = 1, Knights = 1
@@ -167,11 +167,15 @@ pub fn guess_move_value(_board: &Board, mv: &Move) -> i32 {
                 - Material::piece_to_material(mv.piece.piece_type));
     };
 
-    // TODO: add promotion bonus equal to the value of the promoted piece
-    // score
+    // Add promotion bonus equal to the value gained (promoted piece - pawn)
+    if let MoveFlag::Promotion(promo_type) = mv.move_flag {
+        let promo_value = Material::piece_to_material(promo_type);
+        let pawn_value = Material::piece_to_material(PieceType::Pawn);
+        score += promo_value - pawn_value; // e.g., Queen = +800
+    }
 
     // TODO: penalize moves that move a piece into a position where it can be captured by a pawn
-    // thse shold be cached when we evaluate the board before the move
+    // these should be cached when we evaluate the board before the move
     score
 }
 

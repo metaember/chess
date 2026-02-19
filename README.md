@@ -85,6 +85,43 @@ Chess bot written in rust
 | 10 | Futility pruning | Strength | Smaller search tree | ✓ Done |
 | 11 | Improved eval terms | Strength | Better positional play | ⚠️ Attempted |
 
+---
+
+## Remaining Optimizations
+
+### Speed Optimizations (Not Yet Done)
+
+| Priority | Optimization | Location | Notes |
+|----------|--------------|----------|-------|
+| **High** | Stack-allocated move lists | `get_legal_moves()` | Replace `Vec<Move>` with `ArrayVec<Move, 218>`. Eliminates heap allocation at every node. |
+| **High** | Remove debug `SearchResult.moves` | `search.rs:270` | Remove `Vec<Move>` path tracker in production builds. Use `#[cfg(debug_assertions)]`. |
+| **Medium** | Slim `Move` struct | `types.rs:325` | Remove redundant `piece: Piece` field—O(1) lookup via `board_to_piece` exists now. Saves ~12 bytes per move. |
+| **Medium** | Optimize pin-filter nested loop | `board.rs:1361` | Rewrite O(moves × pins) loop using position-indexed map for O(1) lookup. |
+| **Low** | Replace `ray_to` Vec allocation | `types.rs:139` | Return fixed-size array or iterator instead of allocating `Vec<Position>`. |
+
+### Strength Optimizations (Not Yet Done)
+
+| Priority | Optimization | Location | Notes |
+|----------|--------------|----------|-------|
+| ~~**Critical**~~ | ~~Promotion bonus in move ordering~~ | ~~`evaluate.rs:170`~~ | ✓ Done - Queen promotions now score +800 in move ordering. |
+| ~~**Critical**~~ | ~~Add promotions to quiescence~~ | ~~`movegen.rs:499`~~ | ✓ Done - Quiet promotions now included in captures_only mode. |
+| **High** | Prefer shorter mating sequences | `search.rs:796` | Add per-ply penalty to mate scores so mate-in-1 is preferred over mate-in-5. |
+| **Medium** | Penalize moves into pawn-capture squares | `evaluate.rs:173` | In move ordering, penalize moves where the piece can be captured by enemy pawns. |
+| **Medium** | Bishop pair bonus (incremental) | README | Cache misses blocked previous attempt. Add bishop count to Board struct, update during make/unmake. |
+| **Medium** | Pawn structure via pawn hash | README | Cache pawn structure scores in hash table since pawns move infrequently. |
+| **Low** | King safety evaluation | README | Pawn shield bonus, penalty for open files near king. |
+| **Low** | Mobility evaluation | README | Count pseudo-legal moves per piece. |
+
+### Code Cleanup TODOs
+
+| Location | Description |
+|----------|-------------|
+| `types.rs:325` | Remove redundant `piece` field from `Move` struct |
+| `board.rs:450` | Stale comment about `piece_at()` speed—already fixed |
+| `board.rs:1490` | Deprecate `get_king()` in favor of `get_king_position()` |
+| `game.rs:68` | Better messages for checkmate vs stalemate |
+| `movegen.rs:647` | Verify diagonal alignment check in `get_pin_for_bishop` |
+
 ## Attribution
 
 - **Chess piece images**: [CBurnett piece set](https://github.com/lichess-org/lila/tree/master/public/piece/cburnett) from Lichess, licensed under [GPLv2+](https://www.gnu.org/licenses/gpl-2.0.html)

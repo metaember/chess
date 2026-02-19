@@ -496,11 +496,7 @@ impl<'a> MoveGenerator<'a> {
                 }
             }
 
-            // Pawn pushes (skip if captures_only)
-            if captures_only {
-                continue;
-            }
-
+            // Pawn pushes
             let one_step = pawn_step_forward(from_pos.rank, self.color);
             let one_step_pos = Position {
                 rank: one_step,
@@ -512,6 +508,7 @@ impl<'a> MoveGenerator<'a> {
             if (occupied & one_step_bb) == 0 {
                 let promotion_rank = if self.color == Color::White { 8 } else { 1 };
                 if one_step == promotion_rank {
+                    // Always include promotions (even in captures_only mode for quiescence)
                     for promo_type in PIECES_CAN_PROMOTE_TO {
                         self.moves.push(Move {
                             piece,
@@ -521,7 +518,8 @@ impl<'a> MoveGenerator<'a> {
                             move_flag: MoveFlag::Promotion(promo_type),
                         });
                     }
-                } else {
+                } else if !captures_only {
+                    // Skip non-promotion pawn pushes in captures_only mode
                     self.moves.push(Move {
                         piece,
                         from: from_pos,

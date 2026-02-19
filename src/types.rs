@@ -322,11 +322,7 @@ pub struct Move {
     pub to: Position,
     pub captured: Option<Piece>,
     pub move_flag: MoveFlag,
-    // TODO: remove piece from this, since we can get it from the board
-    // in O(1) now
-    // TODO: add a flag for promotion
-    // pub promotion: Option<PieceType>,
-    // perhaps also en passant flag or check flag
+    // TODO: remove piece from this, since we can get it from the board in O(1) now
 }
 
 impl Move {
