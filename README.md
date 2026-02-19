@@ -13,9 +13,9 @@ Chess bot written in rust
 
   Added `iter_pieces()` method using bitboards. Updated hot paths (evaluation, material counting, pin detection) to use bitboards. The pieces Vec is still used in make/unmake_move but is no longer on the critical evaluation path.
 
-- [ ] **Lazy/Incremental Attack Map Updates**
+- [ ] **Lazy/Incremental Attack Map Updates** ⚠️ ATTEMPTED
 
-  `recompute_attack_maps()` is called on every `make_move` and `unmake_move`, regenerating all sliding piece attacks from scratch. This is one of the hottest code paths. Instead, use lazy evaluation (only compute when needed for king safety) or incremental updates that only recalculate affected rays based on which squares changed.
+  `recompute_attack_maps()` is called on every `make_move` and `unmake_move`, regenerating all sliding piece attacks from scratch. Lazy evaluation was attempted using atomics for thread-safety but the atomic overhead (~30-40% perft slowdown) outweighed the benefits. Future approaches: incremental updates that only recalculate affected sliding piece rays, or magic bitboards which would make full recomputation fast enough.
 
 - [ ] **Stack-Allocated Move Lists**
 
@@ -75,7 +75,7 @@ Chess bot written in rust
 | 2 | Incremental PST evaluation | Speed | 15-20% faster | ✓ Done |
 | 3 | Remove `pieces` Vec | Speed | 10-15% faster | ✓ Partial |
 | 4 | Killer moves + history heuristic | Strength | Much better move ordering | ✓ Done |
-| 5 | Lazy/incremental attack maps | Speed | 10-20% faster | |
+| 5 | Lazy/incremental attack maps | Speed | 10-20% faster | ⚠️ Attempted |
 | 6 | PVS search | Strength | Better node efficiency | |
 | 7 | Check extensions | Strength | Avoids horizon effects | |
 | 8 | Magic bitboards | Speed | ~2x faster movegen | |
