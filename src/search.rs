@@ -4,10 +4,262 @@ use crate::board::*;
 use crate::book::Book;
 use crate::evaluate::*;
 use crate::tt::{TranspositionTable, TTFlag};
-use crate::types::{Move, PieceType, Status};
+use crate::types::{Color, Move, MoveFlag, PieceType, Position, Status};
 
 pub const MIN_SCORE: i32 = -1_000_000_000;
 pub const MAX_SCORE: i32 = 1_000_000_000;
+
+/// Maximum search depth for killer move storage
+pub const MAX_PLY: usize = 64;
+
+/// Search state containing killer moves and history heuristic
+pub struct SearchState {
+    /// Killer moves: 2 quiet moves per ply that caused beta cutoffs
+    /// These are moves that were good in sibling nodes and might be good here too
+    pub killer_moves: [[Option<Move>; 2]; MAX_PLY],
+
+    /// History heuristic: [color][from_square][to_square] -> score
+    /// Accumulates bonuses for quiet moves that cause beta cutoffs
+    pub history: [[[i32; 64]; 64]; 2],
+}
+
+impl SearchState {
+    pub fn new() -> Self {
+        SearchState {
+            killer_moves: [[None; 2]; MAX_PLY],
+            history: [[[0; 64]; 64]; 2],
+        }
+    }
+
+    /// Store a killer move at the given ply
+    /// If the move is already the first killer, do nothing
+    /// Otherwise, shift first killer to second and store new move as first
+    pub fn store_killer(&mut self, ply: usize, mv: Move) {
+        if ply >= MAX_PLY {
+            return;
+        }
+        // Don't store if it's already the first killer
+        if self.killer_moves[ply][0] == Some(mv) {
+            return;
+        }
+        // Shift first to second, store new as first
+        self.killer_moves[ply][1] = self.killer_moves[ply][0];
+        self.killer_moves[ply][0] = Some(mv);
+    }
+
+    /// Check if a move is a killer at the given ply
+    pub fn is_killer(&self, ply: usize, mv: &Move) -> bool {
+        if ply >= MAX_PLY {
+            return false;
+        }
+        self.killer_moves[ply][0] == Some(*mv) || self.killer_moves[ply][1] == Some(*mv)
+    }
+
+    /// Get killer move priority (0 = first killer, 1 = second killer, None = not a killer)
+    pub fn killer_priority(&self, ply: usize, mv: &Move) -> Option<usize> {
+        if ply >= MAX_PLY {
+            return None;
+        }
+        if self.killer_moves[ply][0] == Some(*mv) {
+            Some(0)
+        } else if self.killer_moves[ply][1] == Some(*mv) {
+            Some(1)
+        } else {
+            None
+        }
+    }
+
+    /// Add history bonus for a quiet move that caused a beta cutoff
+    /// Bonus is scaled by depth² (deeper cutoffs are more valuable)
+    pub fn add_history_bonus(&mut self, color: Color, from: Position, to: Position, depth: u8) {
+        let color_idx = color as usize;
+        let from_sq = position_to_square(from);
+        let to_sq = position_to_square(to);
+        let bonus = (depth as i32) * (depth as i32);
+
+        // Cap history values to prevent overflow
+        let new_value = self.history[color_idx][from_sq][to_sq].saturating_add(bonus);
+        self.history[color_idx][from_sq][to_sq] = new_value.min(10000);
+    }
+
+    /// Get history score for a move
+    pub fn get_history_score(&self, color: Color, from: Position, to: Position) -> i32 {
+        let color_idx = color as usize;
+        let from_sq = position_to_square(from);
+        let to_sq = position_to_square(to);
+        self.history[color_idx][from_sq][to_sq]
+    }
+
+    /// Age history scores (call at start of new search)
+    /// Divides all scores by 2 to gradually forget old information
+    pub fn age_history(&mut self) {
+        for color in 0..2 {
+            for from in 0..64 {
+                for to in 0..64 {
+                    self.history[color][from][to] /= 2;
+                }
+            }
+        }
+    }
+}
+
+impl Default for SearchState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Convert position to square index (0-63)
+#[inline]
+fn position_to_square(pos: Position) -> usize {
+    ((pos.rank - 1) * 8 + (pos.file - 1)) as usize
+}
+
+/// Piece values for SEE (centipawns)
+const SEE_PIECE_VALUES: [i32; 6] = [100, 320, 330, 500, 900, 20000]; // P, N, B, R, Q, K
+
+/// Static Exchange Evaluation (SEE)
+/// Returns the expected material gain/loss from a capture sequence on the target square.
+/// Positive = winning exchange, negative = losing exchange.
+/// This is a simplified SEE that doesn't account for pins or x-ray attacks.
+pub fn see(board: &Board, capture_move: &Move) -> i32 {
+    let target_sq = ((capture_move.to.rank - 1) * 8 + (capture_move.to.file - 1)) as u8;
+
+    // Initial gain is the captured piece value
+    let captured_value = match &capture_move.captured {
+        Some(p) => SEE_PIECE_VALUES[piece_type_to_see_index(p.piece_type)],
+        None => return 0, // Not a capture
+    };
+
+    // Build the initial gain list
+    // gain[0] = value of captured piece
+    // gain[1] = gain[0] - value of capturing piece (if opponent recaptures)
+    // etc.
+    let mut gain = [0i32; 32];
+    let mut depth = 0;
+    gain[depth] = captured_value;
+
+    // Track attacker value
+    let mut attacker_value = SEE_PIECE_VALUES[piece_type_to_see_index(capture_move.piece.piece_type)];
+
+    // Get occupied squares, remove the attacker
+    let attacker_sq = ((capture_move.from.rank - 1) * 8 + (capture_move.from.file - 1)) as u8;
+    let mut occupied = board.get_occupied();
+    occupied &= !(1u64 << attacker_sq);
+
+    // Start with the side that can recapture (opponent of side that moved)
+    let mut side_to_move = capture_move.piece.color.other_color();
+
+    loop {
+        depth += 1;
+        gain[depth] = attacker_value - gain[depth - 1];
+
+        // If gain is so bad that even a perfect recapture can't help, prune
+        if (-gain[depth]).max(gain[depth - 1]) < 0 {
+            break;
+        }
+
+        // Find the least valuable attacker for side_to_move
+        if let Some((piece_type, sq)) = find_least_valuable_attacker(board, target_sq, side_to_move, occupied) {
+            attacker_value = SEE_PIECE_VALUES[piece_type_to_see_index(piece_type)];
+            occupied &= !(1u64 << sq);
+            side_to_move = side_to_move.other_color();
+        } else {
+            break; // No more attackers
+        }
+    }
+
+    // Negamax the gain values
+    while depth > 1 {
+        depth -= 1;
+        gain[depth] = -(-gain[depth]).max(gain[depth + 1]);
+    }
+
+    gain[0]
+}
+
+/// Find the least valuable piece of `color` that attacks `target_sq`
+/// Returns (piece_type, square_of_attacker) or None
+fn find_least_valuable_attacker(
+    board: &Board,
+    target_sq: u8,
+    color: Color,
+    occupied: u64,
+) -> Option<(PieceType, u8)> {
+    use crate::bitboard::{ATTACK_TABLES, BitboardIter, bishop_attacks, rook_attacks, queen_attacks};
+
+    let target_bb = 1u64 << target_sq;
+    let color_idx = color as usize;
+
+    // Check pawns first (least valuable)
+    let pawns = board.get_piece_bb(color, PieceType::Pawn) & occupied;
+    for sq in BitboardIter(pawns) {
+        let pawn_attack = ATTACK_TABLES.pawn[color_idx][sq as usize];
+        if (pawn_attack & target_bb) != 0 {
+            return Some((PieceType::Pawn, sq));
+        }
+    }
+
+    // Check knights
+    let knights = board.get_piece_bb(color, PieceType::Knight) & occupied;
+    for sq in BitboardIter(knights) {
+        let attacks = ATTACK_TABLES.knight[sq as usize];
+        if (attacks & target_bb) != 0 {
+            return Some((PieceType::Knight, sq));
+        }
+    }
+
+    // Check bishops (magic bitboards)
+    let bishops = board.get_piece_bb(color, PieceType::Bishop) & occupied;
+    for sq in BitboardIter(bishops) {
+        let attacks = bishop_attacks(sq, occupied);
+        if (attacks & target_bb) != 0 {
+            return Some((PieceType::Bishop, sq));
+        }
+    }
+
+    // Check rooks (magic bitboards)
+    let rooks = board.get_piece_bb(color, PieceType::Rook) & occupied;
+    for sq in BitboardIter(rooks) {
+        let attacks = rook_attacks(sq, occupied);
+        if (attacks & target_bb) != 0 {
+            return Some((PieceType::Rook, sq));
+        }
+    }
+
+    // Check queens (magic bitboards)
+    let queens = board.get_piece_bb(color, PieceType::Queen) & occupied;
+    for sq in BitboardIter(queens) {
+        let attacks = queen_attacks(sq, occupied);
+        if (attacks & target_bb) != 0 {
+            return Some((PieceType::Queen, sq));
+        }
+    }
+
+    // Check king (last resort)
+    let kings = board.get_piece_bb(color, PieceType::King) & occupied;
+    for sq in BitboardIter(kings) {
+        let attacks = ATTACK_TABLES.king[sq as usize];
+        if (attacks & target_bb) != 0 {
+            return Some((PieceType::King, sq));
+        }
+    }
+
+    None
+}
+
+/// Convert PieceType to SEE index (0-5)
+#[inline]
+fn piece_type_to_see_index(piece_type: PieceType) -> usize {
+    match piece_type {
+        PieceType::Pawn => 0,
+        PieceType::Knight => 1,
+        PieceType::Bishop => 2,
+        PieceType::Rook => 3,
+        PieceType::Queen => 4,
+        PieceType::King => 5,
+    }
+}
 
 #[derive(Debug)]
 pub struct SearchResult {
@@ -98,12 +350,14 @@ pub fn minimax_with_tt(
     tt: &mut TranspositionTable,
 ) -> Result<SearchResult, Vec<Move>> {
     let (alpha, beta) = (MIN_SCORE, MAX_SCORE);
-    negamax_with_tt_mut(max_depth, board, alpha, beta, tt)
+    let mut search_state = SearchState::new();
+    negamax_with_tt_mut(max_depth, board, alpha, beta, tt, &mut search_state, 0)
 }
 
-/// Iterative deepening search with transposition table
+/// Iterative deepening search with transposition table and aspiration windows
 /// Searches at depths 1, 2, 3, ... up to max_depth
 /// Each iteration benefits from TT entries from previous iterations
+/// Uses aspiration windows: narrow search window centered on previous score
 /// Takes mutable board reference to avoid cloning - board state is preserved after search
 pub fn iterative_deepening(
     max_depth: u8,
@@ -113,11 +367,26 @@ pub fn iterative_deepening(
     let mut best_result: Option<SearchResult> = None;
     let mut total_nodes = 0;
     let mut total_quiescent_nodes = 0;
+    let mut search_state = SearchState::new();
+    let mut prev_score = 0;
+
+    // Aspiration window parameters
+    const INITIAL_WINDOW: i32 = 25; // ±25 centipawns
 
     for depth in 1..=max_depth {
-        let result = negamax_with_tt_mut(depth, board, MIN_SCORE, MAX_SCORE, tt)?;
+        // Age history at the start of each new depth iteration
+        search_state.age_history();
+
+        // Use aspiration windows after depth 1
+        let result = if depth > 1 {
+            aspiration_search(depth, board, tt, &mut search_state, prev_score, INITIAL_WINDOW)?
+        } else {
+            negamax_with_tt_mut(depth, board, MIN_SCORE, MAX_SCORE, tt, &mut search_state, 0)?
+        };
+
         total_nodes += result.nodes_searched;
         total_quiescent_nodes += result.quiescent_nodes_searched;
+        prev_score = result.best_score;
 
         best_result = Some(SearchResult {
             best_move: result.best_move,
@@ -131,7 +400,48 @@ pub fn iterative_deepening(
     Ok(best_result.unwrap())
 }
 
-/// Iterative deepening with time limit (in milliseconds)
+/// Aspiration window search: start with narrow window, widen on fail
+fn aspiration_search(
+    depth: u8,
+    board: &mut Board,
+    tt: &mut TranspositionTable,
+    search_state: &mut SearchState,
+    prev_score: i32,
+    initial_window: i32,
+) -> Result<SearchResult, Vec<Move>> {
+    let mut alpha = prev_score - initial_window;
+    let mut beta = prev_score + initial_window;
+    let mut window = initial_window;
+
+    loop {
+        let result = negamax_with_tt_mut(depth, board, alpha, beta, tt, search_state, 0)?;
+
+        // Check if score is within the window (not a fail-low or fail-high)
+        if result.best_score > alpha && result.best_score < beta {
+            return Ok(result);
+        }
+
+        // Fail-low: score <= alpha, need to widen lower bound
+        if result.best_score <= alpha {
+            alpha = if window >= 200 { MIN_SCORE } else { alpha - window };
+        }
+
+        // Fail-high: score >= beta, need to widen upper bound
+        if result.best_score >= beta {
+            beta = if window >= 200 { MAX_SCORE } else { beta + window };
+        }
+
+        // Double the window for next iteration
+        window *= 2;
+
+        // If window is huge, just do full search
+        if alpha <= MIN_SCORE + 1000 && beta >= MAX_SCORE - 1000 {
+            return negamax_with_tt_mut(depth, board, MIN_SCORE, MAX_SCORE, tt, search_state, 0);
+        }
+    }
+}
+
+/// Iterative deepening with time limit (in milliseconds) and aspiration windows
 /// Returns the best result found within the time limit
 pub fn iterative_deepening_timed(
     max_depth: u8,
@@ -144,7 +454,11 @@ pub fn iterative_deepening_timed(
     let mut best_result: Option<SearchResult> = None;
     let mut total_nodes = 0;
     let mut total_quiescent_nodes = 0;
+    let mut search_state = SearchState::new();
+    let mut prev_score = 0;
     let start = Instant::now();
+
+    const INITIAL_WINDOW: i32 = 25;
 
     for depth in 1..=max_depth {
         // Check if we've exceeded time limit
@@ -152,9 +466,19 @@ pub fn iterative_deepening_timed(
             break;
         }
 
-        let result = negamax_with_tt_mut(depth, board, MIN_SCORE, MAX_SCORE, tt)?;
+        // Age history at the start of each new depth iteration
+        search_state.age_history();
+
+        // Use aspiration windows after depth 1
+        let result = if depth > 1 {
+            aspiration_search(depth, board, tt, &mut search_state, prev_score, INITIAL_WINDOW)?
+        } else {
+            negamax_with_tt_mut(depth, board, MIN_SCORE, MAX_SCORE, tt, &mut search_state, 0)?
+        };
+
         total_nodes += result.nodes_searched;
         total_quiescent_nodes += result.quiescent_nodes_searched;
+        prev_score = result.best_score;
 
         best_result = Some(SearchResult {
             best_move: result.best_move,
@@ -181,6 +505,8 @@ fn negamax_with_tt_mut(
     alpha: i32,
     beta: i32,
     tt: &mut TranspositionTable,
+    search_state: &mut SearchState,
+    ply: usize,
 ) -> Result<SearchResult, Vec<Move>> {
     let original_alpha = alpha;
     let mut alpha = alpha;
@@ -215,6 +541,8 @@ fn negamax_with_tt_mut(
             -beta,
             -beta + 1, // Null window search
             tt,
+            search_state,
+            ply + 1,
         );
         board.unmake_null_move(&undo);
 
@@ -257,7 +585,11 @@ fn negamax_with_tt_mut(
         _ => panic!("No legal moves, not a stalemate or a checkmate"),
     };
 
-    // Move ordering: put TT best move first, then MVV-LVA
+    // Move ordering priority:
+    // 1. TT best move (1_000_000)
+    // 2. Captures with MVV-LVA scoring (100_000 + mvv_lva)
+    // 3. Killer moves (90_000 for first killer, 80_000 for second)
+    // 4. Quiet moves with history score
     let tt_best_move = tt.get_best_move(board.zobrist_hash);
     let legal_moves = {
         let mut moves_and_scores: Vec<_> = legal_moves
@@ -265,8 +597,15 @@ fn negamax_with_tt_mut(
             .map(|m| {
                 let score = if Some(*m) == tt_best_move {
                     1_000_000 // TT move gets highest priority
+                } else if m.captured.is_some() {
+                    // Captures: MVV-LVA scoring + high base
+                    100_000 + guess_move_value(board, m)
+                } else if let Some(killer_idx) = search_state.killer_priority(ply, m) {
+                    // Killer moves: first killer = 90_000, second = 80_000
+                    90_000 - (killer_idx as i32 * 10_000)
                 } else {
-                    guess_move_value(board, m)
+                    // Quiet moves: history score
+                    search_state.get_history_score(active_color, m.from, m.to)
                 };
                 (m, score)
             })
@@ -286,38 +625,90 @@ fn negamax_with_tt_mut(
     const LMR_REDUCTION_LIMIT: u8 = 3;     // Minimum depth to apply LMR
     let in_check = board.is_in_check(active_color);
 
+    // Futility pruning: at low depths, skip quiet moves that can't improve alpha
+    // Margins: depth 1 = 200cp, depth 2 = 500cp
+    const FUTILITY_MARGIN_1: i32 = 200;
+    const FUTILITY_MARGIN_2: i32 = 500;
+    let can_futility_prune = !in_check && max_depth <= 2;
+    let futility_margin = if max_depth == 1 { FUTILITY_MARGIN_1 } else { FUTILITY_MARGIN_2 };
+    let static_eval = if can_futility_prune { evaluate_board(board) } else { 0 };
+
     for (move_index, m) in legal_moves.iter().enumerate() {
         if let Some(captured) = m.captured {
             if captured.piece_type == PieceType::King {
                 return Err(vec![*m]);
             }
         }
+
+        // Futility pruning: skip quiet moves at low depths if static eval + margin < alpha
+        // Don't prune captures, promotions, or if we haven't found any move yet
+        let is_promotion = matches!(m.move_flag, MoveFlag::Promotion(_));
+        if can_futility_prune
+            && move_index > 0
+            && m.captured.is_none()
+            && !is_promotion
+            && static_eval + futility_margin <= alpha
+        {
+            continue;
+        }
         let undo = board.make_move(m);
 
-        // Late Move Reductions: search later moves at reduced depth
-        // Conditions: not first few moves, sufficient depth, not in check, not a capture
-        let needs_full_search;
-        let res = if move_index >= LMR_FULL_DEPTH_MOVES
-            && max_depth >= LMR_REDUCTION_LIMIT
-            && !in_check
-            && m.captured.is_none()
-        {
-            // Search with reduced depth first
-            let reduced_result = negamax_with_tt_mut(max_depth - 2, board, -alpha - 1, -alpha, tt);
+        // Check extension: if this move gives check, extend depth by 1
+        // This prevents horizon effects where tactical sequences involving checks
+        // are cut off at an arbitrary point
+        let opponent_color = board.get_active_color();
+        let gives_check = board.is_in_check(opponent_color);
+        let extension: u8 = if gives_check { 1 } else { 0 };
+        let extended_depth = max_depth.saturating_sub(1).saturating_add(extension);
 
-            // If it beats alpha, we need to re-search at full depth
-            needs_full_search = match &reduced_result {
-                Ok(r) => -r.best_score > alpha,
+        // Principal Variation Search (PVS) with Late Move Reductions (LMR)
+        // - First move: search with full window
+        // - Later moves: search with null window first, re-search if fails high
+        // - LMR: for later quiet moves, also reduce depth
+        let res = if move_index == 0 {
+            // First move (PV move): search with full window
+            negamax_with_tt_mut(extended_depth, board, -beta, -alpha, tt, search_state, ply + 1)
+        } else {
+            // Late Move Reductions: search later quiet moves at reduced depth
+            // Don't apply LMR if the move gives check
+            let lmr_applies = move_index >= LMR_FULL_DEPTH_MOVES
+                && max_depth >= LMR_REDUCTION_LIMIT
+                && !in_check
+                && !gives_check
+                && m.captured.is_none();
+
+            // PVS null window search (with LMR reduction if applicable)
+            let search_depth = if lmr_applies {
+                extended_depth.saturating_sub(1)
+            } else {
+                extended_depth
+            };
+            let null_window_result = negamax_with_tt_mut(
+                search_depth,
+                board,
+                -alpha - 1,
+                -alpha,
+                tt,
+                search_state,
+                ply + 1,
+            );
+
+            // Check if we need to re-search with full window
+            let needs_full_search = match &null_window_result {
+                Ok(r) => {
+                    let score = -r.best_score;
+                    // Re-search if score beats alpha but doesn't beat beta
+                    score > alpha && score < beta
+                }
                 Err(_) => true,
             };
 
             if needs_full_search {
-                negamax_with_tt_mut(max_depth - 1, board, -beta, -alpha, tt)
+                // Re-search with full window at full depth (with extension)
+                negamax_with_tt_mut(extended_depth, board, -beta, -alpha, tt, search_state, ply + 1)
             } else {
-                reduced_result
+                null_window_result
             }
-        } else {
-            negamax_with_tt_mut(max_depth - 1, board, -beta, -alpha, tt)
         };
         board.unmake_move(&undo);
 
@@ -348,6 +739,13 @@ fn negamax_with_tt_mut(
                         TTFlag::LowerBound,
                         Some(*m),
                     );
+
+                    // Update killer moves and history for quiet moves (non-captures)
+                    if m.captured.is_none() {
+                        search_state.store_killer(ply, *m);
+                        search_state.add_history_bonus(active_color, m.from, m.to, max_depth);
+                    }
+
                     return Ok(SearchResult {
                         best_move: Some(*m),
                         best_score: beta,
@@ -620,6 +1018,15 @@ fn negamax_captures_only_mut_with_depth(
     let mut current_moves = vec![];
 
     for m in captures {
+        // SEE pruning: skip losing captures
+        // Only compute SEE when the attacker might be worth more than the victim
+        // (otherwise the capture is likely winning or equal)
+        let attacker_value = SEE_PIECE_VALUES[piece_type_to_see_index(m.piece.piece_type)];
+        let victim_value = m.captured.map_or(0, |p| SEE_PIECE_VALUES[piece_type_to_see_index(p.piece_type)]);
+        if attacker_value > victim_value && see(board, &m) < 0 {
+            continue;
+        }
+
         let undo = board.make_move(&m);
         let search_res = negamax_captures_only_mut_with_depth(board, -beta, -alpha, depth_remaining - 1).unwrap();
         board.unmake_move(&undo);
@@ -724,6 +1131,14 @@ fn negamax_captures_only_fast_mut_with_depth(board: &mut Board, alpha: i32, beta
     captures.sort_by_key(|m| -guess_move_value(board, m));
 
     for m in captures {
+        // SEE pruning: skip losing captures
+        // Only compute SEE when the attacker might be worth more than the victim
+        let attacker_value = SEE_PIECE_VALUES[piece_type_to_see_index(m.piece.piece_type)];
+        let victim_value = m.captured.map_or(0, |p| SEE_PIECE_VALUES[piece_type_to_see_index(p.piece_type)]);
+        if attacker_value > victim_value && see(board, &m) < 0 {
+            continue;
+        }
+
         let undo = board.make_move(&m);
         let evaluation = -negamax_captures_only_fast_mut_with_depth(board, -beta, -alpha, depth_remaining - 1);
         board.unmake_move(&undo);

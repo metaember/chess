@@ -568,16 +568,17 @@ pub struct UndoInfo {
     pub en_passant_target: Option<Position>,
     /// Previous halfmove clock
     pub halfmove_clock: u32,
-    /// The piece index in the pieces Vec that was moved
-    pub moved_piece_index: usize,
-    /// The index of the captured piece (if any) in the pieces Vec
-    pub captured_piece_index: Option<usize>,
     /// Original piece type (for undoing promotion)
     pub original_piece_type: PieceType,
-    /// For castling: the rook's index and original position
-    pub rook_info: Option<(usize, Position)>,
+    /// For castling: the rook's original position (to restore it during unmake)
+    pub rook_old_position: Option<Position>,
     /// Previous Zobrist hash
     pub zobrist_hash: u64,
+    /// Previous incremental evaluation state
+    pub material: [i32; 2],
+    pub pst_mg: [i32; 2],
+    pub pst_eg: [i32; 2],
+    pub phase: i32,
 }
 
 /// Information needed to undo a null move (pass to opponent without moving)

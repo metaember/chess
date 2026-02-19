@@ -35,6 +35,10 @@ path = "src/bin/web_server.rs"
 name = "benchmark_timing"
 path = "src/bin/benchmark_timing.rs"
 
+[[bin]]
+name = "benchmark_tracker"
+path = "src/bin/benchmark_tracker.rs"
+
 [[bench]]
 name = "benchmarks"
 harness = false

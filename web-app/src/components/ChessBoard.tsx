@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react'
 import { cn } from '@/lib/utils'
-import { PIECES, parseFen } from '@/lib/types'
+import { PIECE_IMAGES, parseFen } from '@/lib/types'
 import type { MoveResponse } from '@/lib/types'
 
 interface ChessBoardProps {
@@ -195,14 +195,13 @@ export function ChessBoard({
             const isCastleTarget = selectedSquare && isCastlingRookSquare(selectedSquare, square, pieces, legalMoves)
             const isKingInCheck = square === kingSquare
             const isBeingDragged = square === dragFrom && isDragging
-            const isWhitePiece = piece && piece === piece.toUpperCase()
 
             return (
               <div
                 key={square}
                 data-square={square}
                 className={cn(
-                  'relative flex items-center justify-center text-[min(10vw,56px)] cursor-pointer select-none transition-colors duration-100',
+                  'relative flex items-center justify-center cursor-pointer select-none transition-colors duration-100',
                   isLight ? 'bg-light-square' : 'bg-dark-square',
                   isSelected && 'bg-selected',
                   isLastMoveSquare && !isSelected && 'bg-last-move',
@@ -214,17 +213,15 @@ export function ChessBoard({
               >
                 {/* Piece */}
                 {piece && (
-                  <span
+                  <img
+                    src={PIECE_IMAGES[piece]}
+                    alt={piece}
+                    draggable={false}
                     className={cn(
-                      'z-10 leading-none transition-opacity',
-                      isWhitePiece
-                        ? 'text-white drop-shadow-[0_0_2px_rgba(0,0,0,0.8)]'
-                        : 'text-black drop-shadow-[0_0_2px_rgba(255,255,255,0.8)]',
+                      'z-10 w-[85%] h-[85%] transition-opacity pointer-events-none',
                       isBeingDragged && 'opacity-30'
                     )}
-                  >
-                    {PIECES[piece]}
-                  </span>
+                  />
                 )}
 
                 {/* Legal move indicator */}
@@ -262,21 +259,17 @@ export function ChessBoard({
 
       {/* Drag ghost */}
       {isDragging && dragPosition && dragPiece && (
-        <div
-          className={cn(
-            'fixed pointer-events-none z-50 text-[60px] leading-none',
-            dragPiece === dragPiece.toUpperCase()
-              ? 'text-white drop-shadow-[0_0_3px_rgba(0,0,0,0.9)]'
-              : 'text-black drop-shadow-[0_0_3px_rgba(255,255,255,0.9)]'
-          )}
+        <img
+          src={PIECE_IMAGES[dragPiece]}
+          alt={dragPiece}
+          draggable={false}
+          className="fixed pointer-events-none z-50 w-16 h-16"
           style={{
             left: dragPosition.x,
             top: dragPosition.y,
             transform: 'translate(-50%, -50%)',
           }}
-        >
-          {PIECES[dragPiece]}
-        </div>
+        />
       )}
     </div>
   )
