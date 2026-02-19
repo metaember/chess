@@ -424,22 +424,36 @@ fn negamax_with_tt_mut(
         }
         let undo = board.make_move(m);
 
+        // Check extension: if this move gives check, extend depth by 1
+        // This prevents horizon effects where tactical sequences involving checks
+        // are cut off at an arbitrary point
+        let opponent_color = board.get_active_color();
+        let gives_check = board.is_in_check(opponent_color);
+        let extension: u8 = if gives_check { 1 } else { 0 };
+        let extended_depth = max_depth.saturating_sub(1).saturating_add(extension);
+
         // Principal Variation Search (PVS) with Late Move Reductions (LMR)
         // - First move: search with full window
         // - Later moves: search with null window first, re-search if fails high
         // - LMR: for later quiet moves, also reduce depth
         let res = if move_index == 0 {
             // First move (PV move): search with full window
-            negamax_with_tt_mut(max_depth - 1, board, -beta, -alpha, tt, search_state, ply + 1)
+            negamax_with_tt_mut(extended_depth, board, -beta, -alpha, tt, search_state, ply + 1)
         } else {
             // Late Move Reductions: search later quiet moves at reduced depth
+            // Don't apply LMR if the move gives check
             let lmr_applies = move_index >= LMR_FULL_DEPTH_MOVES
                 && max_depth >= LMR_REDUCTION_LIMIT
                 && !in_check
+                && !gives_check
                 && m.captured.is_none();
 
             // PVS null window search (with LMR reduction if applicable)
-            let search_depth = if lmr_applies { max_depth - 2 } else { max_depth - 1 };
+            let search_depth = if lmr_applies {
+                extended_depth.saturating_sub(1)
+            } else {
+                extended_depth
+            };
             let null_window_result = negamax_with_tt_mut(
                 search_depth,
                 board,
@@ -461,8 +475,8 @@ fn negamax_with_tt_mut(
             };
 
             if needs_full_search {
-                // Re-search with full window at full depth
-                negamax_with_tt_mut(max_depth - 1, board, -beta, -alpha, tt, search_state, ply + 1)
+                // Re-search with full window at full depth (with extension)
+                negamax_with_tt_mut(extended_depth, board, -beta, -alpha, tt, search_state, ply + 1)
             } else {
                 null_window_result
             }

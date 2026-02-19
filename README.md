@@ -47,9 +47,9 @@ Chess bot written in rust
 
   In iterative deepening, use a narrow window centered on the previous iteration's score (e.g., ±25 centipawns) instead of (-∞, +∞). If the search fails outside this window, re-search with a wider window. This prunes more aggressively when the score is stable between iterations.
 
-- [ ] **Check Extensions**
+- [x] **Check Extensions** ✓ DONE
 
-  When a move gives check, extend the search depth by 1 ply. Checks are forcing moves that can dramatically change the evaluation, and extending them prevents horizon effects where the engine pushes bad news past its search horizon. Simple to implement: `if gives_check { depth += 1 }`.
+  ~~When a move gives check, extend the search depth by 1 ply.~~ Implemented in `negamax_with_tt_mut`. After making a move, check if opponent is in check; if so, extend search depth by 1. Also prevents LMR from being applied to moves that give check. This avoids horizon effects where forcing check sequences are cut off prematurely.
 
 - [ ] **Static Exchange Evaluation (SEE)**
 
@@ -77,7 +77,7 @@ Chess bot written in rust
 | 4 | Killer moves + history heuristic | Strength | Much better move ordering | ✓ Done |
 | 5 | Lazy/incremental attack maps | Speed | 10-20% faster | ⚠️ Attempted |
 | 6 | PVS search | Strength | Better node efficiency | ✓ Done |
-| 7 | Check extensions | Strength | Avoids horizon effects | |
+| 7 | Check extensions | Strength | Avoids horizon effects | ✓ Done |
 | 8 | Magic bitboards | Speed | ~2x faster movegen | |
 | 9 | SEE pruning | Strength | Smaller quiescence tree | |
 | 10 | Futility pruning | Strength | Smaller search tree | |
