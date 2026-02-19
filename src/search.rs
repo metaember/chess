@@ -354,9 +354,10 @@ pub fn minimax_with_tt(
     negamax_with_tt_mut(max_depth, board, alpha, beta, tt, &mut search_state, 0)
 }
 
-/// Iterative deepening search with transposition table
+/// Iterative deepening search with transposition table and aspiration windows
 /// Searches at depths 1, 2, 3, ... up to max_depth
 /// Each iteration benefits from TT entries from previous iterations
+/// Uses aspiration windows: narrow search window centered on previous score
 /// Takes mutable board reference to avoid cloning - board state is preserved after search
 pub fn iterative_deepening(
     max_depth: u8,
@@ -367,14 +368,25 @@ pub fn iterative_deepening(
     let mut total_nodes = 0;
     let mut total_quiescent_nodes = 0;
     let mut search_state = SearchState::new();
+    let mut prev_score = 0;
+
+    // Aspiration window parameters
+    const INITIAL_WINDOW: i32 = 25; // ±25 centipawns
 
     for depth in 1..=max_depth {
         // Age history at the start of each new depth iteration
         search_state.age_history();
 
-        let result = negamax_with_tt_mut(depth, board, MIN_SCORE, MAX_SCORE, tt, &mut search_state, 0)?;
+        // Use aspiration windows after depth 1
+        let result = if depth > 1 {
+            aspiration_search(depth, board, tt, &mut search_state, prev_score, INITIAL_WINDOW)?
+        } else {
+            negamax_with_tt_mut(depth, board, MIN_SCORE, MAX_SCORE, tt, &mut search_state, 0)?
+        };
+
         total_nodes += result.nodes_searched;
         total_quiescent_nodes += result.quiescent_nodes_searched;
+        prev_score = result.best_score;
 
         best_result = Some(SearchResult {
             best_move: result.best_move,
@@ -388,7 +400,48 @@ pub fn iterative_deepening(
     Ok(best_result.unwrap())
 }
 
-/// Iterative deepening with time limit (in milliseconds)
+/// Aspiration window search: start with narrow window, widen on fail
+fn aspiration_search(
+    depth: u8,
+    board: &mut Board,
+    tt: &mut TranspositionTable,
+    search_state: &mut SearchState,
+    prev_score: i32,
+    initial_window: i32,
+) -> Result<SearchResult, Vec<Move>> {
+    let mut alpha = prev_score - initial_window;
+    let mut beta = prev_score + initial_window;
+    let mut window = initial_window;
+
+    loop {
+        let result = negamax_with_tt_mut(depth, board, alpha, beta, tt, search_state, 0)?;
+
+        // Check if score is within the window (not a fail-low or fail-high)
+        if result.best_score > alpha && result.best_score < beta {
+            return Ok(result);
+        }
+
+        // Fail-low: score <= alpha, need to widen lower bound
+        if result.best_score <= alpha {
+            alpha = if window >= 200 { MIN_SCORE } else { alpha - window };
+        }
+
+        // Fail-high: score >= beta, need to widen upper bound
+        if result.best_score >= beta {
+            beta = if window >= 200 { MAX_SCORE } else { beta + window };
+        }
+
+        // Double the window for next iteration
+        window *= 2;
+
+        // If window is huge, just do full search
+        if alpha <= MIN_SCORE + 1000 && beta >= MAX_SCORE - 1000 {
+            return negamax_with_tt_mut(depth, board, MIN_SCORE, MAX_SCORE, tt, search_state, 0);
+        }
+    }
+}
+
+/// Iterative deepening with time limit (in milliseconds) and aspiration windows
 /// Returns the best result found within the time limit
 pub fn iterative_deepening_timed(
     max_depth: u8,
@@ -402,7 +455,10 @@ pub fn iterative_deepening_timed(
     let mut total_nodes = 0;
     let mut total_quiescent_nodes = 0;
     let mut search_state = SearchState::new();
+    let mut prev_score = 0;
     let start = Instant::now();
+
+    const INITIAL_WINDOW: i32 = 25;
 
     for depth in 1..=max_depth {
         // Check if we've exceeded time limit
@@ -413,9 +469,16 @@ pub fn iterative_deepening_timed(
         // Age history at the start of each new depth iteration
         search_state.age_history();
 
-        let result = negamax_with_tt_mut(depth, board, MIN_SCORE, MAX_SCORE, tt, &mut search_state, 0)?;
+        // Use aspiration windows after depth 1
+        let result = if depth > 1 {
+            aspiration_search(depth, board, tt, &mut search_state, prev_score, INITIAL_WINDOW)?
+        } else {
+            negamax_with_tt_mut(depth, board, MIN_SCORE, MAX_SCORE, tt, &mut search_state, 0)?
+        };
+
         total_nodes += result.nodes_searched;
         total_quiescent_nodes += result.quiescent_nodes_searched;
+        prev_score = result.best_score;
 
         best_result = Some(SearchResult {
             best_move: result.best_move,

@@ -43,9 +43,9 @@ Chess bot written in rust
 
   ~~After searching the first move with a full window, search remaining moves with a null window `(-alpha-1, -alpha)`. If the null window search fails high, re-search with the full window.~~ Implemented in `negamax_with_tt_mut`. First move uses full window, subsequent moves use null window (-alpha-1, -alpha), with full re-search on fail high. Combined with LMR for later quiet moves. Benchmarks show ~12-28% faster search at depths 5-6.
 
-- [ ] **Aspiration Windows**
+- [x] **Aspiration Windows** ✓ DONE
 
-  In iterative deepening, use a narrow window centered on the previous iteration's score (e.g., ±25 centipawns) instead of (-∞, +∞). If the search fails outside this window, re-search with a wider window. This prunes more aggressively when the score is stable between iterations.
+  ~~In iterative deepening, use a narrow window centered on the previous iteration's score (e.g., ±25 centipawns) instead of (-∞, +∞).~~ Implemented in `iterative_deepening` and `iterative_deepening_timed`. After depth 1, uses ±25cp window centered on previous score. On fail-low/fail-high, doubles window and re-searches. Falls back to full window if window exceeds ±200cp.
 
 - [x] **Check Extensions** ✓ DONE
 
