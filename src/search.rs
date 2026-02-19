@@ -186,7 +186,7 @@ fn find_least_valuable_attacker(
     color: Color,
     occupied: u64,
 ) -> Option<(PieceType, u8)> {
-    use crate::bitboard::{ATTACK_TABLES, BitboardIter};
+    use crate::bitboard::{ATTACK_TABLES, BitboardIter, bishop_attacks, rook_attacks, queen_attacks};
 
     let target_bb = 1u64 << target_sq;
     let color_idx = color as usize;
@@ -209,28 +209,28 @@ fn find_least_valuable_attacker(
         }
     }
 
-    // Check bishops
+    // Check bishops (magic bitboards)
     let bishops = board.get_piece_bb(color, PieceType::Bishop) & occupied;
     for sq in BitboardIter(bishops) {
-        let attacks = ATTACK_TABLES.bishop_attacks(sq, occupied);
+        let attacks = bishop_attacks(sq, occupied);
         if (attacks & target_bb) != 0 {
             return Some((PieceType::Bishop, sq));
         }
     }
 
-    // Check rooks
+    // Check rooks (magic bitboards)
     let rooks = board.get_piece_bb(color, PieceType::Rook) & occupied;
     for sq in BitboardIter(rooks) {
-        let attacks = ATTACK_TABLES.rook_attacks(sq, occupied);
+        let attacks = rook_attacks(sq, occupied);
         if (attacks & target_bb) != 0 {
             return Some((PieceType::Rook, sq));
         }
     }
 
-    // Check queens
+    // Check queens (magic bitboards)
     let queens = board.get_piece_bb(color, PieceType::Queen) & occupied;
     for sq in BitboardIter(queens) {
-        let attacks = ATTACK_TABLES.queen_attacks(sq, occupied);
+        let attacks = queen_attacks(sq, occupied);
         if (attacks & target_bb) != 0 {
             return Some((PieceType::Queen, sq));
         }

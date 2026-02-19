@@ -2,6 +2,7 @@ use crate::types::{Piece, Position};
 
 use crate::bitboard::{
     pos_to_sq, position_to_bb, sq_to_bb, sq_to_position, ATTACK_TABLES, BitboardIter,
+    bishop_attacks, rook_attacks, queen_attacks,
 };
 use crate::board::Board;
 use crate::types::*;
@@ -271,7 +272,7 @@ impl<'a> MoveGenerator<'a> {
         let rooks = self.board.get_piece_bb(self.color, PieceType::Rook);
 
         for from_sq in BitboardIter(rooks) {
-            let attacks = ATTACK_TABLES.rook_attacks(from_sq, occupied);
+            let attacks = rook_attacks(from_sq, occupied);
             let from_pos = sq_to_position(from_sq);
             let piece = Piece {
                 color: self.color,
@@ -317,7 +318,7 @@ impl<'a> MoveGenerator<'a> {
         let bishops = self.board.get_piece_bb(self.color, PieceType::Bishop);
 
         for from_sq in BitboardIter(bishops) {
-            let attacks = ATTACK_TABLES.bishop_attacks(from_sq, occupied);
+            let attacks = bishop_attacks(from_sq, occupied);
             let from_pos = sq_to_position(from_sq);
             let piece = Piece {
                 color: self.color,
@@ -363,7 +364,7 @@ impl<'a> MoveGenerator<'a> {
         let queens = self.board.get_piece_bb(self.color, PieceType::Queen);
 
         for from_sq in BitboardIter(queens) {
-            let attacks = ATTACK_TABLES.queen_attacks(from_sq, occupied);
+            let attacks = queen_attacks(from_sq, occupied);
             let from_pos = sq_to_position(from_sq);
             let piece = Piece {
                 color: self.color,

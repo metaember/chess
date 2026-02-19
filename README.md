@@ -9,9 +9,9 @@ Chess bot written in rust
 
   ~~Currently the evaluation function iterates all pieces on every leaf node, which is O(n_pieces) per eval call.~~ Now maintains running PST scores that update incrementally during `make_move`/`unmake_move`. Evaluation is now O(1) per position.
 
-- [x] **Remove `pieces: Vec<Piece>` Redundancy** ✓ PARTIAL
+- [x] **Remove `pieces: Vec<Piece>` Redundancy** ✓ DONE
 
-  Added `iter_pieces()` method using bitboards. Updated hot paths (evaluation, material counting, pin detection) to use bitboards. The pieces Vec is still used in make/unmake_move but is no longer on the critical evaluation path.
+  ~~Added `iter_pieces()` method using bitboards. Updated hot paths (evaluation, material counting, pin detection) to use bitboards.~~ Fully removed the redundant `pieces: Vec<Piece>` from the Board struct. All piece data is now stored in `board_to_piece: [[Option<Piece>; 8]; 8]` (for O(1) position lookup) and `piece_bb: [[u64; 6]; 2]` (for iteration). This eliminates heap allocation overhead and simplifies make/unmake_move logic.
 
 - [ ] **Lazy/Incremental Attack Map Updates** ⚠️ ATTEMPTED
 
@@ -21,9 +21,9 @@ Chess bot written in rust
 
   `get_legal_moves()` allocates a new `Vec<Move>` per node, causing heap allocation pressure. Replace with `ArrayVec<Move, 256>` (stack-allocated) or a thread-local move list pool. The maximum legal moves in any chess position is 218, so a fixed-size array suffices.
 
-- [ ] **Magic Bitboards for Sliding Pieces**
+- [x] **Magic Bitboards for Sliding Pieces** ✓ DONE
 
-  Currently using classical ray attacks with blocker detection via `trailing_zeros`/`leading_zeros`. Magic bitboards use a precomputed lookup table indexed by `(occupancy * magic) >> shift`, reducing sliding piece attack generation to a single array lookup. Typically provides ~2x speedup for move generation.
+  ~~Currently using classical ray attacks with blocker detection via `trailing_zeros`/`leading_zeros`.~~ Implemented magic bitboards with precomputed lookup tables indexed by `(occupancy * magic) >> shift`. Attack generation is now O(1) via table lookup. Benchmark shows ~4-6% speedup in search; perft unchanged (dominated by make/unmake move overhead, not attack generation).
 
 ### Strength Optimizations
 
@@ -75,12 +75,12 @@ Chess bot written in rust
 |-------|------|------|-----------------|--------|
 | 1 | Enable endgame PST interpolation | Strength | Quick win, minimal code | ✓ Done |
 | 2 | Incremental PST evaluation | Speed | 15-20% faster | ✓ Done |
-| 3 | Remove `pieces` Vec | Speed | 10-15% faster | ✓ Partial |
+| 3 | Remove `pieces` Vec | Speed | 10-15% faster | ✓ Done |
 | 4 | Killer moves + history heuristic | Strength | Much better move ordering | ✓ Done |
 | 5 | Lazy/incremental attack maps | Speed | 10-20% faster | ⚠️ Attempted |
 | 6 | PVS search | Strength | Better node efficiency | ✓ Done |
 | 7 | Check extensions | Strength | Avoids horizon effects | ✓ Done |
-| 8 | Magic bitboards | Speed | ~2x faster movegen | |
+| 8 | Magic bitboards | Speed | ~2x faster movegen | ✓ Done (4-6% speedup) |
 | 9 | SEE pruning | Strength | Smaller quiescence tree | ✓ Done |
 | 10 | Futility pruning | Strength | Smaller search tree | ✓ Done |
 | 11 | Improved eval terms | Strength | Better positional play | ⚠️ Attempted |

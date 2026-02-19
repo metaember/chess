@@ -1,4 +1,4 @@
-use crate::bitboard::{position_to_bb, ATTACK_TABLES, BitboardIter};
+use crate::bitboard::{position_to_bb, ATTACK_TABLES, BitboardIter, bishop_attacks, rook_attacks, queen_attacks};
 use crate::evaluate::{get_pst_value, Material, MAX_PHASE, PHASE_WEIGHTS};
 use crate::movegen::{MoveGenerator, PinnedPiece};
 use crate::types::*;
@@ -21,7 +21,6 @@ pub const fn piece_type_to_index(pt: PieceType) -> usize {
 
 #[derive(Clone)]
 pub struct Board {
-    pub pieces: Vec<Piece>,
     // who's move it is
     active_color: Color,
     pub castle_kingside_white: bool,
@@ -70,15 +69,45 @@ impl Board {
         assert!(parts.len() == 6);
         let mut board_to_piece: [[Option<Piece>; 8]; 8] = [[None; 8]; 8];
 
+        // Initialize piece bitboards and incremental evaluation
+        let mut piece_bb = [[0u64; 6]; 2];
+        let mut occupied = 0u64;
+        let mut material = [0i32; 2];
+        let mut pst_mg = [0i32; 2];
+        let mut pst_eg = [0i32; 2];
+        let mut phase = 0i32;
+        let mut zobrist_hash: u64 = 0;
+        let mut white_king_position = Position { rank: 1, file: 5 }; // Default, will be set
+        let mut black_king_position = Position { rank: 8, file: 5 }; // Default, will be set
+
         let piece_data = parts[0];
-        let mut pieces: Vec<Piece> = vec![];
         let mut rank = 8;
         let mut file = 1;
         for piece_char in piece_data.chars() {
             if piece_char.is_alphabetic() {
                 let p = Piece::from_rank_file(piece_char, rank, file);
-                pieces.push(p);
                 board_to_piece[(rank - 1) as usize][(file - 1) as usize] = Some(p);
+
+                // Update bitboards and evaluation
+                let sq_bb = position_to_bb(&p.position);
+                let color_idx = p.color as usize;
+                let piece_idx = piece_type_to_index(p.piece_type);
+                piece_bb[color_idx][piece_idx] |= sq_bb;
+                occupied |= sq_bb;
+                material[color_idx] += Material::piece_to_material(p.piece_type);
+                pst_mg[color_idx] += get_pst_value(p.piece_type, p.color, p.position.rank, p.position.file, false);
+                pst_eg[color_idx] += get_pst_value(p.piece_type, p.color, p.position.rank, p.position.file, true);
+                phase += PHASE_WEIGHTS[piece_idx];
+                zobrist_hash ^= ZOBRIST_KEYS.piece_key(p.color, p.piece_type, &p.position);
+
+                // Track king positions
+                if p.piece_type == PieceType::King {
+                    match p.color {
+                        Color::White => white_king_position = p.position,
+                        Color::Black => black_king_position = p.position,
+                    }
+                }
+
                 file += 1;
             } else if piece_char.is_numeric() {
                 file += piece_char as u8 - '0' as u8;
@@ -89,18 +118,6 @@ impl Board {
                 panic!("Unexpected char {piece_char} in position string.");
             }
         }
-
-        let white_king_position = pieces
-            .iter()
-            .find(|p| p.color == Color::White && p.piece_type == PieceType::King)
-            .unwrap()
-            .position;
-
-        let black_king_position = pieces
-            .iter()
-            .find(|p| p.color == Color::Black && p.piece_type == PieceType::King)
-            .unwrap()
-            .position;
 
         let active_color = Color::from_char(parts[1].chars().next().unwrap());
 
@@ -117,16 +134,7 @@ impl Board {
         };
 
         let halfmove_clock: u32 = parts[4].parse().expect("Halfmove clock should be an u32");
-
         let fullmove_clock: u32 = parts[5].parse().expect("Fullmove clock should be a u32");
-
-        // Compute initial Zobrist hash
-        let mut zobrist_hash: u64 = 0;
-
-        // Hash all pieces
-        for piece in &pieces {
-            zobrist_hash ^= ZOBRIST_KEYS.piece_key(piece.color, piece.piece_type, &piece.position);
-        }
 
         // Hash side to move
         if active_color == Color::Black {
@@ -152,34 +160,11 @@ impl Board {
             zobrist_hash ^= ZOBRIST_KEYS.en_passant[(ep.file - 1) as usize];
         }
 
-        // Initialize piece bitboards and incremental evaluation
-        let mut piece_bb = [[0u64; 6]; 2];
-        let mut occupied = 0u64;
-        let mut material = [0i32; 2];
-        let mut pst_mg = [0i32; 2];
-        let mut pst_eg = [0i32; 2];
-        let mut phase = 0i32;
-
-        for piece in &pieces {
-            let sq_bb = position_to_bb(&piece.position);
-            let color_idx = piece.color as usize;
-            let piece_idx = piece_type_to_index(piece.piece_type);
-            piece_bb[color_idx][piece_idx] |= sq_bb;
-            occupied |= sq_bb;
-
-            // Update incremental evaluation
-            material[color_idx] += Material::piece_to_material(piece.piece_type);
-            pst_mg[color_idx] += get_pst_value(piece.piece_type, piece.color, piece.position.rank, piece.position.file, false);
-            pst_eg[color_idx] += get_pst_value(piece.piece_type, piece.color, piece.position.rank, piece.position.file, true);
-            phase += PHASE_WEIGHTS[piece_idx];
-        }
-
         // Compute initial attack maps
         let white_attack_map = Self::compute_attack_map_static(&piece_bb, occupied, Color::White, Some(black_king_position));
         let black_attack_map = Self::compute_attack_map_static(&piece_bb, occupied, Color::Black, Some(white_king_position));
 
         Board {
-            pieces,
             active_color,
             castle_kingside_white,
             castle_queenside_white,
@@ -233,9 +218,9 @@ impl Board {
             attacks |= ATTACK_TABLES.pawn[color_idx][sq as usize];
         }
 
-        // Rook attacks
+        // Rook attacks (magic bitboards)
         for sq in BitboardIter(piece_bb[color_idx][1]) {
-            attacks |= ATTACK_TABLES.rook_attacks(sq, occupied_no_king);
+            attacks |= rook_attacks(sq, occupied_no_king);
         }
 
         // Knight attacks
@@ -243,14 +228,14 @@ impl Board {
             attacks |= ATTACK_TABLES.knight[sq as usize];
         }
 
-        // Bishop attacks
+        // Bishop attacks (magic bitboards)
         for sq in BitboardIter(piece_bb[color_idx][3]) {
-            attacks |= ATTACK_TABLES.bishop_attacks(sq, occupied_no_king);
+            attacks |= bishop_attacks(sq, occupied_no_king);
         }
 
-        // Queen attacks
+        // Queen attacks (magic bitboards)
         for sq in BitboardIter(piece_bb[color_idx][4]) {
-            attacks |= ATTACK_TABLES.queen_attacks(sq, occupied_no_king);
+            attacks |= queen_attacks(sq, occupied_no_king);
         }
 
         // King attacks
@@ -546,7 +531,6 @@ impl Board {
             );
         };
 
-        let mut pieces = self.pieces.clone();
         let mut board_to_piece = self.board_to_piece.clone();
 
         let mut new_piece = Piece {
@@ -610,39 +594,14 @@ impl Board {
                         file: new_king_file,
                     },
                 };
-                let old_rook = Piece {
-                    color: selected_move.piece.color,
-                    piece_type: PieceType::Rook,
-                    position: Position {
-                        rank: castle_rank,
-                        file: old_rook_file,
-                    },
-                };
 
-                // remove old pieces
-                pieces = pieces
-                    .into_iter()
-                    .filter(|p| {
-                        p != &old_rook
-                            && p != &selected_move.piece
-                            && match selected_move.captured {
-                                Some(cap_piece) => p != &cap_piece, // .. maybe remove the captured piece ..
-                                None => true,
-                            }
-                    })
-                    .collect();
-
-                // .. add the new pieces
-                pieces.push(new_king);
-                pieces.push(new_rook);
-
-                // update the board map
+                // Update the board map
                 board_to_piece[(selected_move.from.rank - 1) as usize]
                     [(selected_move.from.file - 1) as usize] = None;
-                board_to_piece[(old_rook.position.rank - 1) as usize]
-                    [(old_rook.position.file - 1) as usize] = None;
+                board_to_piece[(castle_rank - 1) as usize]
+                    [(old_rook_file - 1) as usize] = None;
                 if let Some(captured) = selected_move.captured {
-                    // In the case of en passant, the captures sqaure is not the target square of the move
+                    // In the case of en passant, the captures square is not the target square of the move
                     board_to_piece[(captured.position.rank - 1) as usize]
                         [(captured.position.file - 1) as usize] = None;
                 }
@@ -652,26 +611,11 @@ impl Board {
                     [(new_rook.position.file - 1) as usize] = Some(new_rook);
             }
             _ => {
-                // not a castle
-                pieces = pieces
-                    .into_iter()
-                    .filter(|p| {
-                        // remove the piece that moved ...
-                        p != &selected_move.piece
-                            && match selected_move.captured {
-                                Some(cap_piece) => p != &cap_piece, // .. maybe remove the captured piece ..
-                                None => true,
-                            }
-                    })
-                    .collect();
-
-                pieces.push(new_piece);
-
-                // update the board map
+                // Not a castle - update the board map
                 board_to_piece[(selected_move.from.rank - 1) as usize]
                     [(selected_move.from.file - 1) as usize] = None;
                 if let Some(captured) = selected_move.captured {
-                    // In the case of en passant, the captures sqaure is not the target square of the move
+                    // In the case of en passant, the captures square is not the target square of the move
                     board_to_piece[(captured.position.rank - 1) as usize]
                         [(captured.position.file - 1) as usize] = None;
                 }
@@ -744,11 +688,37 @@ impl Board {
             None
         };
 
-        // Compute Zobrist hash for new position
+        // Compute piece bitboards, incremental evaluation, and Zobrist hash from board_to_piece
+        let mut piece_bb = [[0u64; 6]; 2];
+        let mut occupied = 0u64;
+        let mut material = [0i32; 2];
+        let mut pst_mg = [0i32; 2];
+        let mut pst_eg = [0i32; 2];
+        let mut phase = 0i32;
         let mut zobrist_hash: u64 = 0;
-        for piece in &pieces {
-            zobrist_hash ^= ZOBRIST_KEYS.piece_key(piece.color, piece.piece_type, &piece.position);
+
+        for rank in 0..8 {
+            for file in 0..8 {
+                if let Some(piece) = board_to_piece[rank][file] {
+                    let sq_bb = position_to_bb(&piece.position);
+                    let color_idx = piece.color as usize;
+                    let piece_idx = piece_type_to_index(piece.piece_type);
+                    piece_bb[color_idx][piece_idx] |= sq_bb;
+                    occupied |= sq_bb;
+
+                    // Update incremental evaluation
+                    material[color_idx] += Material::piece_to_material(piece.piece_type);
+                    pst_mg[color_idx] += get_pst_value(piece.piece_type, piece.color, piece.position.rank, piece.position.file, false);
+                    pst_eg[color_idx] += get_pst_value(piece.piece_type, piece.color, piece.position.rank, piece.position.file, true);
+                    phase += PHASE_WEIGHTS[piece_idx];
+
+                    // Update Zobrist hash
+                    zobrist_hash ^= ZOBRIST_KEYS.piece_key(piece.color, piece.piece_type, &piece.position);
+                }
+            }
         }
+
+        // Hash additional state
         if new_active_color == Color::Black {
             zobrist_hash ^= ZOBRIST_KEYS.side_to_move;
         }
@@ -768,34 +738,11 @@ impl Board {
             zobrist_hash ^= ZOBRIST_KEYS.en_passant[(ep.file - 1) as usize];
         }
 
-        // Compute piece bitboards and incremental evaluation
-        let mut piece_bb = [[0u64; 6]; 2];
-        let mut occupied = 0u64;
-        let mut material = [0i32; 2];
-        let mut pst_mg = [0i32; 2];
-        let mut pst_eg = [0i32; 2];
-        let mut phase = 0i32;
-
-        for piece in &pieces {
-            let sq_bb = position_to_bb(&piece.position);
-            let color_idx = piece.color as usize;
-            let piece_idx = piece_type_to_index(piece.piece_type);
-            piece_bb[color_idx][piece_idx] |= sq_bb;
-            occupied |= sq_bb;
-
-            // Update incremental evaluation
-            material[color_idx] += Material::piece_to_material(piece.piece_type);
-            pst_mg[color_idx] += get_pst_value(piece.piece_type, piece.color, piece.position.rank, piece.position.file, false);
-            pst_eg[color_idx] += get_pst_value(piece.piece_type, piece.color, piece.position.rank, piece.position.file, true);
-            phase += PHASE_WEIGHTS[piece_idx];
-        }
-
         // Compute attack maps
         let white_attack_map = Self::compute_attack_map_static(&piece_bb, occupied, Color::White, Some(black_king_position));
         let black_attack_map = Self::compute_attack_map_static(&piece_bb, occupied, Color::Black, Some(white_king_position));
 
         Board {
-            pieces,
             active_color: new_active_color,
             halfmove_clock: if move_is_irriversible {
                 0
@@ -832,7 +779,7 @@ impl Board {
     /// This is much faster than execute_move() which clones the entire board.
     pub fn make_move(&mut self, mv: &Move) -> UndoInfo {
         // Save state for undo
-        let undo = UndoInfo {
+        let mut undo = UndoInfo {
             mv: *mv,
             castle_kingside_white: self.castle_kingside_white,
             castle_queenside_white: self.castle_queenside_white,
@@ -840,12 +787,8 @@ impl Board {
             castle_queenside_black: self.castle_queenside_black,
             en_passant_target: self.en_passant_target,
             halfmove_clock: self.halfmove_clock,
-            moved_piece_index: self.find_piece_index(&mv.piece).expect("Moving piece not found"),
-            captured_piece_index: mv.captured.map(|cap| {
-                self.find_piece_index(&cap).expect("Captured piece not found")
-            }),
             original_piece_type: mv.piece.piece_type,
-            rook_info: None,
+            rook_old_position: None,
             zobrist_hash: self.zobrist_hash,
             material: self.material,
             pst_mg: self.pst_mg,
@@ -853,7 +796,6 @@ impl Board {
             phase: self.phase,
         };
 
-        let mut undo = undo;
         let color_idx = mv.piece.color as usize;
 
         // Update Zobrist hash: remove piece from old position
@@ -867,8 +809,7 @@ impl Board {
         self.board_to_piece[(mv.from.rank - 1) as usize][(mv.from.file - 1) as usize] = None;
 
         // Handle captures (remove captured piece)
-        if let Some(cap_idx) = undo.captured_piece_index {
-            let captured = mv.captured.unwrap();
+        if let Some(captured) = mv.captured {
             let cap_color_idx = captured.color as usize;
             let cap_piece_idx = piece_type_to_index(captured.piece_type);
 
@@ -884,12 +825,6 @@ impl Board {
             // Clear the captured piece's square
             self.board_to_piece[(captured.position.rank - 1) as usize]
                 [(captured.position.file - 1) as usize] = None;
-            // Remove from pieces Vec (swap_remove is O(1))
-            self.pieces.swap_remove(cap_idx);
-            // If the moved piece was swapped, update its index
-            if cap_idx < self.pieces.len() && undo.moved_piece_index == self.pieces.len() {
-                undo.moved_piece_index = cap_idx;
-            }
         }
 
         // Handle castling
@@ -919,18 +854,7 @@ impl Board {
                     file: new_rook_file,
                 };
 
-                // Find the rook
-                let rook_idx = self
-                    .pieces
-                    .iter()
-                    .position(|p| {
-                        p.piece_type == PieceType::Rook
-                            && p.color == mv.piece.color
-                            && p.position == old_rook_pos
-                    })
-                    .expect("Castling rook not found");
-
-                undo.rook_info = Some((rook_idx, old_rook_pos));
+                undo.rook_old_position = Some(old_rook_pos);
 
                 // Update Zobrist hash: move rook
                 self.zobrist_hash ^= ZOBRIST_KEYS.piece_key(mv.piece.color, PieceType::Rook, &old_rook_pos);
@@ -942,33 +866,22 @@ impl Board {
                 self.pst_mg[color_idx] += get_pst_value(PieceType::Rook, mv.piece.color, new_rook_pos.rank, new_rook_pos.file, false);
                 self.pst_eg[color_idx] += get_pst_value(PieceType::Rook, mv.piece.color, new_rook_pos.rank, new_rook_pos.file, true);
 
-                // Update rook position
-                self.pieces[rook_idx].position = new_rook_pos;
+                // Update rook position in board_to_piece
+                let rook = Piece {
+                    piece_type: PieceType::Rook,
+                    color: mv.piece.color,
+                    position: new_rook_pos,
+                };
                 self.board_to_piece[(old_rook_pos.rank - 1) as usize]
                     [(old_rook_pos.file - 1) as usize] = None;
                 self.board_to_piece[(new_rook_pos.rank - 1) as usize]
-                    [(new_rook_pos.file - 1) as usize] = Some(self.pieces[rook_idx]);
+                    [(new_rook_pos.file - 1) as usize] = Some(rook);
             }
             _ => {}
         }
 
-        // Update the moving piece's position
-        // Re-fetch the piece index in case it changed due to swap_remove
-        let piece_idx = if undo.captured_piece_index.is_some() {
-            self.pieces
-                .iter()
-                .position(|p| *p == mv.piece)
-                .expect("Moving piece not found after capture removal")
-        } else {
-            undo.moved_piece_index
-        };
-
-        self.pieces[piece_idx].position = mv.to;
-
         // Handle promotion
         let final_piece_type = if let MoveFlag::Promotion(promoted_to_type) = mv.move_flag {
-            self.pieces[piece_idx].piece_type = promoted_to_type;
-
             // Incremental eval: promotion changes material and phase
             let pawn_material = Material::piece_to_material(PieceType::Pawn);
             let promoted_material = Material::piece_to_material(promoted_to_type);
@@ -989,8 +902,12 @@ impl Board {
         self.pst_eg[color_idx] += get_pst_value(final_piece_type, mv.piece.color, mv.to.rank, mv.to.file, true);
 
         // Update the destination square on the board array
-        self.board_to_piece[(mv.to.rank - 1) as usize][(mv.to.file - 1) as usize] =
-            Some(self.pieces[piece_idx]);
+        let moved_piece = Piece {
+            piece_type: final_piece_type,
+            color: mv.piece.color,
+            position: mv.to,
+        };
+        self.board_to_piece[(mv.to.rank - 1) as usize][(mv.to.file - 1) as usize] = Some(moved_piece);
 
         // Update castling rights and Zobrist hash
         if mv.piece.piece_type == PieceType::King {
@@ -1100,7 +1017,7 @@ impl Board {
         }
 
         // Handle castling rook
-        if let Some((_, old_rook_pos)) = undo.rook_info {
+        if let Some(old_rook_pos) = undo.rook_old_position {
             let new_rook_pos = match mv.move_flag {
                 MoveFlag::CastleKingside => Position { rank: old_rook_pos.rank, file: 6 },
                 MoveFlag::CastleQueenside => Position { rank: old_rook_pos.rank, file: 4 },
@@ -1167,31 +1084,20 @@ impl Board {
         self.castle_kingside_black = undo.castle_kingside_black;
         self.castle_queenside_black = undo.castle_queenside_black;
 
-        // Find the piece that moved (it's now at the destination)
-        let piece_idx = self
-            .pieces
-            .iter()
-            .position(|p| {
-                p.position == mv.to
-                    && p.color == mv.piece.color
-                    && (p.piece_type == mv.piece.piece_type
-                        || matches!(mv.move_flag, MoveFlag::Promotion(_)))
-            })
-            .expect("Moved piece not found during unmake");
-
         // Clear the destination square
         self.board_to_piece[(mv.to.rank - 1) as usize][(mv.to.file - 1) as usize] = None;
 
-        // Restore original piece type (undo promotion)
-        self.pieces[piece_idx].piece_type = undo.original_piece_type;
-
-        // Move piece back to original position
-        self.pieces[piece_idx].position = mv.from;
+        // Move piece back to original position with original piece type
+        let original_piece = Piece {
+            piece_type: undo.original_piece_type,
+            color: mv.piece.color,
+            position: mv.from,
+        };
         self.board_to_piece[(mv.from.rank - 1) as usize][(mv.from.file - 1) as usize] =
-            Some(self.pieces[piece_idx]);
+            Some(original_piece);
 
         // Handle castling - restore rook position
-        if let Some((_, old_rook_pos)) = undo.rook_info {
+        if let Some(old_rook_pos) = undo.rook_old_position {
             let new_rook_pos = match mv.move_flag {
                 MoveFlag::CastleKingside => Position {
                     rank: old_rook_pos.rank,
@@ -1204,28 +1110,20 @@ impl Board {
                 _ => unreachable!(),
             };
 
-            // Find the rook at its new position
-            let rook_idx = self
-                .pieces
-                .iter()
-                .position(|p| {
-                    p.piece_type == PieceType::Rook
-                        && p.color == mv.piece.color
-                        && p.position == new_rook_pos
-                })
-                .expect("Castling rook not found during unmake");
-
             // Move rook back
-            self.pieces[rook_idx].position = old_rook_pos;
+            let rook = Piece {
+                piece_type: PieceType::Rook,
+                color: mv.piece.color,
+                position: old_rook_pos,
+            };
             self.board_to_piece[(new_rook_pos.rank - 1) as usize]
                 [(new_rook_pos.file - 1) as usize] = None;
             self.board_to_piece[(old_rook_pos.rank - 1) as usize]
-                [(old_rook_pos.file - 1) as usize] = Some(self.pieces[rook_idx]);
+                [(old_rook_pos.file - 1) as usize] = Some(rook);
         }
 
         // Restore captured piece
         if let Some(captured) = mv.captured {
-            self.pieces.push(captured);
             self.board_to_piece[(captured.position.rank - 1) as usize]
                 [(captured.position.file - 1) as usize] = Some(captured);
         }
@@ -1250,7 +1148,7 @@ impl Board {
         self.occupied |= from_bb;
 
         // Handle castling rook restoration
-        if let Some((_, old_rook_pos)) = undo.rook_info {
+        if let Some(old_rook_pos) = undo.rook_old_position {
             let new_rook_pos = match mv.move_flag {
                 MoveFlag::CastleKingside => Position { rank: old_rook_pos.rank, file: 6 },
                 MoveFlag::CastleQueenside => Position { rank: old_rook_pos.rank, file: 4 },
@@ -1276,11 +1174,6 @@ impl Board {
 
         // Recompute attack maps
         self.recompute_attack_maps();
-    }
-
-    /// Find the index of a piece in the pieces Vec
-    fn find_piece_index(&self, piece: &Piece) -> Option<usize> {
-        self.pieces.iter().position(|p| p == piece)
     }
 
     /// Get the vector of all legal moves for side `color`. This accounts for checks, pins, etc.
@@ -1875,37 +1768,29 @@ mod tests {
         assert!(b.castle_queenside_black);
         assert!(b.castle_kingside_black);
 
-        assert_eq!(b.pieces.len(), 8 * 4);
+        assert_eq!(b.piece_count(), 8 * 4);
 
-        // count pawns
-        assert_eq!(
-            b.pieces
-                .iter()
-                .filter(|p| p.piece_type == PieceType::Pawn)
-                .count(),
-            8 * 2
-        );
+        // count pawns using bitboards
+        let white_pawns = b.get_piece_bb(Color::White, PieceType::Pawn).count_ones();
+        let black_pawns = b.get_piece_bb(Color::Black, PieceType::Pawn).count_ones();
+        assert_eq!(white_pawns + black_pawns, 8 * 2);
 
-        // count pairwise pieces
+        // count pairwise pieces using bitboards
         for pt in [PieceType::Rook, PieceType::Bishop, PieceType::Knight] {
-            assert_eq!(b.pieces.iter().filter(|p| p.piece_type == pt).count(), 4);
+            let white_count = b.get_piece_bb(Color::White, pt).count_ones();
+            let black_count = b.get_piece_bb(Color::Black, pt).count_ones();
+            assert_eq!(white_count + black_count, 4);
         }
 
         for pt in [PieceType::King, PieceType::Queen] {
-            assert_eq!(b.pieces.iter().filter(|p| p.piece_type == pt).count(), 2);
+            let white_count = b.get_piece_bb(Color::White, pt).count_ones();
+            let black_count = b.get_piece_bb(Color::Black, pt).count_ones();
+            assert_eq!(white_count + black_count, 2);
         }
 
-        // check some individual pieces
-
-        let kings: Vec<&Piece> = b
-            .pieces
-            .iter()
-            .filter(|p| p.piece_type == PieceType::King)
-            .collect();
-
-        assert_eq!(kings.len(), 2);
-        assert_eq!(kings[0].position, Position { rank: 8, file: 5 });
-        assert_eq!(kings[1].position, Position { rank: 1, file: 5 });
+        // check king positions
+        assert_eq!(b.black_king_position, Position { rank: 8, file: 5 });
+        assert_eq!(b.white_king_position, Position { rank: 1, file: 5 });
 
         assert_eq!(b.halfmove_clock, 0);
         assert_eq!(b.fullmove_clock, 1);
@@ -2352,13 +2237,18 @@ mod tests {
         let m = Move::from_algebraic(&b, "d2", "c3");
         let captured = Piece::from_algebraic('b', "c3");
         assert_eq!(m.captured, Some(captured));
-        assert!(b.pieces.contains(&p));
-        assert!(b.pieces.contains(&captured));
+        assert!(b.piece_at_position(&p.position).is_some_and(|piece| *piece == p));
+        assert!(b.piece_at_position(&captured.position).is_some_and(|piece| *piece == captured));
 
         let b_after = b.execute_move(&m);
-        assert!(b_after.pieces.contains(&Piece::from_algebraic('P', "c3")));
-        assert!(!b_after.pieces.contains(&p));
-        assert!(!b_after.pieces.contains(&captured));
+        // After capture, the pawn should be at c3
+        assert!(b_after.piece_at_position(&Position::from_algebraic("c3"))
+            .is_some_and(|piece| piece.piece_type == PieceType::Pawn && piece.color == Color::White));
+        // Original pawn position should be empty
+        assert!(b_after.piece_at_position(&p.position).is_none());
+        // Captured piece position now has the capturing piece
+        assert!(b_after.piece_at_position(&captured.position)
+            .is_some_and(|piece| piece.piece_type == PieceType::Pawn && piece.color == Color::White));
     }
 
     #[test]
@@ -2387,9 +2277,9 @@ mod tests {
             };
             assert!(legal_moves.contains(&m));
             let new_b = b.execute_move(&m);
-            assert!(new_b
-                .pieces
-                .contains(&Piece::from_algebraic(pt.to_char(), "d8")));
+            // Check that the promoted piece is at d8
+            let promoted_piece = new_b.piece_at_position(&Position::from_algebraic("d8"));
+            assert!(promoted_piece.is_some_and(|p| p.piece_type == *pt && p.color == Color::White));
         });
     }
 
@@ -3250,7 +3140,7 @@ mod tests {
         // Position with a capturable piece
         let mut b = Board::from_fen("rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 2");
         let original_fen = b.to_fen();
-        let original_piece_count = b.pieces.len();
+        let original_piece_count = b.piece_count();
 
         // Capture e4xd5
         let moves = b.get_legal_moves(&Color::White).unwrap();
@@ -3265,7 +3155,7 @@ mod tests {
         let undo = b.make_move(&capture);
 
         // Verify capture happened
-        assert_eq!(b.pieces.len(), original_piece_count - 1);
+        assert_eq!(b.piece_count(), original_piece_count - 1);
         assert!(b.piece_at_position(&Position::from_algebraic("d5")).is_some());
         assert_eq!(
             b.piece_at_position(&Position::from_algebraic("d5")).unwrap().color,
@@ -3275,7 +3165,7 @@ mod tests {
         // Unmake and verify
         b.unmake_move(&undo);
         assert_eq!(b.to_fen(), original_fen);
-        assert_eq!(b.pieces.len(), original_piece_count);
+        assert_eq!(b.piece_count(), original_piece_count);
     }
 
     #[test]
@@ -3362,7 +3252,7 @@ mod tests {
         // Position where white can capture en passant
         let mut b = Board::from_fen("rnbqkbnr/ppp1p1pp/8/3pPp2/8/8/PPPP1PPP/RNBQKBNR w KQkq f6 0 3");
         let original_fen = b.to_fen();
-        let original_piece_count = b.pieces.len();
+        let original_piece_count = b.piece_count();
 
         let moves = b.get_legal_moves(&Color::White).unwrap();
         let ep_capture = moves
@@ -3376,12 +3266,12 @@ mod tests {
         // Verify en passant capture
         assert!(b.piece_at_position(&Position::from_algebraic("f5")).is_none()); // Captured pawn gone
         assert!(b.piece_at_position(&Position::from_algebraic("f6")).is_some()); // Capturing pawn arrived
-        assert_eq!(b.pieces.len(), original_piece_count - 1);
+        assert_eq!(b.piece_count(), original_piece_count - 1);
 
         // Unmake and verify
         b.unmake_move(&undo);
         assert_eq!(b.to_fen(), original_fen);
-        assert_eq!(b.pieces.len(), original_piece_count);
+        assert_eq!(b.piece_count(), original_piece_count);
     }
 
     #[test]
