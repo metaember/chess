@@ -3,7 +3,7 @@ import {
   DialogContent,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { PIECES } from '@/lib/types'
+import { PIECE_IMAGES } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 interface PromotionModalProps {
@@ -31,17 +31,14 @@ export function PromotionModal({ open, isWhite, onSelect, onClose }: PromotionMo
               key={p.code}
               onClick={() => onSelect(p.code)}
               className={cn(
-                'w-16 h-16 text-5xl rounded-lg transition-all',
+                'w-16 h-16 p-2 rounded-lg transition-all',
                 'bg-dark-square hover:bg-selected',
                 'border-2 border-transparent hover:border-primary',
-                'flex items-center justify-center',
-                isWhite
-                  ? 'text-white drop-shadow-[0_0_2px_rgba(0,0,0,0.8)]'
-                  : 'text-black drop-shadow-[0_0_2px_rgba(255,255,255,0.8)]'
+                'flex items-center justify-center'
               )}
               title={p.name}
             >
-              {PIECES[p.char]}
+              <img src={PIECE_IMAGES[p.char]} alt={p.name} className="w-full h-full" />
             </button>
           ))}
         </div>

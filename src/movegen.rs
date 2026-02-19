@@ -2,6 +2,7 @@ use crate::types::{Piece, Position};
 
 use crate::bitboard::{
     pos_to_sq, position_to_bb, sq_to_bb, sq_to_position, ATTACK_TABLES, BitboardIter,
+    bishop_attacks, rook_attacks, queen_attacks,
 };
 use crate::board::Board;
 use crate::types::*;
@@ -271,7 +272,7 @@ impl<'a> MoveGenerator<'a> {
         let rooks = self.board.get_piece_bb(self.color, PieceType::Rook);
 
         for from_sq in BitboardIter(rooks) {
-            let attacks = ATTACK_TABLES.rook_attacks(from_sq, occupied);
+            let attacks = rook_attacks(from_sq, occupied);
             let from_pos = sq_to_position(from_sq);
             let piece = Piece {
                 color: self.color,
@@ -317,7 +318,7 @@ impl<'a> MoveGenerator<'a> {
         let bishops = self.board.get_piece_bb(self.color, PieceType::Bishop);
 
         for from_sq in BitboardIter(bishops) {
-            let attacks = ATTACK_TABLES.bishop_attacks(from_sq, occupied);
+            let attacks = bishop_attacks(from_sq, occupied);
             let from_pos = sq_to_position(from_sq);
             let piece = Piece {
                 color: self.color,
@@ -363,7 +364,7 @@ impl<'a> MoveGenerator<'a> {
         let queens = self.board.get_piece_bb(self.color, PieceType::Queen);
 
         for from_sq in BitboardIter(queens) {
-            let attacks = ATTACK_TABLES.queen_attacks(from_sq, occupied);
+            let attacks = queen_attacks(from_sq, occupied);
             let from_pos = sq_to_position(from_sq);
             let piece = Piece {
                 color: self.color,
@@ -564,18 +565,17 @@ impl<'a> MoveGenerator<'a> {
     /// where the piece would maintain protection of the king, by blocking the ray or capturing
     /// the pinning piece.
     pub fn get_pins(&self, color: &Color) -> Vec<PinnedPiece> {
-        let opponent_sliding_pieces: Vec<&Piece> = self
+        // Use iter_pieces() to iterate over opponent's sliding pieces
+        let opponent_sliding_pieces: Vec<Piece> = self
             .board
-            .pieces
-            .iter()
+            .iter_pieces()
             .filter(|p| p.color == color.other_color() && p.piece_type.is_sliding())
             .collect();
 
         let king = self.board.get_king(*color);
-        // TODO OPTIM: make this a vec with size init
         let mut pins: Vec<PinnedPiece> = vec![];
 
-        for piece in opponent_sliding_pieces {
+        for piece in &opponent_sliding_pieces {
             match piece.piece_type {
                 PieceType::Rook => {
                     if let Some(pin) = self.get_rook_pins(&king, piece) {
