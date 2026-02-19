@@ -424,30 +424,48 @@ fn negamax_with_tt_mut(
         }
         let undo = board.make_move(m);
 
-        // Late Move Reductions: search later moves at reduced depth
-        // Conditions: not first few moves, sufficient depth, not in check, not a capture
-        let needs_full_search;
-        let res = if move_index >= LMR_FULL_DEPTH_MOVES
-            && max_depth >= LMR_REDUCTION_LIMIT
-            && !in_check
-            && m.captured.is_none()
-        {
-            // Search with reduced depth first
-            let reduced_result = negamax_with_tt_mut(max_depth - 2, board, -alpha - 1, -alpha, tt, search_state, ply + 1);
+        // Principal Variation Search (PVS) with Late Move Reductions (LMR)
+        // - First move: search with full window
+        // - Later moves: search with null window first, re-search if fails high
+        // - LMR: for later quiet moves, also reduce depth
+        let res = if move_index == 0 {
+            // First move (PV move): search with full window
+            negamax_with_tt_mut(max_depth - 1, board, -beta, -alpha, tt, search_state, ply + 1)
+        } else {
+            // Late Move Reductions: search later quiet moves at reduced depth
+            let lmr_applies = move_index >= LMR_FULL_DEPTH_MOVES
+                && max_depth >= LMR_REDUCTION_LIMIT
+                && !in_check
+                && m.captured.is_none();
 
-            // If it beats alpha, we need to re-search at full depth
-            needs_full_search = match &reduced_result {
-                Ok(r) => -r.best_score > alpha,
+            // PVS null window search (with LMR reduction if applicable)
+            let search_depth = if lmr_applies { max_depth - 2 } else { max_depth - 1 };
+            let null_window_result = negamax_with_tt_mut(
+                search_depth,
+                board,
+                -alpha - 1,
+                -alpha,
+                tt,
+                search_state,
+                ply + 1,
+            );
+
+            // Check if we need to re-search with full window
+            let needs_full_search = match &null_window_result {
+                Ok(r) => {
+                    let score = -r.best_score;
+                    // Re-search if score beats alpha but doesn't beat beta
+                    score > alpha && score < beta
+                }
                 Err(_) => true,
             };
 
             if needs_full_search {
+                // Re-search with full window at full depth
                 negamax_with_tt_mut(max_depth - 1, board, -beta, -alpha, tt, search_state, ply + 1)
             } else {
-                reduced_result
+                null_window_result
             }
-        } else {
-            negamax_with_tt_mut(max_depth - 1, board, -beta, -alpha, tt, search_state, ply + 1)
         };
         board.unmake_move(&undo);
 

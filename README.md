@@ -39,9 +39,9 @@ Chess bot written in rust
 
   ~~Maintain a `[Color][From][To]` table that accumulates a bonus each time a quiet move causes a beta cutoff, scaled by depth².~~ Implemented in `SearchState`. History scores indexed by `[color][from_sq][to_sq]`, used for quiet move ordering. Scores aged at each depth iteration to gradually forget old information.
 
-- [ ] **Principal Variation Search (PVS)**
+- [x] **Principal Variation Search (PVS)** ✓ DONE
 
-  After searching the first move with a full window, search remaining moves with a null window `(-alpha-1, -alpha)`. If the null window search fails high, re-search with the full window. Since most moves don't improve alpha, this saves the work of maintaining both bounds. Typically 10-20% node reduction.
+  ~~After searching the first move with a full window, search remaining moves with a null window `(-alpha-1, -alpha)`. If the null window search fails high, re-search with the full window.~~ Implemented in `negamax_with_tt_mut`. First move uses full window, subsequent moves use null window (-alpha-1, -alpha), with full re-search on fail high. Combined with LMR for later quiet moves. Benchmarks show ~12-28% faster search at depths 5-6.
 
 - [ ] **Aspiration Windows**
 
@@ -76,7 +76,7 @@ Chess bot written in rust
 | 3 | Remove `pieces` Vec | Speed | 10-15% faster | ✓ Partial |
 | 4 | Killer moves + history heuristic | Strength | Much better move ordering | ✓ Done |
 | 5 | Lazy/incremental attack maps | Speed | 10-20% faster | ⚠️ Attempted |
-| 6 | PVS search | Strength | Better node efficiency | |
+| 6 | PVS search | Strength | Better node efficiency | ✓ Done |
 | 7 | Check extensions | Strength | Avoids horizon effects | |
 | 8 | Magic bitboards | Speed | ~2x faster movegen | |
 | 9 | SEE pruning | Strength | Smaller quiescence tree | |
