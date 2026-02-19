@@ -55,9 +55,9 @@ Chess bot written in rust
 
   Before searching a capture in quiescence, simulate the full exchange sequence on that square to determine if the capture is winning, equal, or losing. Prune losing captures (e.g., QxP where the pawn is defended). This dramatically reduces quiescence search nodes without losing tactical accuracy.
 
-- [ ] **Futility Pruning**
+- [x] **Futility Pruning** ✓ DONE
 
-  At low depths (1-2 ply from leaf), if the static evaluation plus a margin is still below alpha, skip searching quiet moves entirely. The idea is that a quiet move is unlikely to improve the position by more than the margin. Typical margins: depth 1 = 200cp, depth 2 = 500cp.
+  ~~At low depths (1-2 ply from leaf), if the static evaluation plus a margin is still below alpha, skip searching quiet moves entirely.~~ Implemented in `negamax_with_tt_mut`. At depths 1-2, skips quiet moves (non-captures, non-promotions) if static_eval + margin < alpha. Margins: depth 1 = 200cp, depth 2 = 500cp. Not applied when in check or for the first move.
 
 - [ ] **Improved Evaluation Terms**
 
@@ -80,7 +80,7 @@ Chess bot written in rust
 | 7 | Check extensions | Strength | Avoids horizon effects | ✓ Done |
 | 8 | Magic bitboards | Speed | ~2x faster movegen | |
 | 9 | SEE pruning | Strength | Smaller quiescence tree | |
-| 10 | Futility pruning | Strength | Smaller search tree | |
+| 10 | Futility pruning | Strength | Smaller search tree | ✓ Done |
 | 11 | Improved eval terms | Strength | Better positional play | |
 
 

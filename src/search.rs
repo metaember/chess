@@ -4,7 +4,7 @@ use crate::board::*;
 use crate::book::Book;
 use crate::evaluate::*;
 use crate::tt::{TranspositionTable, TTFlag};
-use crate::types::{Color, Move, PieceType, Position, Status};
+use crate::types::{Color, Move, MoveFlag, PieceType, Position, Status};
 
 pub const MIN_SCORE: i32 = -1_000_000_000;
 pub const MAX_SCORE: i32 = 1_000_000_000;
@@ -416,11 +416,31 @@ fn negamax_with_tt_mut(
     const LMR_REDUCTION_LIMIT: u8 = 3;     // Minimum depth to apply LMR
     let in_check = board.is_in_check(active_color);
 
+    // Futility pruning: at low depths, skip quiet moves that can't improve alpha
+    // Margins: depth 1 = 200cp, depth 2 = 500cp
+    const FUTILITY_MARGIN_1: i32 = 200;
+    const FUTILITY_MARGIN_2: i32 = 500;
+    let can_futility_prune = !in_check && max_depth <= 2;
+    let futility_margin = if max_depth == 1 { FUTILITY_MARGIN_1 } else { FUTILITY_MARGIN_2 };
+    let static_eval = if can_futility_prune { evaluate_board(board) } else { 0 };
+
     for (move_index, m) in legal_moves.iter().enumerate() {
         if let Some(captured) = m.captured {
             if captured.piece_type == PieceType::King {
                 return Err(vec![*m]);
             }
+        }
+
+        // Futility pruning: skip quiet moves at low depths if static eval + margin < alpha
+        // Don't prune captures, promotions, or if we haven't found any move yet
+        let is_promotion = matches!(m.move_flag, MoveFlag::Promotion(_));
+        if can_futility_prune
+            && move_index > 0
+            && m.captured.is_none()
+            && !is_promotion
+            && static_eval + futility_margin <= alpha
+        {
+            continue;
         }
         let undo = board.make_move(m);
 
