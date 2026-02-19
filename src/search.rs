@@ -115,6 +115,152 @@ fn position_to_square(pos: Position) -> usize {
     ((pos.rank - 1) * 8 + (pos.file - 1)) as usize
 }
 
+/// Piece values for SEE (centipawns)
+const SEE_PIECE_VALUES: [i32; 6] = [100, 320, 330, 500, 900, 20000]; // P, N, B, R, Q, K
+
+/// Static Exchange Evaluation (SEE)
+/// Returns the expected material gain/loss from a capture sequence on the target square.
+/// Positive = winning exchange, negative = losing exchange.
+/// This is a simplified SEE that doesn't account for pins or x-ray attacks.
+pub fn see(board: &Board, capture_move: &Move) -> i32 {
+    let target_sq = ((capture_move.to.rank - 1) * 8 + (capture_move.to.file - 1)) as u8;
+
+    // Initial gain is the captured piece value
+    let captured_value = match &capture_move.captured {
+        Some(p) => SEE_PIECE_VALUES[piece_type_to_see_index(p.piece_type)],
+        None => return 0, // Not a capture
+    };
+
+    // Build the initial gain list
+    // gain[0] = value of captured piece
+    // gain[1] = gain[0] - value of capturing piece (if opponent recaptures)
+    // etc.
+    let mut gain = [0i32; 32];
+    let mut depth = 0;
+    gain[depth] = captured_value;
+
+    // Track attacker value
+    let mut attacker_value = SEE_PIECE_VALUES[piece_type_to_see_index(capture_move.piece.piece_type)];
+
+    // Get occupied squares, remove the attacker
+    let attacker_sq = ((capture_move.from.rank - 1) * 8 + (capture_move.from.file - 1)) as u8;
+    let mut occupied = board.get_occupied();
+    occupied &= !(1u64 << attacker_sq);
+
+    // Start with the side that can recapture (opponent of side that moved)
+    let mut side_to_move = capture_move.piece.color.other_color();
+
+    loop {
+        depth += 1;
+        gain[depth] = attacker_value - gain[depth - 1];
+
+        // If gain is so bad that even a perfect recapture can't help, prune
+        if (-gain[depth]).max(gain[depth - 1]) < 0 {
+            break;
+        }
+
+        // Find the least valuable attacker for side_to_move
+        if let Some((piece_type, sq)) = find_least_valuable_attacker(board, target_sq, side_to_move, occupied) {
+            attacker_value = SEE_PIECE_VALUES[piece_type_to_see_index(piece_type)];
+            occupied &= !(1u64 << sq);
+            side_to_move = side_to_move.other_color();
+        } else {
+            break; // No more attackers
+        }
+    }
+
+    // Negamax the gain values
+    while depth > 1 {
+        depth -= 1;
+        gain[depth] = -(-gain[depth]).max(gain[depth + 1]);
+    }
+
+    gain[0]
+}
+
+/// Find the least valuable piece of `color` that attacks `target_sq`
+/// Returns (piece_type, square_of_attacker) or None
+fn find_least_valuable_attacker(
+    board: &Board,
+    target_sq: u8,
+    color: Color,
+    occupied: u64,
+) -> Option<(PieceType, u8)> {
+    use crate::bitboard::{ATTACK_TABLES, BitboardIter};
+
+    let target_bb = 1u64 << target_sq;
+    let color_idx = color as usize;
+
+    // Check pawns first (least valuable)
+    let pawns = board.get_piece_bb(color, PieceType::Pawn) & occupied;
+    for sq in BitboardIter(pawns) {
+        let pawn_attack = ATTACK_TABLES.pawn[color_idx][sq as usize];
+        if (pawn_attack & target_bb) != 0 {
+            return Some((PieceType::Pawn, sq));
+        }
+    }
+
+    // Check knights
+    let knights = board.get_piece_bb(color, PieceType::Knight) & occupied;
+    for sq in BitboardIter(knights) {
+        let attacks = ATTACK_TABLES.knight[sq as usize];
+        if (attacks & target_bb) != 0 {
+            return Some((PieceType::Knight, sq));
+        }
+    }
+
+    // Check bishops
+    let bishops = board.get_piece_bb(color, PieceType::Bishop) & occupied;
+    for sq in BitboardIter(bishops) {
+        let attacks = ATTACK_TABLES.bishop_attacks(sq, occupied);
+        if (attacks & target_bb) != 0 {
+            return Some((PieceType::Bishop, sq));
+        }
+    }
+
+    // Check rooks
+    let rooks = board.get_piece_bb(color, PieceType::Rook) & occupied;
+    for sq in BitboardIter(rooks) {
+        let attacks = ATTACK_TABLES.rook_attacks(sq, occupied);
+        if (attacks & target_bb) != 0 {
+            return Some((PieceType::Rook, sq));
+        }
+    }
+
+    // Check queens
+    let queens = board.get_piece_bb(color, PieceType::Queen) & occupied;
+    for sq in BitboardIter(queens) {
+        let attacks = ATTACK_TABLES.queen_attacks(sq, occupied);
+        if (attacks & target_bb) != 0 {
+            return Some((PieceType::Queen, sq));
+        }
+    }
+
+    // Check king (last resort)
+    let kings = board.get_piece_bb(color, PieceType::King) & occupied;
+    for sq in BitboardIter(kings) {
+        let attacks = ATTACK_TABLES.king[sq as usize];
+        if (attacks & target_bb) != 0 {
+            return Some((PieceType::King, sq));
+        }
+    }
+
+    None
+}
+
+/// Convert PieceType to SEE index (0-5)
+#[inline]
+fn piece_type_to_see_index(piece_type: PieceType) -> usize {
+    match piece_type {
+        PieceType::Pawn => 0,
+        PieceType::Knight => 1,
+        PieceType::Bishop => 2,
+        PieceType::Rook => 3,
+        PieceType::Queen => 4,
+        PieceType::King => 5,
+    }
+}
+
 #[derive(Debug)]
 pub struct SearchResult {
     pub best_move: Option<Move>,
@@ -809,6 +955,15 @@ fn negamax_captures_only_mut_with_depth(
     let mut current_moves = vec![];
 
     for m in captures {
+        // SEE pruning: skip losing captures
+        // Only compute SEE when the attacker might be worth more than the victim
+        // (otherwise the capture is likely winning or equal)
+        let attacker_value = SEE_PIECE_VALUES[piece_type_to_see_index(m.piece.piece_type)];
+        let victim_value = m.captured.map_or(0, |p| SEE_PIECE_VALUES[piece_type_to_see_index(p.piece_type)]);
+        if attacker_value > victim_value && see(board, &m) < 0 {
+            continue;
+        }
+
         let undo = board.make_move(&m);
         let search_res = negamax_captures_only_mut_with_depth(board, -beta, -alpha, depth_remaining - 1).unwrap();
         board.unmake_move(&undo);
@@ -913,6 +1068,14 @@ fn negamax_captures_only_fast_mut_with_depth(board: &mut Board, alpha: i32, beta
     captures.sort_by_key(|m| -guess_move_value(board, m));
 
     for m in captures {
+        // SEE pruning: skip losing captures
+        // Only compute SEE when the attacker might be worth more than the victim
+        let attacker_value = SEE_PIECE_VALUES[piece_type_to_see_index(m.piece.piece_type)];
+        let victim_value = m.captured.map_or(0, |p| SEE_PIECE_VALUES[piece_type_to_see_index(p.piece_type)]);
+        if attacker_value > victim_value && see(board, &m) < 0 {
+            continue;
+        }
+
         let undo = board.make_move(&m);
         let evaluation = -negamax_captures_only_fast_mut_with_depth(board, -beta, -alpha, depth_remaining - 1);
         board.unmake_move(&undo);

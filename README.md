@@ -51,9 +51,9 @@ Chess bot written in rust
 
   ~~When a move gives check, extend the search depth by 1 ply.~~ Implemented in `negamax_with_tt_mut`. After making a move, check if opponent is in check; if so, extend search depth by 1. Also prevents LMR from being applied to moves that give check. This avoids horizon effects where forcing check sequences are cut off prematurely.
 
-- [ ] **Static Exchange Evaluation (SEE)**
+- [x] **Static Exchange Evaluation (SEE)** ✓ DONE
 
-  Before searching a capture in quiescence, simulate the full exchange sequence on that square to determine if the capture is winning, equal, or losing. Prune losing captures (e.g., QxP where the pawn is defended). This dramatically reduces quiescence search nodes without losing tactical accuracy.
+  ~~Before searching a capture in quiescence, simulate the full exchange sequence on that square to determine if the capture is winning, equal, or losing.~~ Implemented `see()` function that simulates exchange sequences. In quiescence search, prunes losing captures when attacker_value > victim_value. Uses least-valuable-attacker ordering for accurate exchange simulation.
 
 - [x] **Futility Pruning** ✓ DONE
 
@@ -79,7 +79,7 @@ Chess bot written in rust
 | 6 | PVS search | Strength | Better node efficiency | ✓ Done |
 | 7 | Check extensions | Strength | Avoids horizon effects | ✓ Done |
 | 8 | Magic bitboards | Speed | ~2x faster movegen | |
-| 9 | SEE pruning | Strength | Smaller quiescence tree | |
+| 9 | SEE pruning | Strength | Smaller quiescence tree | ✓ Done |
 | 10 | Futility pruning | Strength | Smaller search tree | ✓ Done |
 | 11 | Improved eval terms | Strength | Better positional play | |
 
