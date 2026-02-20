@@ -25,6 +25,7 @@ use std::thread;
 use std::time::Instant;
 
 use rust_chess::board::Board;
+use rust_chess::book::Book;
 use rust_chess::search::{
     allocate_time, aspiration_search_with_control, negamax_with_control,
     SearchControl, SearchResult, SearchState, MIN_SCORE, MAX_SCORE,
@@ -68,14 +69,21 @@ struct SharedState {
     board: Arc<Mutex<Board>>,
     tt: Arc<Mutex<TranspositionTable>>,
     search_state: Arc<Mutex<SearchState>>,
+    book: Arc<Book>, // Opening book (immutable, no mutex needed)
 }
 
 impl SharedState {
     fn new() -> Self {
+        eprintln!("Loading opening book...");
+        let book_start = std::time::Instant::now();
+        let book = Book::new();
+        eprintln!("Opening book loaded in {:.3}s", book_start.elapsed().as_secs_f32());
+
         Self {
             board: Arc::new(Mutex::new(Board::new())),
             tt: Arc::new(Mutex::new(TranspositionTable::new(64))),
             search_state: Arc::new(Mutex::new(SearchState::new())),
+            book: Arc::new(book),
         }
     }
 
@@ -84,6 +92,7 @@ impl SharedState {
             board: Arc::clone(&self.board),
             tt: Arc::clone(&self.tt),
             search_state: Arc::clone(&self.search_state),
+            book: Arc::clone(&self.book),
         }
     }
 }
@@ -236,36 +245,46 @@ fn search_thread(
                 movetime,
                 infinite,
             } => {
-                // Run the search
+                // Get current board
                 let board = state.board.lock().unwrap().clone();
-                let is_white = board.get_active_color() == rust_chess::types::Color::White;
 
-                let (time_left, increment) = if is_white {
-                    (wtime.unwrap_or(60000), winc)
+                // Try opening book first (weighted random selection for variety)
+                let book_move = state.book.suggest_move(&board, true);
+
+                let (best_move_opt, ponder_move_opt) = if let Some(book_move) = book_move {
+                    // Found a book move! Use it instantly
+                    (Some(book_move), None) // Don't ponder on book moves
                 } else {
-                    (btime.unwrap_or(60000), binc)
+                    // Not in book, run full search
+                    let is_white = board.get_active_color() == rust_chess::types::Color::White;
+
+                    let (time_left, increment) = if is_white {
+                        (wtime.unwrap_or(60000), winc)
+                    } else {
+                        (btime.unwrap_or(60000), binc)
+                    };
+
+                    let control = if let Some(mt) = movetime {
+                        Arc::new(SearchControl::new(mt, mt))
+                    } else if infinite {
+                        Arc::new(SearchControl::infinite())
+                    } else {
+                        let (soft, hard) = allocate_time(time_left, increment, movestogo);
+                        Arc::new(SearchControl::new(soft, hard))
+                    };
+
+                    let max_depth = depth.unwrap_or(64);
+
+                    // Run search with info output
+                    run_search_with_info(
+                        max_depth,
+                        &board,
+                        &mut state.tt.lock().unwrap(),
+                        &mut state.search_state.lock().unwrap(),
+                        &control,
+                        &result_tx,
+                    )
                 };
-
-                let control = if let Some(mt) = movetime {
-                    Arc::new(SearchControl::new(mt, mt))
-                } else if infinite {
-                    Arc::new(SearchControl::infinite())
-                } else {
-                    let (soft, hard) = allocate_time(time_left, increment, movestogo);
-                    Arc::new(SearchControl::new(soft, hard))
-                };
-
-                let max_depth = depth.unwrap_or(64);
-
-                // Run search with info output
-                let (best_move_opt, ponder_move_opt) = run_search_with_info(
-                    max_depth,
-                    &board,
-                    &mut state.tt.lock().unwrap(),
-                    &mut state.search_state.lock().unwrap(),
-                    &control,
-                    &result_tx,
-                );
 
                 if let Some(best_move) = best_move_opt {
                     // Send best move with ponder

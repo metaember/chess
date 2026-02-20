@@ -135,9 +135,182 @@ fn piece_type_to_index(pt: PieceType) -> usize {
     }
 }
 
+/// Get opposite color
+#[inline(always)]
+fn opposite_color(color: Color) -> Color {
+    match color {
+        Color::White => Color::Black,
+        Color::Black => Color::White,
+    }
+}
+
+/// Evaluate king activity in endgame (centralized king is better)
+fn evaluate_king_activity(board: &Board) -> i32 {
+    let white_king = board.get_king(Color::White);
+    let black_king = board.get_king(Color::Black);
+
+    let white_centralization = king_centralization_bonus(&white_king.position);
+    let black_centralization = king_centralization_bonus(&black_king.position);
+
+    white_centralization - black_centralization
+}
+
+/// Calculate bonus for king centralization (distance from center)
+/// Center squares (d4, d5, e4, e5) get highest bonus
+fn king_centralization_bonus(pos: &crate::types::Position) -> i32 {
+    // Distance from center (d4.5, e4.5 conceptually)
+    let file_dist = ((pos.file as i32) - 4).abs().min(((pos.file as i32) - 5).abs());
+    let rank_dist = ((pos.rank as i32) - 4).abs().min(((pos.rank as i32) - 5).abs());
+    let center_distance = file_dist + rank_dist;
+
+    // Bonus: 40cp for center, decreasing by 10cp per square away
+    40 - (center_distance * 10)
+}
+
+/// Evaluate passed pawns (pawns with no enemy pawns in front or adjacent files)
+fn evaluate_passed_pawns(board: &Board) -> i32 {
+    let white_bonus = evaluate_passed_pawns_for_color(board, Color::White);
+    let black_bonus = evaluate_passed_pawns_for_color(board, Color::Black);
+
+    white_bonus - black_bonus
+}
+
+fn evaluate_passed_pawns_for_color(board: &Board, color: Color) -> i32 {
+    let mut bonus = 0;
+    let pawn_bb = board.get_piece_bb(color, PieceType::Pawn);
+    let enemy_pawn_bb = board.get_piece_bb(opposite_color(color), PieceType::Pawn);
+
+    for rank in 2..=7 {
+        for file in 1..=8 {
+            let square_mask = 1u64 << ((rank - 1) * 8 + (file - 1));
+            if pawn_bb & square_mask != 0 {
+                // We have a pawn here, check if it's passed
+                if is_passed_pawn(rank, file, color, enemy_pawn_bb) {
+                    bonus += passed_pawn_bonus(rank, color);
+                }
+            }
+        }
+    }
+
+    bonus
+}
+
+/// Check if a pawn is passed (no enemy pawns in front or on adjacent files)
+fn is_passed_pawn(rank: u8, file: u8, color: Color, enemy_pawns: u64) -> bool {
+    let (start_rank, end_rank) = match color {
+        Color::White => (rank + 1, 8),
+        Color::Black => (1, rank.saturating_sub(1)),
+    };
+
+    if start_rank > end_rank {
+        return true; // No ranks to check
+    }
+
+    let files_to_check = [
+        if file > 1 { Some(file - 1) } else { None },
+        Some(file),
+        if file < 8 { Some(file + 1) } else { None },
+    ];
+
+    for check_rank in start_rank..=end_rank {
+        for check_file_opt in &files_to_check {
+            if let Some(check_file) = check_file_opt {
+                let square_mask = 1u64 << ((check_rank - 1) * 8 + (check_file - 1));
+                if enemy_pawns & square_mask != 0 {
+                    return false; // Enemy pawn blocks this pawn's advancement
+                }
+            }
+        }
+    }
+
+    true // No enemy pawns found in the way
+}
+
+/// Calculate bonus for a passed pawn based on how far advanced it is
+fn passed_pawn_bonus(rank: u8, color: Color) -> i32 {
+    let advanced_rank = match color {
+        Color::White => rank,
+        Color::Black => 9 - rank, // Flip for black
+    };
+
+    match advanced_rank {
+        7 => 150, // About to promote!
+        6 => 80,
+        5 => 40,
+        4 => 20,
+        3 => 10,
+        _ => 5,
+    }
+}
+
+/// Detect unstoppable passers (pawns that can promote before being caught)
+fn evaluate_unstoppable_passers(board: &Board) -> i32 {
+    let white_bonus = detect_unstoppable_for_color(board, Color::White);
+    let black_bonus = detect_unstoppable_for_color(board, Color::Black);
+
+    white_bonus - black_bonus
+}
+
+fn detect_unstoppable_for_color(board: &Board, color: Color) -> i32 {
+    let pawn_bb = board.get_piece_bb(color, PieceType::Pawn);
+    let enemy_king = board.get_king(opposite_color(color));
+    let enemy_pawns = board.get_piece_bb(opposite_color(color), PieceType::Pawn);
+
+    for rank in 2..=7 {
+        for file in 1..=8 {
+            let square_mask = 1u64 << ((rank - 1) * 8 + (file - 1));
+            if pawn_bb & square_mask != 0 {
+                // Check if this pawn is unstoppable
+                if is_passed_pawn(rank, file, color, enemy_pawns) {
+                    let promotion_rank = match color {
+                        Color::White => 8,
+                        Color::Black => 1,
+                    };
+
+                    let moves_to_promote = match color {
+                        Color::White => promotion_rank - rank,
+                        Color::Black => rank - promotion_rank,
+                    } as i32;
+
+                    // Distance from enemy king to promotion square
+                    let king_file_dist = (enemy_king.position.file as i32 - file as i32).abs();
+                    let king_rank_dist = (enemy_king.position.rank as i32 - promotion_rank as i32).abs();
+                    let king_distance = king_file_dist.max(king_rank_dist); // Chebyshev distance
+
+                    // Pawn is unstoppable if it can promote before king catches it
+                    // Need at least 2 more moves than pawn to catch (1 to block, 1 extra margin)
+                    if moves_to_promote < king_distance - 1 {
+                        return 300; // Practically winning
+                    }
+                }
+            }
+        }
+    }
+
+    0
+}
+
 pub fn evaluate_board(board: &Board) -> i32 {
     // Use incrementally maintained evaluation scores (material + PST)
-    let unsigned_score = board.get_tapered_score();
+    let mut unsigned_score = board.get_tapered_score();
+
+    // Add endgame-specific evaluation terms
+    let phase = board.get_phase();
+    let endgame_weight = (MAX_PHASE - phase).max(0);
+
+    if endgame_weight > 0 {
+        // Only compute endgame terms if we're in endgame (phase < MAX_PHASE)
+        let king_activity = evaluate_king_activity(board);
+        let passed_pawns = evaluate_passed_pawns(board);
+        let unstoppable = evaluate_unstoppable_passers(board);
+
+        // Weight by how far into endgame we are
+        // endgame_weight = 0 -> opening/middlegame, don't apply
+        // endgame_weight = MAX_PHASE -> full endgame, apply 100%
+        unsigned_score += (king_activity * endgame_weight) / MAX_PHASE;
+        unsigned_score += (passed_pawns * endgame_weight) / MAX_PHASE;
+        unsigned_score += unstoppable; // Always apply (it's already huge if detected)
+    }
 
     if board.get_active_color() == Color::White {
         unsigned_score
