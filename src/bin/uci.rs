@@ -20,12 +20,14 @@
 //!   < bestmove g1f3
 
 use std::io::{self, BufRead, Write};
+use std::sync::{Arc, Mutex, mpsc};
+use std::thread;
 use std::time::Instant;
 
 use rust_chess::board::Board;
 use rust_chess::search::{
     allocate_time, aspiration_search_with_control, negamax_with_control,
-    SearchControl, SearchResult, MIN_SCORE, MAX_SCORE,
+    SearchControl, SearchResult, SearchState, MIN_SCORE, MAX_SCORE,
 };
 use rust_chess::tt::TranspositionTable;
 use rust_chess::types::{Move, MoveFlag};
@@ -33,72 +35,338 @@ use rust_chess::types::{Move, MoveFlag};
 const ENGINE_NAME: &str = "RustChess";
 const ENGINE_AUTHOR: &str = "Chess Engine";
 
+/// Commands sent from main thread to search thread
+#[derive(Debug, Clone)]
+enum UciCommand {
+    Go {
+        wtime: Option<u64>,
+        btime: Option<u64>,
+        winc: u64,
+        binc: u64,
+        movestogo: Option<u32>,
+        depth: Option<u8>,
+        movetime: Option<u64>,
+        infinite: bool,
+    },
+    Stop,
+    PonderHit,
+    Quit,
+}
+
+/// Results sent from search thread to main thread
+#[derive(Debug)]
+enum SearchThreadResult {
+    BestMove {
+        best_move: Move,
+        ponder_move: Option<Move>,
+    },
+    Info(String),
+}
+
+/// Shared state between threads
+struct SharedState {
+    board: Arc<Mutex<Board>>,
+    tt: Arc<Mutex<TranspositionTable>>,
+    search_state: Arc<Mutex<SearchState>>,
+}
+
+impl SharedState {
+    fn new() -> Self {
+        Self {
+            board: Arc::new(Mutex::new(Board::new())),
+            tt: Arc::new(Mutex::new(TranspositionTable::new(64))),
+            search_state: Arc::new(Mutex::new(SearchState::new())),
+        }
+    }
+
+    fn clone_refs(&self) -> Self {
+        Self {
+            board: Arc::clone(&self.board),
+            tt: Arc::clone(&self.tt),
+            search_state: Arc::clone(&self.search_state),
+        }
+    }
+}
+
 fn main() {
     let stdin = io::stdin();
     let mut stdout = io::stdout();
 
-    let mut board = Board::new();
-    let mut tt = TranspositionTable::new(64); // 64 MB transposition table
+    let state = SharedState::new();
 
-    for line in stdin.lock().lines() {
-        let line = match line {
-            Ok(l) => l,
+    // Create channels for communication
+    let (cmd_tx, cmd_rx) = mpsc::channel::<UciCommand>();
+    let (result_tx, result_rx) = mpsc::channel::<SearchThreadResult>();
+
+    // Spawn search thread
+    let search_state = state.clone_refs();
+    let search_handle = thread::spawn(move || {
+        search_thread(search_state, cmd_rx, result_tx);
+    });
+
+    // Main thread handles stdin and stdout
+    let cmd_tx_clone = cmd_tx.clone();
+    let stdin_handle = thread::spawn(move || {
+        for line in stdin.lock().lines() {
+            let line = match line {
+                Ok(l) => l,
+                Err(_) => break,
+            };
+
+            let tokens: Vec<&str> = line.split_whitespace().collect();
+            if tokens.is_empty() {
+                continue;
+            }
+
+            match tokens[0] {
+                "uci" => {
+                    println!("id name {}", ENGINE_NAME);
+                    println!("id author {}", ENGINE_AUTHOR);
+                    println!("uciok");
+                    let _ = io::stdout().flush();
+                }
+
+                "isready" => {
+                    println!("readyok");
+                    let _ = io::stdout().flush();
+                }
+
+                "ucinewgame" => {
+                    // Reset board and clear TT
+                    // We'll handle this by sending commands in future
+                    // For now, just acknowledge
+                }
+
+                "position" => {
+                    // Parse and update the shared board
+                    let mut board = state.board.lock().unwrap();
+                    parse_position(&tokens, &mut board);
+                }
+
+                "go" => {
+                    let cmd = parse_go_command(&tokens);
+                    if cmd_tx_clone.send(cmd).is_err() {
+                        break;
+                    }
+                }
+
+                "stop" => {
+                    if cmd_tx_clone.send(UciCommand::Stop).is_err() {
+                        break;
+                    }
+                }
+
+                "ponderhit" => {
+                    if cmd_tx_clone.send(UciCommand::PonderHit).is_err() {
+                        break;
+                    }
+                }
+
+                "quit" => {
+                    let _ = cmd_tx_clone.send(UciCommand::Quit);
+                    break;
+                }
+
+                "d" | "display" => {
+                    let board = state.board.lock().unwrap();
+                    board.draw_to_terminal();
+                }
+
+                _ => {
+                    // Unknown command, ignore
+                }
+            }
+        }
+    });
+
+    // Handle results from search thread
+    while let Ok(result) = result_rx.recv() {
+        match result {
+            SearchThreadResult::Info(info) => {
+                println!("{}", info);
+                stdout.flush().unwrap();
+            }
+            SearchThreadResult::BestMove { best_move, ponder_move } => {
+                if let Some(ponder) = ponder_move {
+                    println!("bestmove {} ponder {}", move_to_uci(&best_move), move_to_uci(&ponder));
+                } else {
+                    println!("bestmove {}", move_to_uci(&best_move));
+                }
+                stdout.flush().unwrap();
+            }
+        }
+    }
+
+    // Wait for threads to finish
+    let _ = stdin_handle.join();
+    let _ = search_handle.join();
+}
+
+/// Search thread main loop
+fn search_thread(
+    state: SharedState,
+    cmd_rx: mpsc::Receiver<UciCommand>,
+    result_tx: mpsc::Sender<SearchThreadResult>,
+) {
+    loop {
+        // Blocking wait for command
+        let cmd = match cmd_rx.recv() {
+            Ok(cmd) => cmd,
             Err(_) => break,
         };
 
-        let tokens: Vec<&str> = line.split_whitespace().collect();
-        if tokens.is_empty() {
-            continue;
-        }
+        match cmd {
+            UciCommand::Quit => break,
 
-        match tokens[0] {
-            "uci" => {
-                println!("id name {}", ENGINE_NAME);
-                println!("id author {}", ENGINE_AUTHOR);
-                // Options could be added here
-                // println!("option name Hash type spin default 64 min 1 max 1024");
-                println!("uciok");
-                stdout.flush().unwrap();
+            UciCommand::Stop => {
+                // Stop command without active search, ignore
             }
 
-            "isready" => {
-                println!("readyok");
-                stdout.flush().unwrap();
+            UciCommand::PonderHit => {
+                // Ponderhit without active ponder, ignore
             }
 
-            "ucinewgame" => {
-                board = Board::new();
-                tt.clear();
-            }
+            UciCommand::Go {
+                wtime,
+                btime,
+                winc,
+                binc,
+                movestogo,
+                depth,
+                movetime,
+                infinite,
+            } => {
+                // Run the search
+                let board = state.board.lock().unwrap().clone();
+                let is_white = board.get_active_color() == rust_chess::types::Color::White;
 
-            "position" => {
-                parse_position(&tokens, &mut board);
-            }
+                let (time_left, increment) = if is_white {
+                    (wtime.unwrap_or(60000), winc)
+                } else {
+                    (btime.unwrap_or(60000), binc)
+                };
 
-            "go" => {
-                let best_move = parse_go(&tokens, &mut board, &mut tt);
-                if let Some(mv) = best_move {
-                    println!("bestmove {}", move_to_uci(&mv));
-                    stdout.flush().unwrap();
+                let control = if let Some(mt) = movetime {
+                    Arc::new(SearchControl::new(mt, mt))
+                } else if infinite {
+                    Arc::new(SearchControl::infinite())
+                } else {
+                    let (soft, hard) = allocate_time(time_left, increment, movestogo);
+                    Arc::new(SearchControl::new(soft, hard))
+                };
+
+                let max_depth = depth.unwrap_or(64);
+
+                // Run search with info output
+                let (best_move_opt, ponder_move_opt) = run_search_with_info(
+                    max_depth,
+                    &board,
+                    &mut state.tt.lock().unwrap(),
+                    &mut state.search_state.lock().unwrap(),
+                    &control,
+                    &result_tx,
+                );
+
+                if let Some(best_move) = best_move_opt {
+                    // Send best move with ponder
+                    let _ = result_tx.send(SearchThreadResult::BestMove {
+                        best_move: best_move.clone(),
+                        ponder_move: ponder_move_opt.clone(),
+                    });
+
+                    // Start pondering if we have a ponder move
+                    if let Some(ponder_move) = ponder_move_opt {
+                        start_pondering(
+                            &state,
+                            &cmd_rx,
+                            &result_tx,
+                            &board,
+                            &best_move,
+                            &ponder_move,
+                        );
+                    }
                 }
             }
+        }
+    }
+}
 
-            "stop" => {
-                // In a threaded implementation, this would signal the search to stop
-                // For now, we run searches synchronously
-            }
+/// Start pondering after outputting bestmove
+fn start_pondering(
+    state: &SharedState,
+    cmd_rx: &mpsc::Receiver<UciCommand>,
+    result_tx: &mpsc::Sender<SearchThreadResult>,
+    board: &Board,
+    our_move: &Move,
+    predicted_opponent_move: &Move,
+) {
+    // Make both moves to get the ponder position
+    let mut ponder_board = board.execute_move(our_move);
+    ponder_board = ponder_board.execute_move(predicted_opponent_move);
+    let ponder_board_for_thread = ponder_board.clone();
 
-            "quit" => {
+    // Create infinite search control for pondering
+    let ponder_control = Arc::new(SearchControl::infinite());
+    let ponder_control_clone = Arc::clone(&ponder_control);
+
+    // Spawn ponder search in a separate thread
+    let ponder_state = state.clone_refs();
+    let ponder_result_tx = result_tx.clone();
+    let ponder_handle = thread::spawn(move || {
+        run_search_with_info(
+            64, // deep search while pondering
+            &ponder_board_for_thread,
+            &mut ponder_state.tt.lock().unwrap(),
+            &mut ponder_state.search_state.lock().unwrap(),
+            &ponder_control_clone,
+            &ponder_result_tx,
+        )
+    });
+
+    // Wait for stop or ponderhit
+    loop {
+        match cmd_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+            Ok(UciCommand::Stop) => {
+                // Stop pondering
+                ponder_control.signal_stop();
+                let _ = ponder_handle.join();
                 break;
             }
-
-            "d" | "display" => {
-                // Debug: display the current board
-                board.draw_to_terminal();
+            Ok(UciCommand::PonderHit) => {
+                // Opponent made predicted move!
+                // Update the shared board and continue searching
+                *state.board.lock().unwrap() = ponder_board;
+                // Continue the search (already running)
+                // Wait for it to complete
+                let _ = ponder_handle.join();
+                break;
             }
-
-            _ => {
-                // Unknown command, ignore
+            Ok(UciCommand::Quit) => {
+                ponder_control.signal_stop();
+                let _ = ponder_handle.join();
+                break;
+            }
+            Ok(UciCommand::Go { .. }) => {
+                // New go command while pondering - stop ponder and handle it
+                ponder_control.signal_stop();
+                let _ = ponder_handle.join();
+                // This command will be re-queued by the caller
+                break;
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                // Continue pondering
+                if !ponder_handle.is_finished() {
+                    continue;
+                } else {
+                    // Ponder search completed
+                    let _ = ponder_handle.join();
+                    break;
+                }
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                ponder_control.signal_stop();
+                let _ = ponder_handle.join();
+                break;
             }
         }
     }
@@ -136,7 +404,7 @@ fn parse_position(tokens: &[&str], board: &mut Board) {
     }
 }
 
-fn parse_go(tokens: &[&str], board: &mut Board, tt: &mut TranspositionTable) -> Option<Move> {
+fn parse_go_command(tokens: &[&str]) -> UciCommand {
     let mut wtime: Option<u64> = None;
     let mut btime: Option<u64> = None;
     let mut winc: u64 = 0;
@@ -185,38 +453,29 @@ fn parse_go(tokens: &[&str], board: &mut Board, tt: &mut TranspositionTable) -> 
         idx += 1;
     }
 
-    // Determine time allocation
-    let is_white = board.get_active_color() == rust_chess::types::Color::White;
-    let (time_left, increment) = if is_white {
-        (wtime.unwrap_or(60000), winc)
-    } else {
-        (btime.unwrap_or(60000), binc)
-    };
-
-    let control = if let Some(mt) = movetime {
-        // Fixed time per move
-        SearchControl::new(mt, mt)
-    } else if infinite {
-        // Infinite search (until "stop" command)
-        SearchControl::infinite()
-    } else {
-        // Time-based search
-        let (soft, hard) = allocate_time(time_left, increment, movestogo);
-        SearchControl::new(soft, hard)
-    };
-
-    // Run iterative deepening with UCI info output
-    let max_depth = depth.unwrap_or(64);
-    iterative_deepening_with_info(max_depth, board, tt, &control)
+    UciCommand::Go {
+        wtime,
+        btime,
+        winc,
+        binc,
+        movestogo,
+        depth,
+        movetime,
+        infinite,
+    }
 }
 
-/// Iterative deepening with UCI info output after each depth
-fn iterative_deepening_with_info(
+/// Run search with UCI info output sent via channel
+/// Returns (best_move, ponder_move)
+fn run_search_with_info(
     max_depth: u8,
-    board: &mut Board,
+    board: &Board,
     tt: &mut TranspositionTable,
+    search_state: &mut SearchState,
     control: &SearchControl,
-) -> Option<Move> {
+    result_tx: &mpsc::Sender<SearchThreadResult>,
+) -> (Option<Move>, Option<Move>) {
+    let mut board = board.clone();
     let mut best_result: Option<SearchResult> = None;
     let mut total_nodes: u64 = 0;
     let mut prev_score = 0i32;
@@ -243,9 +502,9 @@ fn iterative_deepening_with_info(
 
         // Use aspiration windows after depth 1
         let result = if depth > 1 {
-            aspiration_search_with_control(depth, board, tt, prev_score, control)
+            aspiration_search_with_control(depth, &mut board, tt, prev_score, control)
         } else {
-            negamax_with_control(depth, board, MIN_SCORE, MAX_SCORE, tt, control)
+            negamax_with_control(depth, &mut board, MIN_SCORE, MAX_SCORE, tt, control)
         };
 
         let depth_time = depth_start.elapsed().as_millis() as u64;
@@ -270,11 +529,12 @@ fn iterative_deepening_with_info(
                     String::new()
                 };
 
-                println!(
+                let info_msg = format!(
                     "info depth {} score {} nodes {} nps {} time {} pv {}",
                     depth, score_str, total_nodes, nps, elapsed_ms, pv_str
                 );
-                let _ = io::stdout().flush();
+
+                let _ = result_tx.send(SearchThreadResult::Info(info_msg));
 
                 best_result = Some(search_result);
             }
@@ -285,7 +545,17 @@ fn iterative_deepening_with_info(
         }
     }
 
-    best_result.and_then(|r| r.best_move)
+    match best_result {
+        Some(result) => {
+            let ponder_move = if result.moves.len() >= 2 {
+                Some(result.moves[1].clone())
+            } else {
+                None
+            };
+            (result.best_move, ponder_move)
+        }
+        None => (None, None),
+    }
 }
 
 /// Format score for UCI output (handles mate scores)
