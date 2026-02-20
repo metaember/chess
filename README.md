@@ -89,28 +89,36 @@ Chess bot written in rust
 
 ## Remaining Optimizations
 
-### Speed Optimizations (Not Yet Done)
+### High Impact (Do These First)
 
-| Priority | Optimization | Location | Notes |
-|----------|--------------|----------|-------|
-| **High** | Stack-allocated move lists | `get_legal_moves()` | Replace `Vec<Move>` with `ArrayVec<Move, 218>`. Eliminates heap allocation at every node. |
-| **High** | Remove debug `SearchResult.moves` | `search.rs:270` | Remove `Vec<Move>` path tracker in production builds. Use `#[cfg(debug_assertions)]`. |
-| **Medium** | Slim `Move` struct | `types.rs:325` | Remove redundant `piece: Piece` field—O(1) lookup via `board_to_piece` exists now. Saves ~12 bytes per move. |
-| **Medium** | Optimize pin-filter nested loop | `board.rs:1361` | Rewrite O(moves × pins) loop using position-indexed map for O(1) lookup. |
-| **Low** | Replace `ray_to` Vec allocation | `types.rs:139` | Return fixed-size array or iterator instead of allocating `Vec<Position>`. |
+| Priority | Optimization | Type | Location | Notes |
+|----------|--------------|------|----------|-------|
+| **High** | Shorter mate preference | Strength | `search.rs:796` | Mate-in-1 currently scores the same as mate-in-5. Add per-ply penalty so engine finds fastest checkmate. |
+| **High** | Stack-allocated move lists | Speed | `get_legal_moves()` | Replace `Vec<Move>` with `ArrayVec<Move, 218>`. Eliminates heap allocation at every node. |
+| **High** | Remove debug path tracking | Speed | `search.rs:270` | `SearchResult.moves` Vec only needed for debugging. Use `#[cfg(debug_assertions)]` to exclude from release builds. |
 
-### Strength Optimizations (Not Yet Done)
+### Medium Impact
 
-| Priority | Optimization | Location | Notes |
-|----------|--------------|----------|-------|
-| ~~**Critical**~~ | ~~Promotion bonus in move ordering~~ | ~~`evaluate.rs:170`~~ | ✓ Done - Queen promotions now score +800 in move ordering. |
-| ~~**Critical**~~ | ~~Add promotions to quiescence~~ | ~~`movegen.rs:499`~~ | ✓ Done - Quiet promotions now included in captures_only mode. |
-| **High** | Prefer shorter mating sequences | `search.rs:796` | Add per-ply penalty to mate scores so mate-in-1 is preferred over mate-in-5. |
-| **Medium** | Penalize moves into pawn-capture squares | `evaluate.rs:173` | In move ordering, penalize moves where the piece can be captured by enemy pawns. |
-| **Medium** | Bishop pair bonus (incremental) | README | Cache misses blocked previous attempt. Add bishop count to Board struct, update during make/unmake. |
-| **Medium** | Pawn structure via pawn hash | README | Cache pawn structure scores in hash table since pawns move infrequently. |
-| **Low** | King safety evaluation | README | Pawn shield bonus, penalty for open files near king. |
-| **Low** | Mobility evaluation | README | Count pseudo-legal moves per piece. |
+| Priority | Optimization | Type | Location | Notes |
+|----------|--------------|------|----------|-------|
+| **Medium** | Slim `Move` struct | Speed | `types.rs:325` | Remove redundant `piece: Piece` field (~12 bytes). Can be looked up in O(1) via `board_to_piece`. |
+| **Medium** | Penalize pawn-capture squares | Strength | `evaluate.rs:173` | In move ordering, downgrade moves where the piece lands on a square attacked by enemy pawns. |
+| **Medium** | Bishop pair bonus (incremental) | Strength | `board.rs` | Cache misses blocked previous attempt. Add bishop count to Board struct, update during make/unmake, award +30cp for having both bishops. |
+| **Medium** | Pawn structure via hash table | Strength | `evaluate.rs` | Cache doubled/isolated pawn penalties in hash table. Pawns move rarely, so cache hit rate is high. |
+| **Medium** | Null move pruning | Strength | `search.rs` | Skip your turn; if opponent's best response still >= beta, prune the subtree. Typically 10-15% tree reduction. |
+| **Medium** | Late Move Reductions (LMR) | Strength | `search.rs` | Search later moves at reduced depth. Already have PVS, but LMR on top provides additional gains. |
+| **Medium** | Optimize pin-filter nested loop | Speed | `board.rs:1361` | Rewrite O(moves × pins) loop using position-indexed map for O(1) lookup. |
+
+### Lower Priority (Polish)
+
+| Priority | Optimization | Type | Location | Notes |
+|----------|--------------|------|----------|-------|
+| **Low** | King safety evaluation | Strength | `evaluate.rs` | Pawn shield bonus for pawns in front of castled king, penalty for open files near king. |
+| **Low** | Mobility evaluation | Strength | `evaluate.rs` | Count pseudo-legal moves per piece, bonus for more active pieces. |
+| **Low** | Opening book | Strength | `search.rs` | Polyglot book support to skip search for known good openings. |
+| **Low** | Endgame tablebases | Strength | `search.rs` | Syzygy tablebase support for perfect play in 6-7 piece endings. |
+| **Low** | Parallel search (Lazy SMP) | Speed | `search.rs` | Multi-threaded search with shared transposition table. |
+| **Low** | Replace `ray_to` Vec allocation | Speed | `types.rs:139` | Return fixed-size array or iterator instead of allocating `Vec<Position>`. |
 
 ### Code Cleanup TODOs
 

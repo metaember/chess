@@ -1,0 +1,66 @@
+# Token is injected via LICHESS_BOT_TOKEN environment variable (overrides this)
+token: "placeholder_overridden_by_env"
+url: "https://lichess.org/"
+
+engine:
+  dir: "./engines/"
+  name: "uci"
+  protocol: "uci"
+  ponder: false
+
+  draw_or_resign:
+    resign_enabled: true
+    resign_score: -800
+    resign_moves: 3
+    resign_for_egtb_minus_two: true
+    offer_draw_enabled: true
+    offer_draw_score: 15
+    offer_draw_moves: 10
+    offer_draw_pieces: 10
+    offer_draw_for_egtb_zero: true
+
+  online_moves:
+    max_out_of_book_moves: 10
+    lichess_opening_explorer:
+      enabled: true
+      min_time: 20
+      source: "masters"
+      min_games: 10
+    online_egtb:
+      enabled: true
+      min_time: 20
+      max_pieces: 7
+      source: "lichess"
+      move_quality: "best"
+
+abort_time: 30
+move_overhead: 1000
+
+challenge:
+  concurrency: 1
+  accept_bot: true
+  only_bot: false
+  max_increment: 20
+  min_increment: 0
+  max_base: 1800
+  min_base: 0
+  variants:
+    - standard
+  time_controls:
+    - bullet
+    - blitz
+    - rapid
+    - classical
+  modes:
+    - casual
+    - rated
+
+greeting:
+  hello: "Hi! I'm {me}, a Rust chess engine. Good luck!"
+  goodbye: "Good game!"
+
+matchmaking:
+  allow_matchmaking: false
+  challenge_timeout: 10
+  opponent_rating_difference: 300
+  challenge_mode: "rated"

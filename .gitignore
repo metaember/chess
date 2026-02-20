@@ -1,2 +1,4 @@
 /target
 benchmark_history.json
+/lichess-bot
+.env

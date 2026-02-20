@@ -56,7 +56,7 @@ impl Material {
             PieceType::Pawn => 100,
             PieceType::Rook => 500,
             PieceType::Knight => 300,
-            PieceType::Bishop => 320, // Bishop is worth slightly more than a knight
+            PieceType::Bishop => 320,
             PieceType::Queen => 900,
             PieceType::King => 0,
         }
