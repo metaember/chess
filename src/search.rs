@@ -1,5 +1,9 @@
 // use rayon::prelude::*;
 
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::Instant;
+
 use crate::board::*;
 use crate::book::Book;
 use crate::evaluate::*;
@@ -8,7 +12,6 @@ use crate::types::{Color, Move, MoveFlag, PieceType, Position, Status};
 
 pub const MIN_SCORE: i32 = -1_000_000_000;
 pub const MAX_SCORE: i32 = 1_000_000_000;
-
 /// Maximum search depth for killer move storage
 pub const MAX_PLY: usize = 64;
 
@@ -261,6 +264,112 @@ fn piece_type_to_see_index(piece_type: PieceType) -> usize {
     }
 }
 
+/// Search abort error - returned when time runs out mid-search
+#[derive(Debug, Clone)]
+pub struct SearchAborted;
+
+/// Controls time management and provides abort signaling for search
+#[derive(Debug)]
+pub struct SearchControl {
+    pub start_time: Instant,
+    pub soft_limit_ms: u64,  // Target time - can extend slightly if finding good move
+    pub hard_limit_ms: u64,  // Absolute max - never exceed
+    pub stop: Arc<AtomicBool>,  // External stop signal (e.g., from UCI "stop" command)
+    pub nodes_searched: AtomicU64,  // Track nodes for periodic time checks
+}
+
+impl SearchControl {
+    pub fn new(soft_limit_ms: u64, hard_limit_ms: u64) -> Self {
+        Self {
+            start_time: Instant::now(),
+            soft_limit_ms,
+            hard_limit_ms,
+            stop: Arc::new(AtomicBool::new(false)),
+            nodes_searched: AtomicU64::new(0),
+        }
+    }
+
+    /// Create a search control that never times out (for fixed depth searches)
+    pub fn infinite() -> Self {
+        Self {
+            start_time: Instant::now(),
+            soft_limit_ms: u64::MAX,
+            hard_limit_ms: u64::MAX,
+            stop: Arc::new(AtomicBool::new(false)),
+            nodes_searched: AtomicU64::new(0),
+        }
+    }
+
+    /// Check if we should abort the search (called periodically)
+    #[inline]
+    pub fn should_stop(&self) -> bool {
+        // Check external stop signal
+        if self.stop.load(Ordering::Relaxed) {
+            return true;
+        }
+
+        // Only check time every 2048 nodes to minimize overhead
+        let nodes = self.nodes_searched.fetch_add(1, Ordering::Relaxed);
+        if nodes & 2047 == 0 {
+            let elapsed = self.start_time.elapsed().as_millis() as u64;
+            if elapsed >= self.hard_limit_ms {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Check if we've exceeded soft limit (used between depths)
+    pub fn exceeded_soft_limit(&self) -> bool {
+        self.start_time.elapsed().as_millis() as u64 >= self.soft_limit_ms
+    }
+
+    /// Get elapsed time in milliseconds
+    pub fn elapsed_ms(&self) -> u64 {
+        self.start_time.elapsed().as_millis() as u64
+    }
+
+    /// Signal the search to stop
+    pub fn signal_stop(&self) {
+        self.stop.store(true, Ordering::Relaxed);
+    }
+}
+
+impl Default for SearchControl {
+    fn default() -> Self {
+        Self::infinite()
+    }
+}
+
+/// Calculate time allocation for a move given clock state
+/// Returns (soft_limit_ms, hard_limit_ms)
+pub fn allocate_time(
+    time_left_ms: u64,
+    increment_ms: u64,
+    moves_to_go: Option<u32>,
+) -> (u64, u64) {
+    // Estimate moves remaining in game
+    let moves_to_go = moves_to_go.unwrap_or(30) as u64;
+
+    // Base time: divide remaining time by expected moves
+    let base_time = time_left_ms / moves_to_go.max(1);
+
+    // Add most of the increment
+    let with_increment = base_time + (increment_ms * 3 / 4);
+
+    // Soft limit: target time for this move
+    let soft_limit = with_increment.min(time_left_ms / 4);
+
+    // Hard limit: absolute max (never use more than 1/3 of remaining time)
+    let hard_limit = (soft_limit * 3).min(time_left_ms / 3);
+
+    // Ensure minimums
+    let soft_limit = soft_limit.max(50);  // At least 50ms
+    let hard_limit = hard_limit.max(100); // At least 100ms
+
+    (soft_limit, hard_limit)
+}
+
 #[derive(Debug)]
 pub struct SearchResult {
     pub best_move: Option<Move>,
@@ -449,22 +558,35 @@ pub fn iterative_deepening_timed(
     tt: &mut TranspositionTable,
     max_time_ms: u64,
 ) -> Result<SearchResult, Vec<Move>> {
-    use std::time::Instant;
+    let (soft, hard) = (max_time_ms, max_time_ms * 2);
+    let control = SearchControl::new(soft, hard);
+    iterative_deepening_with_control(max_depth, board, tt, &control)
+}
 
+/// Iterative deepening with full time control
+/// Uses aspiration windows, depth time prediction, and can abort mid-search
+pub fn iterative_deepening_with_control(
+    max_depth: u8,
+    board: &mut Board,
+    tt: &mut TranspositionTable,
+    control: &SearchControl,
+) -> Result<SearchResult, Vec<Move>> {
     let mut best_result: Option<SearchResult> = None;
     let mut total_nodes = 0;
     let mut total_quiescent_nodes = 0;
+
     let mut search_state = SearchState::new();
-    let mut prev_score = 0;
-    let start = Instant::now();
+    let mut prev_score = 0i32;
+    let mut depth_times: Vec<u64> = Vec::with_capacity(max_depth as usize);
 
     const INITIAL_WINDOW: i32 = 25;
 
     for depth in 1..=max_depth {
-        // Check if we've exceeded time limit
-        if start.elapsed().as_millis() as u64 > max_time_ms {
+        // Check soft limit before starting next depth
+        if control.exceeded_soft_limit() {
             break;
         }
+
 
         // Age history at the start of each new depth iteration
         search_state.age_history();
@@ -480,13 +602,48 @@ pub fn iterative_deepening_timed(
         total_quiescent_nodes += result.quiescent_nodes_searched;
         prev_score = result.best_score;
 
-        best_result = Some(SearchResult {
-            best_move: result.best_move,
-            best_score: result.best_score,
-            nodes_searched: total_nodes,
-            quiescent_nodes_searched: total_quiescent_nodes,
-            moves: result.moves,
-        });
+        // Predict if we have time for this depth (each depth takes ~3-4x longer)
+        if depth > 2 && !depth_times.is_empty() {
+            let last_time = *depth_times.last().unwrap();
+            let predicted_time = last_time * 4;
+            let elapsed = control.elapsed_ms();
+            if elapsed + predicted_time > control.soft_limit_ms {
+                // Won't finish in time, stop here
+                break;
+            }
+        }
+
+        let depth_start = Instant::now();
+
+        // Use aspiration windows after depth 1
+        let result = if depth > 1 {
+            aspiration_search_with_control(depth, board, tt, prev_score, control)
+        } else {
+            negamax_with_control(depth, board, MIN_SCORE, MAX_SCORE, tt, control)
+        };
+
+        let depth_time = depth_start.elapsed().as_millis() as u64;
+        depth_times.push(depth_time);
+
+        match result {
+            Ok(search_result) => {
+                total_nodes += search_result.nodes_searched;
+                total_quiescent_nodes += search_result.quiescent_nodes_searched;
+                prev_score = search_result.best_score;
+
+                best_result = Some(SearchResult {
+                    best_move: search_result.best_move,
+                    best_score: search_result.best_score,
+                    nodes_searched: total_nodes,
+                    quiescent_nodes_searched: total_quiescent_nodes,
+                    moves: search_result.moves,
+                });
+            }
+            Err(SearchAborted) => {
+                // Search was aborted mid-depth, use best result from previous depth
+                break;
+            }
+        }
     }
 
     Ok(best_result.unwrap_or(SearchResult {
@@ -496,6 +653,269 @@ pub fn iterative_deepening_timed(
         quiescent_nodes_searched: total_quiescent_nodes,
         moves: vec![],
     }))
+}
+
+/// Aspiration window search with time control
+pub fn aspiration_search_with_control(
+    depth: u8,
+    board: &mut Board,
+    tt: &mut TranspositionTable,
+    prev_score: i32,
+    control: &SearchControl,
+) -> Result<SearchResult, SearchAborted> {
+    const INITIAL_WINDOW: i32 = 25;
+    let mut window = INITIAL_WINDOW;
+    let mut alpha = prev_score - window;
+    let mut beta = prev_score + window;
+
+    loop {
+        let result = negamax_with_control(depth, board, alpha, beta, tt, control)?;
+
+        // Check if we got a valid result within the window
+        if result.best_score > alpha && result.best_score < beta {
+            return Ok(result);
+        }
+
+        // Widen window and re-search
+        if result.best_score <= alpha {
+            alpha = (alpha - window * 2).max(MIN_SCORE);
+        }
+        if result.best_score >= beta {
+            beta = (beta + window * 2).min(MAX_SCORE);
+        }
+
+        window *= 2;
+
+        // If window gets too wide, just do full search
+        if window > 400 {
+            return negamax_with_control(depth, board, MIN_SCORE, MAX_SCORE, tt, control);
+        }
+    }
+}
+
+/// Negamax with time control - can abort mid-search
+pub fn negamax_with_control(
+    max_depth: u8,
+    board: &mut Board,
+    alpha: i32,
+    beta: i32,
+    tt: &mut TranspositionTable,
+    control: &SearchControl,
+) -> Result<SearchResult, SearchAborted> {
+    // Check if we should abort
+    if control.should_stop() {
+        return Err(SearchAborted);
+    }
+
+    let original_alpha = alpha;
+    let mut alpha = alpha;
+
+    // Probe transposition table
+    if let Some((score, best_move)) = tt.probe(board.zobrist_hash, max_depth, alpha, beta) {
+        return Ok(SearchResult {
+            best_move,
+            best_score: score,
+            nodes_searched: 0,
+            quiescent_nodes_searched: 0,
+            moves: vec![],
+        });
+    }
+
+    if max_depth == 0 {
+        // Quiescence search at leaf (doesn't need time control - fast)
+        return negamax_captures_only_mut(board, alpha, beta)
+            .map_err(|_| SearchAborted);
+    }
+
+    // Null move pruning
+    const NULL_MOVE_REDUCTION: u8 = 2;
+    let active_color = board.get_active_color();
+    if max_depth >= 3 && !board.is_in_check(active_color) && beta < MAX_SCORE - 1000 {
+        let undo = board.make_null_move();
+        let null_result = negamax_with_control(
+            max_depth - 1 - NULL_MOVE_REDUCTION,
+            board,
+            -beta,
+            -beta + 1,
+            tt,
+            control,
+        );
+        board.unmake_null_move(&undo);
+
+        if let Ok(result) = null_result {
+            let null_score = -result.best_score;
+            if null_score >= beta {
+                return Ok(SearchResult {
+                    best_move: None,
+                    best_score: beta,
+                    nodes_searched: result.nodes_searched,
+                    quiescent_nodes_searched: result.quiescent_nodes_searched,
+                    moves: vec![],
+                });
+            }
+        }
+    }
+
+    let legal_moves = match board.get_legal_moves(&board.get_active_color()) {
+        Ok(moves) => moves,
+        Err(Status::Checkmate(_)) => {
+            return Ok(SearchResult {
+                best_move: None,
+                best_score: MIN_SCORE + (100 - max_depth as i32), // Prefer shorter mates
+                nodes_searched: 0,
+                quiescent_nodes_searched: 0,
+                moves: vec![],
+            })
+        }
+        Err(Status::Stalemate) => {
+            return Ok(SearchResult {
+                best_move: None,
+                best_score: 0,
+                nodes_searched: 0,
+                quiescent_nodes_searched: 0,
+                moves: vec![],
+            })
+        }
+        _ => return Err(SearchAborted),
+    };
+
+    // Move ordering
+    let tt_best_move = tt.get_best_move(board.zobrist_hash);
+    let legal_moves = {
+        let mut moves_and_scores: Vec<_> = legal_moves
+            .iter()
+            .map(|m| {
+                let score = if Some(*m) == tt_best_move {
+                    1_000_000
+                } else {
+                    guess_move_value(board, m)
+                };
+                (m, score)
+            })
+            .collect();
+        moves_and_scores.sort_by(|a, b| b.1.cmp(&a.1));
+        moves_and_scores.iter().map(|(m, _)| **m).collect::<Vec<Move>>()
+    };
+
+    let mut current_best_move = legal_moves[0];
+    let mut current_best_score = MIN_SCORE;
+    let mut total_nodes_searched = 0;
+    let mut total_quiescent_nodes_searched = 0;
+    let mut current_moves = vec![];
+
+    const LMR_FULL_DEPTH_MOVES: usize = 4;
+    const LMR_REDUCTION_LIMIT: u8 = 3;
+    let in_check = board.is_in_check(active_color);
+
+    for (move_index, m) in legal_moves.iter().enumerate() {
+        if let Some(captured) = m.captured {
+            if captured.piece_type == PieceType::King {
+                return Err(SearchAborted);
+            }
+        }
+        let undo = board.make_move(m);
+
+        // Check for check extension
+        let gives_check = board.is_in_check(board.get_active_color());
+        let extension = if gives_check { 1 } else { 0 };
+
+        // LMR
+        let res = if move_index >= LMR_FULL_DEPTH_MOVES
+            && max_depth >= LMR_REDUCTION_LIMIT
+            && !in_check
+            && !gives_check
+            && m.captured.is_none()
+            && !matches!(m.move_flag, MoveFlag::Promotion(_))
+        {
+            let reduced_result = negamax_with_control(
+                max_depth - 2 + extension,
+                board,
+                -alpha - 1,
+                -alpha,
+                tt,
+                control,
+            );
+
+            let needs_full_search = match &reduced_result {
+                Ok(r) => -r.best_score > alpha,
+                Err(_) => return Err(SearchAborted),
+            };
+
+            if needs_full_search {
+                negamax_with_control(max_depth - 1 + extension, board, -beta, -alpha, tt, control)
+            } else {
+                reduced_result
+            }
+        } else {
+            negamax_with_control(max_depth - 1 + extension, board, -beta, -alpha, tt, control)
+        };
+        board.unmake_move(&undo);
+
+        match res {
+            Ok(SearchResult {
+                best_move: _,
+                best_score: evaluation,
+                nodes_searched,
+                quiescent_nodes_searched,
+                moves,
+            }) => {
+                total_nodes_searched += nodes_searched + 1;
+                total_quiescent_nodes_searched += quiescent_nodes_searched;
+                let evaluation = -evaluation;
+
+                if evaluation > current_best_score {
+                    current_best_score = evaluation;
+                    current_best_move = *m;
+                    current_moves = moves;
+                }
+
+                if evaluation >= beta {
+                    tt.store(
+                        board.zobrist_hash,
+                        max_depth,
+                        evaluation,
+                        TTFlag::LowerBound,
+                        Some(*m),
+                    );
+                    return Ok(SearchResult {
+                        best_move: Some(*m),
+                        best_score: beta,
+                        nodes_searched: total_nodes_searched,
+                        quiescent_nodes_searched: total_quiescent_nodes_searched,
+                        moves: current_moves,
+                    });
+                }
+                alpha = alpha.max(evaluation);
+            }
+            Err(SearchAborted) => {
+                return Err(SearchAborted);
+            }
+        }
+    }
+
+    let flag = if current_best_score <= original_alpha {
+        TTFlag::UpperBound
+    } else {
+        TTFlag::Exact
+    };
+
+    tt.store(
+        board.zobrist_hash,
+        max_depth,
+        current_best_score,
+        flag,
+        Some(current_best_move),
+    );
+
+    current_moves.push(current_best_move);
+
+    Ok(SearchResult {
+        best_move: Some(current_best_move),
+        best_score: current_best_score,
+        nodes_searched: total_nodes_searched,
+        quiescent_nodes_searched: total_quiescent_nodes_searched,
+        moves: current_moves,
+    })
 }
 
 /// Internal negamax with TT support
@@ -1162,7 +1582,7 @@ fn negamax_captures_only_fast_mut_with_depth(board: &mut Board, alpha: i32, beta
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::types::{Color, Piece};
+    use crate::types::{Color, Piece, Position};
     use std::time::Instant;
 
     #[test]

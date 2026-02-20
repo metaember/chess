@@ -8,3 +8,19 @@ services:
         limits:
           cpus: '1.0'
           memory: 512M
+
+  lichess-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.lichess-bot
+    container_name: lichess-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - LICHESS_BOT_TOKEN=${LICHESS_BOT_TOKEN}
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M

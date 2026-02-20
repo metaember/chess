@@ -12,6 +12,12 @@ services:
     networks:
       - traefik-public
 
+  lichess-bot:
+    # No Traefik labels needed - lichess-bot makes outbound connections only
+    # It doesn't serve HTTP, so no reverse proxy required
+    labels:
+      - "traefik.enable=false"
+
 networks:
   traefik-public:
     external: true
