@@ -1744,8 +1744,11 @@ mod test {
     // }
 
     #[test]
-    #[ignore] // Test incomplete (has todo!()) and behavior changed after adding promotions to quiescence
-    fn test_blunders_knight_2() {
+    fn test_does_not_blunder_knight() {
+        // Position where knight on e4 is attacked by pawn on f5
+        // The blunder is f2f3?? which allows ...fxe4 winning the knight
+        // Engine should move the knight instead
+        //
         // . ♞ . ♛ ♚ ♝ . ♜
         // ♜ ♝ ♟︎ ♟︎ ♟︎ . ♟︎ ♟︎
         // ♟︎ ♟︎ . . . . . .
@@ -1754,118 +1757,44 @@ mod test {
         // . . . ♕ ♙ . . .
         // ♙ ♙ ♙ ♙ . ♙ ♙ ♙
         // ♖ . ♗ . ♔ . ♘ ♖
+        let mut b = Board::from_fen("1n1qkb1r/rbppp1pp/pp6/5p2/4N3/3QP3/PPPP1PPP/R1B1K1NR w KQk - 0 8");
+        let mut tt = TranspositionTable::new(16);
 
-        // 1n1qkb1r/rbppp1pp/pp6/5p2/4N3/3QP3/PPPP1PPP/R1B1K1NR w KQk - 0 8
+        // Use the same search path as UCI (aspiration_search_with_control -> negamax_with_control)
+        let control = SearchControl::infinite();
+        let mut best_move = None;
+        let mut prev_score = 0i32;
 
-        // 1. Nb1c3 Ng8f6 2. e2e3 a7a6 3. Bf1d3 Ra8a7 4. Qd1e2 b7b6 5. Bd3e4 Nf6xe4 6. Nc3xe4 Bc8b7
-        // 7. Qe2d3 f7f5 8. f2f3?? f5xe4
-        // this series of moves should get us to the position from the previous test. When running the test above it
-        // passes but when playing the game it still blunders f3
-        let b = Board::new();
-        b.draw_to_terminal();
+        for depth in 1..=6u8 {
+            let result = if depth > 1 {
+                aspiration_search_with_control(depth, &mut b, &mut tt, prev_score, &control)
+            } else {
+                negamax_with_control(depth, &mut b, MIN_SCORE, MAX_SCORE, &mut tt, &control)
+            };
 
-        // 1
-        let b = b.execute_move(&Move::from_algebraic(&b, "b1", "c3"));
-        let b = b.execute_move(&Move::from_algebraic(&b, "g8", "f6"));
-        // 2
-        let b = b.execute_move(&Move::from_algebraic(&b, "e2", "e3"));
-        let b = b.execute_move(&Move::from_algebraic(&b, "a7", "a6"));
-        // 3
-        let b = b.execute_move(&Move::from_algebraic(&b, "f1", "d3"));
-        let b = b.execute_move(&Move::from_algebraic(&b, "a8", "a7"));
-        // 4
-        let b = b.execute_move(&Move::from_algebraic(&b, "d1", "e2"));
-        let b = b.execute_move(&Move::from_algebraic(&b, "b7", "b6"));
-        // 5
-        let b = b.execute_move(&Move::from_algebraic(&b, "d3", "e4"));
-        let b = b.execute_move(&Move::from_algebraic(&b, "f6", "e4"));
-        b.draw_to_terminal();
+            if let Ok(r) = result {
+                prev_score = r.best_score;
+                best_move = r.best_move;
+            }
+        }
 
-        // 6
-        let b = b.execute_move(&Move::from_algebraic(&b, "c3", "e4"));
-        let b = b.execute_move(&Move::from_algebraic(&b, "c8", "b7"));
-        b.draw_to_terminal();
+        let best_move = best_move.expect("Should find a move");
 
-        // 7
-        let b = b.execute_move(&Move::from_algebraic(&b, "e2", "d3"));
-        let b = b.execute_move(&Move::from_algebraic(&b, "f7", "f5"));
-        b.draw_to_terminal();
-
-        // make sure the Knight has legal moves
-        let legal_moves = b.get_legal_moves(&b.get_active_color()).unwrap();
-        let knight_moves = legal_moves
-            .iter()
-            .filter(|m| m.piece.piece_type == PieceType::Knight && m.piece.position.rank == 4)
-            .collect::<Vec<&Move>>();
-        assert!(knight_moves.len() > 5);
-        // knight_moves
-        //     .iter()
-        //     .for_each(|m| println!("{} {}", m.to_algebraic(), m.to_human()));
-        assert!(knight_moves.contains(&&Move::from_algebraic(&b, "e4", "c3")));
-        // ok the knight has good squares to move to, that's not the issue
-        // also it's not pinned or it would not show up in the legal moves
-
-        let blunder_move = Move::from_algebraic(&b, "f2", "f3");
-        let b_after_blunder = b.execute_move(&blunder_move);
-        println!("After blunder:");
-        b_after_blunder.draw_to_terminal();
-
-        let black_pseudo_moves =
-            b_after_blunder.get_all_pseudo_moves(b_after_blunder.get_active_color(), true);
-        let capture_knight_move = Move::from_algebraic(&b_after_blunder, "f5", "e4");
-        assert!(black_pseudo_moves.contains(&&capture_knight_move));
-        assert!(capture_knight_move
-            .captured
-            .is_some_and(|p| p == Piece::from_algebraic('N', "e4")));
-        // ok so white should know black can capture the knight
-
-        // check the eval before and after the blunder
-        let eval_before_blunder = evaluate_board(&b);
-        let eval_after_blunder = evaluate_board(&b_after_blunder);
-        println!("Eval before blunder: {}", eval_before_blunder);
-        println!("Eval after blunder: {}\n", eval_after_blunder);
-        assert!(eval_before_blunder - 150 < eval_before_blunder);
-
-        let after_recapture = b_after_blunder.execute_move(&capture_knight_move);
-        println!("After recapture:");
-        after_recapture.draw_to_terminal();
-        let eval_after_recapture = evaluate_board(&after_recapture);
-        println!("Eval after recapture: {}\n", eval_after_recapture);
-
-        // ok so going back to before the blunder
-        println!("Search before blunder: 4 moves deep");
-        assert!(b.get_active_color() == Color::White);
-        let search_result = minimax(4, &b).unwrap();
-        search_result.print();
-
-        // search 2 moves deep
-        println!("Search before blunder: 2 moves deep");
-        assert!(b.get_active_color() == Color::White);
-        let search_result = minimax(2, &b).unwrap();
-        search_result.print();
-        assert!(search_result.best_move.unwrap().piece == Piece::from_algebraic('N', "e4"));
-
-        // search 5 moves deep
-        println!("Search before blunder: 5 moves deep");
-        assert!(b.get_active_color() == Color::White);
-        let search_result = minimax(5, &b).unwrap();
-        println!(
-            "search result: {} {}",
-            search_result.best_move.unwrap().to_human(),
-            search_result.best_score
+        // The blunder is f2f3 - engine should NOT play this
+        let blunder = Move::from_algebraic(&b, "f2", "f3");
+        assert_ne!(
+            best_move, blunder,
+            "Engine should not blunder f3, which loses the knight to ...fxe4"
         );
-        search_result
-            .moves
-            .iter()
-            .for_each(|m| println!("{} {}", m.to_algebraic(), m.to_human()));
-        assert!(search_result.best_move.unwrap().piece == Piece::from_algebraic('N', "e4"));
 
-        let m = search(4, &b);
-        print!("best move: {} {}", m.to_human(), m.to_algebraic());
-        // Move the knight, it's under attacj by a pawn!
-        assert!(m.piece == Piece::from_algebraic('N', "e4"));
-
-        todo!("Implement");
+        // Best move should be a knight move (escaping the attack)
+        assert_eq!(
+            best_move.piece.piece_type,
+            PieceType::Knight,
+            "Engine should move the knight which is under attack. Got: {} {}",
+            best_move.to_algebraic(),
+            best_move.to_human()
+        );
     }
 
     #[test]
