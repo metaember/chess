@@ -466,6 +466,51 @@ impl Board {
         self.active_color
     }
 
+    /// Compute Polyglot-compatible zobrist hash for opening book lookups
+    pub fn polyglot_hash(&self) -> u64 {
+        use crate::zobrist::POLYGLOT_KEYS;
+        let mut hash = 0u64;
+
+        // Add piece positions
+        for rank in 1..=8 {
+            for file in 1..=8 {
+                if let Some(piece) = self.piece_at(rank, file) {
+                    let color_idx = piece.color as usize;
+                    let piece_idx = piece_type_to_index(piece.piece_type);
+                    let square = ((rank - 1) * 8 + (file - 1)) as usize;
+                    hash ^= POLYGLOT_KEYS.pieces[color_idx][piece_idx][square];
+                }
+            }
+        }
+
+        // Add castling rights
+        if self.castle_kingside_white {
+            hash ^= POLYGLOT_KEYS.castle_kingside_white;
+        }
+        if self.castle_queenside_white {
+            hash ^= POLYGLOT_KEYS.castle_queenside_white;
+        }
+        if self.castle_kingside_black {
+            hash ^= POLYGLOT_KEYS.castle_kingside_black;
+        }
+        if self.castle_queenside_black {
+            hash ^= POLYGLOT_KEYS.castle_queenside_black;
+        }
+
+        // Add en passant file (if any)
+        if let Some(ep) = self.en_passant_target {
+            let file_idx = (ep.file - 1) as usize;
+            hash ^= POLYGLOT_KEYS.en_passant[file_idx];
+        }
+
+        // Add side to move (XOR if black to move)
+        if self.active_color == Color::Black {
+            hash ^= POLYGLOT_KEYS.side_to_move;
+        }
+
+        hash
+    }
+
     pub fn check_for_insufficient_material(&self) -> Option<Status> {
         // Use bitboard population count for efficiency
         let white_piece_count = self.get_pieces_bb(Color::White).count_ones();
