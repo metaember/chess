@@ -1,0 +1,678 @@
+Starting game with depth: 4, count: 20, print_search: true
+Search result: [0, nodes: 0 tot, 0 quies] e2e4: white moves pawn from e2 to e4
+Move path:
+move 1: white moves pawn from e2 to e4 (e2e4 - elapsed: 0.000041s)
+ ♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ ♟︎ ♟︎ ♟︎ ♟︎ ♟︎
+ . . . . . . . .
+ . . . . . . . .
+ . . . . ♙ . . .
+ . . . . . . . .
+ ♙ ♙ ♙ ♙ . ♙ ♙ ♙
+ ♖ ♘ ♗ ♕ ♔ ♗ ♘ ♖
+
+
+Search result: [-70, nodes: 50191 tot, 50191 quies] d7d6: black moves pawn from d7 to d6
+Move path:
+  • d7d6: black moves pawn from d7 to d6
+  • Nb1c3: white moves knight from b1 to c3
+  • Nb8d7: black moves knight from b8 to d7
+  • Ng1f3: white moves knight from g1 to f3
+move 1: black moves pawn from d7 to d6 (d7d6 - elapsed: 0.238579s)
+ ♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ . . . .
+ . . . . . . . .
+ . . . . ♙ . . .
+ . . . . . . . .
+ ♙ ♙ ♙ ♙ . ♙ ♙ ♙
+ ♖ ♘ ♗ ♕ ♔ ♗ ♘ ♖
+
+
+Search result: [0, nodes: 0 tot, 0 quies] d2d4: white moves pawn from d2 to d4
+Move path:
+move 2: white moves pawn from d2 to d4 (d2d4 - elapsed: 0.000007s)
+ ♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ . . . .
+ . . . . . . . .
+ . . . ♙ ♙ . . .
+ . . . . . . . .
+ ♙ ♙ ♙ . . ♙ ♙ ♙
+ ♖ ♘ ♗ ♕ ♔ ♗ ♘ ♖
+
+
+Search result: [-25, nodes: 70744 tot, 70744 quies] Nb8d7: black moves knight from b8 to d7
+Move path:
+  • Nb8d7: black moves knight from b8 to d7
+  • Nb1c3: white moves knight from b1 to c3
+  • Nd7f6: black moves knight from d7 to f6
+  • Ng1f3: white moves knight from g1 to f3
+move 2: black moves knight from b8 to d7 (Nb8d7 - elapsed: 0.443924s)
+ ♜ . ♝ ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ ♞ ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ . . . .
+ . . . . . . . .
+ . . . ♙ ♙ . . .
+ . . . . . . . .
+ ♙ ♙ ♙ . . ♙ ♙ ♙
+ ♖ ♘ ♗ ♕ ♔ ♗ ♘ ♖
+
+
+Search result: [0, nodes: 0 tot, 0 quies] Bf1c4: white moves bishop from f1 to c4
+Move path:
+move 3: white moves bishop from f1 to c4 (Bf1c4 - elapsed: 0.000010s)
+ ♜ . ♝ ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ ♞ ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ . . . .
+ . . . . . . . .
+ . . ♗ ♙ ♙ . . .
+ . . . . . . . .
+ ♙ ♙ ♙ . . ♙ ♙ ♙
+ ♖ ♘ ♗ ♕ ♔ . ♘ ♖
+
+
+Search result: [5, nodes: 94754 tot, 94754 quies] Nd7f6: black moves knight from d7 to f6
+Move path:
+  • Nd7f6: black moves knight from d7 to f6
+  • Nb1c3: white moves knight from b1 to c3
+  • Bc8e6: black moves bishop from c8 to e6
+  • Qd1e2: white moves queen from d1 to e2
+move 3: black moves knight from d7 to f6 (Nd7f6 - elapsed: 0.649516s)
+ ♜ . ♝ ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ . ♞ . .
+ . . . . . . . .
+ . . ♗ ♙ ♙ . . .
+ . . . . . . . .
+ ♙ ♙ ♙ . . ♙ ♙ ♙
+ ♖ ♘ ♗ ♕ ♔ . ♘ ♖
+
+
+Search result: [-10, nodes: 51323 tot, 51323 quies] Nb1c3: white moves knight from b1 to c3
+Move path:
+  • Nb1c3: white moves knight from b1 to c3
+  • Bc8e6: black moves bishop from c8 to e6
+  • Qd1d3: white moves queen from d1 to d3
+  • Ra8c8: black moves rook from a8 to c8
+move 4: white moves knight from b1 to c3 (Nb1c3 - elapsed: 0.458596s)
+ ♜ . ♝ ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ . ♞ . .
+ . . . . . . . .
+ . . ♗ ♙ ♙ . . .
+ . . ♘ . . . . .
+ ♙ ♙ ♙ . . ♙ ♙ ♙
+ ♖ . ♗ ♕ ♔ . ♘ ♖
+
+
+Search result: [-35, nodes: 542817 tot, 542817 quies] Bc8e6: black moves bishop from c8 to e6
+Move path:
+  • Bc8e6: black moves bishop from c8 to e6
+  • d4d5: white moves pawn from d4 to d5
+  • Be6d7: black moves bishop from e6 to d7
+  • Ng1f3: white moves knight from g1 to f3
+move 4: black moves bishop from c8 to e6 (Bc8e6 - elapsed: 5.290711s)
+ ♜ . . ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ ♝ ♞ . .
+ . . . . . . . .
+ . . ♗ ♙ ♙ . . .
+ . . ♘ . . . . .
+ ♙ ♙ ♙ . . ♙ ♙ ♙
+ ♖ . ♗ ♕ ♔ . ♘ ♖
+
+
+Search result: [35, nodes: 265254 tot, 265254 quies] Bc4d3: white moves bishop from c4 to d3
+Move path:
+  • Bc4d3: white moves bishop from c4 to d3
+  • Ra8b8: black moves rook from a8 to b8
+  • Ng1f3: white moves knight from g1 to f3
+  • Rb8c8: black moves rook from b8 to c8
+move 5: white moves bishop from c4 to d3 (Bc4d3 - elapsed: 2.396752s)
+ ♜ . . ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ ♝ ♞ . .
+ . . . . . . . .
+ . . . ♙ ♙ . . .
+ . . ♘ ♗ . . . .
+ ♙ ♙ ♙ . . ♙ ♙ ♙
+ ♖ . ♗ ♕ ♔ . ♘ ♖
+
+
+Search result: [-55, nodes: 1235008 tot, 1235008 quies] Ra8b8: black moves rook from a8 to b8
+Move path:
+  • Ra8b8: black moves rook from a8 to b8
+  • Ng1f3: white moves knight from g1 to f3
+  • Rb8c8: black moves rook from b8 to c8
+  • Bc1e3: white moves bishop from c1 to e3
+move 5: black moves rook from a8 to b8 (Ra8b8 - elapsed: 9.746070s)
+ . ♜ . ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ ♝ ♞ . .
+ . . . . . . . .
+ . . . ♙ ♙ . . .
+ . . ♘ ♗ . . . .
+ ♙ ♙ ♙ . . ♙ ♙ ♙
+ ♖ . ♗ ♕ ♔ . ♘ ♖
+
+
+Search result: [55, nodes: 72691 tot, 72691 quies] Bc1e3: white moves bishop from c1 to e3
+Move path:
+  • Bc1e3: white moves bishop from c1 to e3
+  • Qd8d7: black moves queen from d8 to d7
+  • Ng1f3: white moves knight from g1 to f3
+  • Rb8c8: black moves rook from b8 to c8
+move 6: white moves bishop from c1 to e3 (Bc1e3 - elapsed: 0.743948s)
+ . ♜ . ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ ♝ ♞ . .
+ . . . . . . . .
+ . . . ♙ ♙ . . .
+ . . ♘ ♗ ♗ . . .
+ ♙ ♙ ♙ . . ♙ ♙ ♙
+ ♖ . . ♕ ♔ . ♘ ♖
+
+
+Search result: [-55, nodes: 967057 tot, 967057 quies] Nf6g4: black moves knight from f6 to g4
+Move path:
+  • Nf6g4: black moves knight from f6 to g4
+  • Be3f4: white moves bishop from e3 to f4
+  • Ng4f6: black moves knight from g4 to f6
+  • Ng1f3: white moves knight from g1 to f3
+move 6: black moves knight from f6 to g4 (Nf6g4 - elapsed: 7.070332s)
+ . ♜ . ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ ♝ . . .
+ . . . . . . . .
+ . . . ♙ ♙ . ♞ .
+ . . ♘ ♗ ♗ . . .
+ ♙ ♙ ♙ . . ♙ ♙ ♙
+ ♖ . . ♕ ♔ . ♘ ♖
+
+
+Search result: [50, nodes: 67927 tot, 67927 quies] Be3f4: white moves bishop from e3 to f4
+Move path:
+  • Be3f4: white moves bishop from e3 to f4
+  • Ng4f6: black moves knight from g4 to f6
+  • Ng1f3: white moves knight from g1 to f3
+  • Rb8c8: black moves rook from b8 to c8
+move 7: white moves bishop from e3 to f4 (Be3f4 - elapsed: 0.702102s)
+ . ♜ . ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ ♝ . . .
+ . . . . . . . .
+ . . . ♙ ♙ ♗ ♞ .
+ . . ♘ ♗ . . . .
+ ♙ ♙ ♙ . . ♙ ♙ ♙
+ ♖ . . ♕ ♔ . ♘ ♖
+
+
+Search result: [-60, nodes: 2162175 tot, 2162175 quies] Ng4f6: black moves knight from g4 to f6
+Move path:
+  • Ng4f6: black moves knight from g4 to f6
+  • Ng1f3: white moves knight from g1 to f3
+  • Rb8c8: black moves rook from b8 to c8
+  • Ke1d2: white moves king from e1 to d2
+move 7: black moves knight from g4 to f6 (Ng4f6 - elapsed: 15.587296s)
+ . ♜ . ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ ♝ ♞ . .
+ . . . . . . . .
+ . . . ♙ ♙ ♗ . .
+ . . ♘ ♗ . . . .
+ ♙ ♙ ♙ . . ♙ ♙ ♙
+ ♖ . . ♕ ♔ . ♘ ♖
+
+
+Search result: [60, nodes: 159067 tot, 159067 quies] Ke1d2: white moves king from e1 to d2
+Move path:
+  • Ke1d2: white moves king from e1 to d2
+  • Qd8d7: black moves queen from d8 to d7
+  • Ng1f3: white moves knight from g1 to f3
+  • Rb8c8: black moves rook from b8 to c8
+move 8: white moves king from e1 to d2 (Ke1d2 - elapsed: 1.557737s)
+ . ♜ . ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ ♝ ♞ . .
+ . . . . . . . .
+ . . . ♙ ♙ ♗ . .
+ . . ♘ ♗ . . . .
+ ♙ ♙ ♙ ♔ . ♙ ♙ ♙
+ ♖ . . ♕ . . ♘ ♖
+
+
+Search result: [-65, nodes: 769523 tot, 769523 quies] Qd8d7: black moves queen from d8 to d7
+Move path:
+  • Qd8d7: black moves queen from d8 to d7
+  • Qd1e2: white moves queen from d1 to e2
+  • Rb8c8: black moves rook from b8 to c8
+  • Ng1f3: white moves knight from g1 to f3
+move 8: black moves queen from d8 to d7 (Qd8d7 - elapsed: 6.480472s)
+ . ♜ . . ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ ♛ ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ ♝ ♞ . .
+ . . . . . . . .
+ . . . ♙ ♙ ♗ . .
+ . . ♘ ♗ . . . .
+ ♙ ♙ ♙ ♔ . ♙ ♙ ♙
+ ♖ . . ♕ . . ♘ ♖
+
+
+Search result: [65, nodes: 182375 tot, 182375 quies] Qd1e2: white moves queen from d1 to e2
+Move path:
+  • Qd1e2: white moves queen from d1 to e2
+  • Ke8d8: black moves king from e8 to d8
+  • Ng1f3: white moves knight from g1 to f3
+  • Rb8c8: black moves rook from b8 to c8
+move 9: white moves queen from d1 to e2 (Qd1e2 - elapsed: 1.684242s)
+ . ♜ . . ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ ♛ ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ ♝ ♞ . .
+ . . . . . . . .
+ . . . ♙ ♙ ♗ . .
+ . . ♘ ♗ . . . .
+ ♙ ♙ ♙ ♔ ♕ ♙ ♙ ♙
+ ♖ . . . . . ♘ ♖
+
+
+Search result: [-60, nodes: 1109604 tot, 1109604 quies] b7b5: black moves pawn from b7 to b5
+Move path:
+  • b7b5: black moves pawn from b7 to b5
+  • Ng1f3: white moves knight from g1 to f3
+  • b5b4: black moves pawn from b5 to b4
+  • Nc3b5: white moves knight from c3 to b5
+move 9: black moves pawn from b7 to b5 (b7b5 - elapsed: 9.757707s)
+ . ♜ . . ♚ ♝ ♞ ♜
+ ♟︎ . ♟︎ ♛ ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ ♝ ♞ . .
+ . ♟︎ . . . . . .
+ . . . ♙ ♙ ♗ . .
+ . . ♘ ♗ . . . .
+ ♙ ♙ ♙ ♔ ♕ ♙ ♙ ♙
+ ♖ . . . . . ♘ ♖
+
+
+Search result: [60, nodes: 7126407 tot, 7126407 quies] Ng1f3: white moves knight from g1 to f3
+Move path:
+  • Ng1f3: white moves knight from g1 to f3
+  • b5b4: black moves pawn from b5 to b4
+  • Nc3b5: white moves knight from c3 to b5
+  • a7a6: black moves pawn from a7 to a6
+move 10: white moves knight from g1 to f3 (Ng1f3 - elapsed: 63.634659s)
+ . ♜ . . ♚ ♝ ♞ ♜
+ ♟︎ . ♟︎ ♛ ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ ♝ ♞ . .
+ . ♟︎ . . . . . .
+ . . . ♙ ♙ ♗ . .
+ . . ♘ ♗ . ♘ . .
+ ♙ ♙ ♙ ♔ ♕ ♙ ♙ ♙
+ ♖ . . . . . . ♖
+
+
+Search result: [-30, nodes: 6535691 tot, 6535691 quies] b5b4: black moves pawn from b5 to b4
+Move path:
+  • b5b4: black moves pawn from b5 to b4
+  • Nc3d1: white moves knight from c3 to d1
+  • Qd7a4: black moves queen from d7 to a4
+  • e4e5: white moves pawn from e4 to e5
+move 10: black moves pawn from b5 to b4 (b5b4 - elapsed: 46.967274s)
+ . ♜ . . ♚ ♝ ♞ ♜
+ ♟︎ . ♟︎ ♛ ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ ♝ ♞ . .
+ . . . . . . . .
+ . ♟︎ . ♙ ♙ ♗ . .
+ . . ♘ ♗ . ♘ . .
+ ♙ ♙ ♙ ♔ ♕ ♙ ♙ ♙
+ ♖ . . . . . . ♖
+
+
+Search result: [30, nodes: 341578 tot, 341578 quies] Nc3d1: white moves knight from c3 to d1
+Move path:
+  • Nc3d1: white moves knight from c3 to d1
+  • Nf6h5: black moves knight from f6 to h5
+  • Bf4e3: white moves bishop from f4 to e3
+  • Rb8c8: black moves rook from b8 to c8
+move 11: white moves knight from c3 to d1 (Nc3d1 - elapsed: 2.835456s)
+ . ♜ . . ♚ ♝ ♞ ♜
+ ♟︎ . ♟︎ ♛ ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ ♝ ♞ . .
+ . . . . . . . .
+ . ♟︎ . ♙ ♙ ♗ . .
+ . . . ♗ . ♘ . .
+ ♙ ♙ ♙ ♔ ♕ ♙ ♙ ♙
+ ♖ . . ♘ . . . ♖
+
+
+Search result: [-30, nodes: 6522992 tot, 6522992 quies] Nf6h5: black moves knight from f6 to h5
+Move path:
+  • Nf6h5: black moves knight from f6 to h5
+  • Bf4e3: white moves bishop from f4 to e3
+  • Rb8c8: black moves rook from b8 to c8
+  • Rh1g1: white moves rook from h1 to g1
+move 11: black moves knight from f6 to h5 (Nf6h5 - elapsed: 49.606476s)
+ . ♜ . . ♚ ♝ ♞ ♜
+ ♟︎ . ♟︎ ♛ ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ ♝ . . .
+ . . . . . . . ♞
+ . ♟︎ . ♙ ♙ ♗ . .
+ . . . ♗ . ♘ . .
+ ♙ ♙ ♙ ♔ ♕ ♙ ♙ ♙
+ ♖ . . ♘ . . . ♖
+
+
+Search result: [45, nodes: 85423 tot, 85423 quies] Bf4e3: white moves bishop from f4 to e3
+Move path:
+  • Bf4e3: white moves bishop from f4 to e3
+  • Be6g4: black moves bishop from e6 to g4
+  • e4e5: white moves pawn from e4 to e5
+  • Bg4xf3: black moves bishop from g4 to f3 capturing white knight at f3
+move 12: white moves bishop from f4 to e3 (Bf4e3 - elapsed: 0.795718s)
+ . ♜ . . ♚ ♝ ♞ ♜
+ ♟︎ . ♟︎ ♛ ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ ♝ . . .
+ . . . . . . . ♞
+ . ♟︎ . ♙ ♙ . . .
+ . . . ♗ ♗ ♘ . .
+ ♙ ♙ ♙ ♔ ♕ ♙ ♙ ♙
+ ♖ . . ♘ . . . ♖
+
+
+Search result: [-45, nodes: 1848989 tot, 1848989 quies] Be6g4: black moves bishop from e6 to g4
+Move path:
+  • Be6g4: black moves bishop from e6 to g4
+  • e4e5: white moves pawn from e4 to e5
+  • Bg4xf3: black moves bishop from g4 to f3 capturing white knight at f3
+  • Qe2xf3: white moves queen from e2 to f3 capturing black bishop at f3
+move 12: black moves bishop from e6 to g4 (Be6g4 - elapsed: 14.942941s)
+ . ♜ . . ♚ ♝ ♞ ♜
+ ♟︎ . ♟︎ ♛ ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ . . . .
+ . . . . . . . ♞
+ . ♟︎ . ♙ ♙ . ♝ .
+ . . . ♗ ♗ ♘ . .
+ ♙ ♙ ♙ ♔ ♕ ♙ ♙ ♙
+ ♖ . . ♘ . . . ♖
+
+
+Search result: [50, nodes: 1206610 tot, 1206610 quies] e4e5: white moves pawn from e4 to e5
+Move path:
+  • e4e5: white moves pawn from e4 to e5
+  • Qd7c6: black moves queen from d7 to c6
+  • e5xd6: white moves pawn from e5 to d6 capturing black pawn at d6
+  • Bg4xf3: black moves bishop from g4 to f3 capturing white knight at f3
+move 13: white moves pawn from e4 to e5 (e4e5 - elapsed: 11.524459s)
+ . ♜ . . ♚ ♝ ♞ ♜
+ ♟︎ . ♟︎ ♛ ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ . . . .
+ . . . . ♙ . . ♞
+ . ♟︎ . ♙ . . ♝ .
+ . . . ♗ ♗ ♘ . .
+ ♙ ♙ ♙ ♔ ♕ ♙ ♙ ♙
+ ♖ . . ♘ . . . ♖
+
+
+Search result: [-50, nodes: 37120949 tot, 37120949 quies] Qd7c6: black moves queen from d7 to c6
+Move path:
+  • Qd7c6: black moves queen from d7 to c6
+  • e5xd6: white moves pawn from e5 to d6 capturing black pawn at d6
+  • Bg4xf3: black moves bishop from g4 to f3 capturing white knight at f3
+  • g2xf3: white moves pawn from g2 to f3 capturing black bishop at f3
+move 13: black moves queen from d7 to c6 (Qd7c6 - elapsed: 282.675354s)
+ . ♜ . . ♚ ♝ ♞ ♜
+ ♟︎ . ♟︎ . ♟︎ ♟︎ ♟︎ ♟︎
+ . . ♛ ♟︎ . . . .
+ . . . . ♙ . . ♞
+ . ♟︎ . ♙ . . ♝ .
+ . . . ♗ ♗ ♘ . .
+ ♙ ♙ ♙ ♔ ♕ ♙ ♙ ♙
+ ♖ . . ♘ . . . ♖
+
+
+Search result: [60, nodes: 46800945 tot, 46800945 quies] e5xd6: white moves pawn from e5 to d6 capturing black pawn at d6
+Move path:
+  • e5xd6: white moves pawn from e5 to d6 capturing black pawn at d6
+  • c7xd6: black moves pawn from c7 to d6 capturing white pawn at d6
+  • Ra1b1: white moves rook from a1 to b1
+  • Qc6d7: black moves queen from c6 to d7
+move 14: white moves pawn from e5 to d6 capturing black pawn at d6 (e5xd6 - elapsed: 375.679169s)
+ . ♜ . . ♚ ♝ ♞ ♜
+ ♟︎ . ♟︎ . ♟︎ ♟︎ ♟︎ ♟︎
+ . . ♛ ♙ . . . .
+ . . . . . . . ♞
+ . ♟︎ . ♙ . . ♝ .
+ . . . ♗ ♗ ♘ . .
+ ♙ ♙ ♙ ♔ ♕ ♙ ♙ ♙
+ ♖ . . ♘ . . . ♖
+
+
+Search result: [-60, nodes: 49364287 tot, 49364287 quies] c7xd6: black moves pawn from c7 to d6 capturing white pawn at d6
+Move path:
+  • c7xd6: black moves pawn from c7 to d6 capturing white pawn at d6
+  • Ra1b1: white moves rook from a1 to b1
+  • Ng8f6: black moves knight from g8 to f6
+  • Rh1g1: white moves rook from h1 to g1
+move 14: black moves pawn from c7 to d6 capturing white pawn at d6 (c7xd6 - elapsed: 395.154816s)
+ . ♜ . . ♚ ♝ ♞ ♜
+ ♟︎ . . . ♟︎ ♟︎ ♟︎ ♟︎
+ . . ♛ ♟︎ . . . .
+ . . . . . . . ♞
+ . ♟︎ . ♙ . . ♝ .
+ . . . ♗ ♗ ♘ . .
+ ♙ ♙ ♙ ♔ ♕ ♙ ♙ ♙
+ ♖ . . ♘ . . . ♖
+
+
+Search result: [60, nodes: 4448149 tot, 4448149 quies] Nf3e5: white moves knight from f3 to e5
+Move path:
+  • Nf3e5: white moves knight from f3 to e5
+  • Qc6xg2: black moves queen from c6 to g2 capturing white pawn at g2
+  • Bd3b5: white moves bishop from d3 to b5
+  • Ke8d8: black moves king from e8 to d8
+move 15: white moves knight from f3 to e5 (Nf3e5 - elapsed: 36.888187s)
+ . ♜ . . ♚ ♝ ♞ ♜
+ ♟︎ . . . ♟︎ ♟︎ ♟︎ ♟︎
+ . . ♛ ♟︎ . . . .
+ . . . . ♘ . . ♞
+ . ♟︎ . ♙ . . ♝ .
+ . . . ♗ ♗ . . .
+ ♙ ♙ ♙ ♔ ♕ ♙ ♙ ♙
+ ♖ . . ♘ . . . ♖
+
+
+Search result: [-60, nodes: 553218 tot, 553218 quies] Qc6xg2: black moves queen from c6 to g2 capturing white pawn at g2
+Move path:
+  • Qc6xg2: black moves queen from c6 to g2 capturing white pawn at g2
+  • Bd3b5: white moves bishop from d3 to b5
+  • Ke8d8: black moves king from e8 to d8
+  • Ne5xf7: white moves knight from e5 to f7 capturing black pawn at f7
+move 15: black moves queen from c6 to g2 capturing white pawn at g2 (Qc6xg2 - elapsed: 3.991957s)
+ . ♜ . . ♚ ♝ ♞ ♜
+ ♟︎ . . . ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ . . . .
+ . . . . ♘ . . ♞
+ . ♟︎ . ♙ . . ♝ .
+ . . . ♗ ♗ . . .
+ ♙ ♙ ♙ ♔ ♕ ♙ ♛ ♙
+ ♖ . . ♘ . . . ♖
+
+
+Search result: [220, nodes: 7550031 tot, 7550031 quies] Qe2xg4: white moves queen from e2 to g4 capturing black bishop at g4
+Move path:
+  • Qe2xg4: white moves queen from e2 to g4 capturing black bishop at g4
+  • Qg2xg4: black moves queen from g2 to g4 capturing white queen at g4
+  • Ne5xg4: white moves knight from e5 to g4 capturing black queen at g4
+  • Rb8c8: black moves rook from b8 to c8
+move 16: white moves queen from e2 to g4 capturing black bishop at g4 (Qe2xg4 - elapsed: 51.103428s)
+ . ♜ . . ♚ ♝ ♞ ♜
+ ♟︎ . . . ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ . . . .
+ . . . . ♘ . . ♞
+ . ♟︎ . ♙ . . ♕ .
+ . . . ♗ ♗ . . .
+ ♙ ♙ ♙ ♔ . ♙ ♛ ♙
+ ♖ . . ♘ . . . ♖
+
+
+Search result: [-220, nodes: 46620582 tot, 46620582 quies] Qg2xg4: black moves queen from g2 to g4 capturing white queen at g4
+Move path:
+  • Qg2xg4: black moves queen from g2 to g4 capturing white queen at g4
+  • Ne5xg4: white moves knight from e5 to g4 capturing black queen at g4
+  • Ng8f6: black moves knight from g8 to f6
+  • Rh1g1: white moves rook from h1 to g1
+move 16: black moves queen from g2 to g4 capturing white queen at g4 (Qg2xg4 - elapsed: 281.070190s)
+ . ♜ . . ♚ ♝ ♞ ♜
+ ♟︎ . . . ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ . . . .
+ . . . . ♘ . . ♞
+ . ♟︎ . ♙ . . ♛ .
+ . . . ♗ ♗ . . .
+ ♙ ♙ ♙ ♔ . ♙ . ♙
+ ♖ . . ♘ . . . ♖
+
+
+Search result: [220, nodes: 7876 tot, 7876 quies] Ne5xg4: white moves knight from e5 to g4 capturing black queen at g4
+Move path:
+  • Ne5xg4: white moves knight from e5 to g4 capturing black queen at g4
+  • Ng8f6: black moves knight from g8 to f6
+  • Rh1g1: white moves rook from h1 to g1
+  • Rb8c8: black moves rook from b8 to c8
+move 17: white moves knight from e5 to g4 capturing black queen at g4 (Ne5xg4 - elapsed: 0.075196s)
+ . ♜ . . ♚ ♝ ♞ ♜
+ ♟︎ . . . ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ . . . .
+ . . . . . . . ♞
+ . ♟︎ . ♙ . . ♘ .
+ . . . ♗ ♗ . . .
+ ♙ ♙ ♙ ♔ . ♙ . ♙
+ ♖ . . ♘ . . . ♖
+
+
+Search result: [-220, nodes: 384676 tot, 384676 quies] Ng8f6: black moves knight from g8 to f6
+Move path:
+  • Ng8f6: black moves knight from g8 to f6
+  • Ng4xf6: white moves knight from g4 to f6 capturing black knight at f6
+  • e7xf6: black moves pawn from e7 to f6 capturing white knight at f6
+  • Ra1b1: white moves rook from a1 to b1
+move 17: black moves knight from g8 to f6 (Ng8f6 - elapsed: 2.733193s)
+ . ♜ . . ♚ ♝ . ♜
+ ♟︎ . . . ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ . ♞ . .
+ . . . . . . . ♞
+ . ♟︎ . ♙ . . ♘ .
+ . . . ♗ ♗ . . .
+ ♙ ♙ ♙ ♔ . ♙ . ♙
+ ♖ . . ♘ . . . ♖
+
+
+Search result: [215, nodes: 433324 tot, 433324 quies] Rh1g1: white moves rook from h1 to g1
+Move path:
+  • Rh1g1: white moves rook from h1 to g1
+  • Nf6xg4: black moves knight from f6 to g4 capturing white knight at g4
+  • Rg1xg4: white moves rook from g1 to g4 capturing black knight at g4
+  • Rb8c8: black moves rook from b8 to c8
+move 18: white moves rook from h1 to g1 (Rh1g1 - elapsed: 4.442633s)
+ . ♜ . . ♚ ♝ . ♜
+ ♟︎ . . . ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ . ♞ . .
+ . . . . . . . ♞
+ . ♟︎ . ♙ . . ♘ .
+ . . . ♗ ♗ . . .
+ ♙ ♙ ♙ ♔ . ♙ . ♙
+ ♖ . . ♘ . . ♖ .
+
+
+Search result: [-225, nodes: 979384 tot, 979384 quies] Rb8c8: black moves rook from b8 to c8
+Move path:
+  • Rb8c8: black moves rook from b8 to c8
+  • Ng4xf6: white moves knight from g4 to f6 capturing black knight at f6
+  • e7xf6: black moves pawn from e7 to f6 capturing white knight at f6
+  • Rg1g2: white moves rook from g1 to g2
+move 18: black moves rook from b8 to c8 (Rb8c8 - elapsed: 6.186581s)
+ . . ♜ . ♚ ♝ . ♜
+ ♟︎ . . . ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ . ♞ . .
+ . . . . . . . ♞
+ . ♟︎ . ♙ . . ♘ .
+ . . . ♗ ♗ . . .
+ ♙ ♙ ♙ ♔ . ♙ . ♙
+ ♖ . . ♘ . . ♖ .
+
+
+Search result: [225, nodes: 280521 tot, 280521 quies] Ng4xf6: white moves knight from g4 to f6 capturing black knight at f6
+Move path:
+  • Ng4xf6: white moves knight from g4 to f6 capturing black knight at f6
+  • e7xf6: black moves pawn from e7 to f6 capturing white knight at f6
+  • Rg1g2: white moves rook from g1 to g2
+  • Ke8d7: black moves king from e8 to d7
+move 19: white moves knight from g4 to f6 capturing black knight at f6 (Ng4xf6 - elapsed: 3.070942s)
+ . . ♜ . ♚ ♝ . ♜
+ ♟︎ . . . ♟︎ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ . ♘ . .
+ . . . . . . . ♞
+ . ♟︎ . ♙ . . . .
+ . . . ♗ ♗ . . .
+ ♙ ♙ ♙ ♔ . ♙ . ♙
+ ♖ . . ♘ . . ♖ .
+
+
+Search result: [-225, nodes: 18634 tot, 18634 quies] e7xf6: black moves pawn from e7 to f6 capturing white knight at f6
+Move path:
+  • e7xf6: black moves pawn from e7 to f6 capturing white knight at f6
+  • Ra1b1: white moves rook from a1 to b1
+  • Ke8d7: black moves king from e8 to d7
+  • Rg1g2: white moves rook from g1 to g2
+move 19: black moves pawn from e7 to f6 capturing white knight at f6 (e7xf6 - elapsed: 0.105812s)
+ . . ♜ . ♚ ♝ . ♜
+ ♟︎ . . . . ♟︎ ♟︎ ♟︎
+ . . . ♟︎ . ♟︎ . .
+ . . . . . . . ♞
+ . ♟︎ . ♙ . . . .
+ . . . ♗ ♗ . . .
+ ♙ ♙ ♙ ♔ . ♙ . ♙
+ ♖ . . ♘ . . ♖ .
+
+
+Search result: [225, nodes: 72549 tot, 72549 quies] Ra1b1: white moves rook from a1 to b1
+Move path:
+  • Ra1b1: white moves rook from a1 to b1
+  • Ke8e7: black moves king from e8 to e7
+  • Rg1g2: white moves rook from g1 to g2
+  • a7a5: black moves pawn from a7 to a5
+move 20: white moves rook from a1 to b1 (Ra1b1 - elapsed: 0.703896s)
+ . . ♜ . ♚ ♝ . ♜
+ ♟︎ . . . . ♟︎ ♟︎ ♟︎
+ . . . ♟︎ . ♟︎ . .
+ . . . . . . . ♞
+ . ♟︎ . ♙ . . . .
+ . . . ♗ ♗ . . .
+ ♙ ♙ ♙ ♔ . ♙ . ♙
+ . ♖ . ♘ . . ♖ .
+
+
+Search result: [-225, nodes: 97911 tot, 97911 quies] Ke8e7: black moves king from e8 to e7
+Move path:
+  • Ke8e7: black moves king from e8 to e7
+  • Bd3e4: white moves bishop from d3 to e4
+  • a7a6: black moves pawn from a7 to a6
+  • Rg1g2: white moves rook from g1 to g2
+move 20: black moves king from e8 to e7 (Ke8e7 - elapsed: 0.547948s)
+ . . ♜ . . ♝ . ♜
+ ♟︎ . . . ♚ ♟︎ ♟︎ ♟︎
+ . . . ♟︎ . ♟︎ . .
+ . . . . . . . ♞
+ . ♟︎ . ♙ . . . .
+ . . . ♗ ♗ . . .
+ ♙ ♙ ♙ ♔ . ♙ . ♙
+ . ♖ . ♘ . . ♖ .
+
+
+[Event "Charles's chess bot game"]
+[Site "Charles's Computer"]
+[Date "2023.11.28"]
+[Round "1"]
+[White "Charles's Bot"]
+[Black "Charles's Bot"]
+[Black "*"]
+
+1. e2e4 d7d6 2. d2d4 Nb8d7 3. Bf1c4 Nd7f6 4. Nb1c3 Bc8e6 5. Bc4d3 Ra8b8 6. Bc1e3 Nf6g4 7. Be3f4 Ng4f6 8. Ke1d2 Qd8d7 9. Qd1e2 b7b5 10. Ng1f3 b5b4 11. Nc3d1 Nf6h5 12. Bf4e3 Be6g4 13. e4e5 Qd7c6 14. e5xd6 c7xd6 15. Nf3e5 Qc6xg2 16. Qe2xg4 Qg2xg4 17. Ne5xg4 Ng8f6 18. Rh1g1 Rb8c8 19. Ng4xf6 e7xf6 20. Ra1b1 Ke8e7 

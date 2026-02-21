@@ -1,0 +1,2409 @@
+Nb4xc2 black moves knight from b4 to c2 capturing white pawn at c2
+Nc3e4 white moves knight from c3 to e4
+Nc6b4 black moves knight from c6 to b4
+Ng1f3 white moves knight from g1 to f3
+Nb8c6 black moves knight from b8 to c6
+Nb1c3 white moves knight from b1 to c3
+-25
+-25
+-25
+-25
+-25
+-25
+-25
+move 1: white moves knight from b1 to c3 (Nb1c3 - elapsed: 23.116501s)
+ ♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ ♟︎ ♟︎ ♟︎ ♟︎ ♟︎
+ . . . . . . . .
+ . . . . . . . .
+ . . . . . . . .
+ . . ♘ . . . . .
+ ♙ ♙ ♙ ♙ ♙ ♙ ♙ ♙
+ ♖ . ♗ ♕ ♔ ♗ ♘ ♖
+
+
+Qh5xh7 white moves queen from h5 to h7 capturing black pawn at h7
+Ke8d7 black moves king from e8 to d7
+Qd1h5 white moves queen from d1 to h5
+d7d6 black moves pawn from d7 to d6
+e2e3 white moves pawn from e2 to e3
+f7f6 black moves pawn from f7 to f6
+200
+200
+200
+200
+200
+200
+200
+move 1: black moves pawn from f7 to f6 (f7f6 - elapsed: 24.098795s)
+ ♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ ♟︎ ♟︎ . ♟︎ ♟︎
+ . . . . . ♟︎ . .
+ . . . . . . . .
+ . . . . . . . .
+ . . ♘ . . . . .
+ ♙ ♙ ♙ ♙ ♙ ♙ ♙ ♙
+ ♖ . ♗ ♕ ♔ ♗ ♘ ♖
+
+
+Rh8xg8 black moves rook from h8 to g8 capturing white bishop at g8
+Bc4xg8 white moves bishop from c4 to g8 capturing black knight at g8
+Bf8h6 black moves bishop from f8 to h6
+Bf1c4 white moves bishop from f1 to c4
+g7g6 black moves pawn from g7 to g6
+e2e3 white moves pawn from e2 to e3
+45
+45
+45
+45
+45
+45
+45
+move 2: white moves pawn from e2 to e3 (e2e3 - elapsed: 14.567595s)
+ ♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ ♟︎ ♟︎ . ♟︎ ♟︎
+ . . . . . ♟︎ . .
+ . . . . . . . .
+ . . . . . . . .
+ . . ♘ . ♙ . . .
+ ♙ ♙ ♙ ♙ . ♙ ♙ ♙
+ ♖ . ♗ ♕ ♔ ♗ ♘ ♖
+
+
+Bc4xe6 white moves bishop from c4 to e6 capturing black pawn at e6
+e7e6 black moves pawn from e7 to e6
+Bf1c4 white moves bishop from f1 to c4
+Ke8f7 black moves king from e8 to f7
+Qd1f3 white moves queen from d1 to f3
+d7d6 black moves pawn from d7 to d6
+235
+235
+235
+235
+235
+235
+235
+move 2: black moves pawn from d7 to d6 (d7d6 - elapsed: 35.708485s)
+ ♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ . ♟︎ ♟︎
+ . . . ♟︎ . ♟︎ . .
+ . . . . . . . .
+ . . . . . . . .
+ . . ♘ . ♙ . . .
+ ♙ ♙ ♙ ♙ . ♙ ♙ ♙
+ ♖ . ♗ ♕ ♔ ♗ ♘ ♖
+
+
+Rh8xg8 black moves rook from h8 to g8 capturing white bishop at g8
+Bc4xg8 white moves bishop from c4 to g8 capturing black knight at g8
+Nb8d7 black moves knight from b8 to d7
+Ng1f3 white moves knight from g1 to f3
+Bc8f5 black moves bishop from c8 to f5
+Bf1c4 white moves bishop from f1 to c4
+75
+75
+75
+75
+75
+75
+75
+move 3: white moves bishop from f1 to c4 (Bf1c4 - elapsed: 28.400393s)
+ ♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ . ♟︎ ♟︎
+ . . . ♟︎ . ♟︎ . .
+ . . . . . . . .
+ . . ♗ . . . . .
+ . . ♘ . ♙ . . .
+ ♙ ♙ ♙ ♙ . ♙ ♙ ♙
+ ♖ . ♗ ♕ ♔ . ♘ ♖
+
+
+Qf3xf6 white moves queen from f3 to f6 capturing black pawn at f6
+Nb8d7 black moves knight from b8 to d7
+Ng1e2 white moves knight from g1 to e2
+Ng8h6 black moves knight from g8 to h6
+Qd1f3 white moves queen from d1 to f3
+g7g6 black moves pawn from g7 to g6
+250
+250
+250
+250
+250
+250
+250
+move 3: black moves pawn from g7 to g6 (g7g6 - elapsed: 93.902267s)
+ ♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ . . ♟︎
+ . . . ♟︎ . ♟︎ ♟︎ .
+ . . . . . . . .
+ . . ♗ . . . . .
+ . . ♘ . ♙ . . .
+ ♙ ♙ ♙ ♙ . ♙ ♙ ♙
+ ♖ . ♗ ♕ ♔ . ♘ ♖
+
+
+Rh8xg8 black moves rook from h8 to g8 capturing white bishop at g8
+Bc4xg8 white moves bishop from c4 to g8 capturing black knight at g8
+Bf8h6 black moves bishop from f8 to h6
+Nc3e4 white moves knight from c3 to e4
+Nb8d7 black moves knight from b8 to d7
+Ng1f3 white moves knight from g1 to f3
+85
+85
+85
+85
+85
+85
+85
+move 4: white moves knight from g1 to f3 (Ng1f3 - elapsed: 59.477474s)
+ ♜ ♞ ♝ ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ . . ♟︎
+ . . . ♟︎ . ♟︎ ♟︎ .
+ . . . . . . . .
+ . . ♗ . . . . .
+ . . ♘ . ♙ ♘ . .
+ ♙ ♙ ♙ ♙ . ♙ ♙ ♙
+ ♖ . ♗ ♕ ♔ . . ♖
+
+
+Nh4xg6 white moves knight from h4 to g6 capturing black pawn at g6
+Ke8f7 black moves king from e8 to f7
+Bc4b5 white moves bishop from c4 to b5
+Nc6b4 black moves knight from c6 to b4
+Nf3h4 white moves knight from f3 to h4
+Nb8c6 black moves knight from b8 to c6
+250
+250
+250
+250
+250
+250
+250
+move 4: black moves knight from b8 to c6 (Nb8c6 - elapsed: 130.257721s)
+ ♜ . ♝ ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ . . ♟︎
+ . . ♞ ♟︎ . ♟︎ ♟︎ .
+ . . . . . . . .
+ . . ♗ . . . . .
+ . . ♘ . ♙ ♘ . .
+ ♙ ♙ ♙ ♙ . ♙ ♙ ♙
+ ♖ . ♗ ♕ ♔ . . ♖
+
+
+b7xc6 black moves pawn from b7 to c6 capturing white bishop at c6
+Bd5xc6 white moves bishop from d5 to c6 capturing black knight at c6
+Ng8h6 black moves knight from g8 to h6
+Bc4d5 white moves bishop from c4 to d5
+Bc8g4 black moves bishop from c8 to g4
+Qd1e2 white moves queen from d1 to e2
+60
+60
+60
+60
+60
+60
+60
+move 5: white moves queen from d1 to e2 (Qd1e2 - elapsed: 127.702042s)
+ ♜ . ♝ ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ . . ♟︎
+ . . ♞ ♟︎ . ♟︎ ♟︎ .
+ . . . . . . . .
+ . . ♗ . . . . .
+ . . ♘ . ♙ ♘ . .
+ ♙ ♙ ♙ ♙ ♕ ♙ ♙ ♙
+ ♖ . ♗ . ♔ . . ♖
+
+
+Qf3xf6 white moves queen from f3 to f6 capturing black pawn at f6
+Ng8h6 black moves knight from g8 to h6
+Qe2xf3 white moves queen from e2 to f3 capturing black knight at f3
+Ne5xf3 black moves knight from e5 to f3 capturing white knight at f3
+Bc4d5 white moves bishop from c4 to d5
+Nc6e5 black moves knight from c6 to e5
+235
+235
+235
+235
+235
+235
+235
+move 5: black moves knight from c6 to e5 (Nc6e5 - elapsed: 189.049057s)
+ ♜ . ♝ ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ . . ♟︎
+ . . . ♟︎ . ♟︎ ♟︎ .
+ . . . . ♞ . . .
+ . . ♗ . . . . .
+ . . ♘ . ♙ ♘ . .
+ ♙ ♙ ♙ ♙ ♕ ♙ ♙ ♙
+ ♖ . ♗ . ♔ . . ♖
+
+
+f6xe5 black moves pawn from f6 to e5 capturing white knight at e5
+Nf3xe5 white moves knight from f3 to e5 capturing black knight at e5
+Bc8e6 black moves bishop from c8 to e6
+Nc3e4 white moves knight from c3 to e4
+Ke8f7 black moves king from e8 to f7
+Bc4b5 white moves bishop from c4 to b5
+80
+80
+80
+80
+80
+80
+80
+move 6: white moves bishop from c4 to b5 (Bc4b5 - elapsed: 47.157066s)
+ ♜ . ♝ ♛ ♚ ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ . . ♟︎
+ . . . ♟︎ . ♟︎ ♟︎ .
+ . ♗ . . ♞ . . .
+ . . . . . . . .
+ . . ♘ . ♙ ♘ . .
+ ♙ ♙ ♙ ♙ ♕ ♙ ♙ ♙
+ ♖ . ♗ . ♔ . . ♖
+
+
+Nf3xe5 white moves knight from f3 to e5 capturing black knight at e5
+c7xd6 black moves pawn from c7 to d6 capturing white knight at d6
+Ne4xd6 white moves knight from e4 to d6 capturing black pawn at d6
+Bc8f5 black moves bishop from c8 to f5
+Nc3e4 white moves knight from c3 to e4
+Ke8f7 black moves king from e8 to f7
+230
+230
+230
+230
+230
+230
+230
+move 6: black moves king from e8 to f7 (Ke8f7 - elapsed: 34.589401s)
+ ♜ . ♝ ♛ . ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ ♚ . ♟︎
+ . . . ♟︎ . ♟︎ ♟︎ .
+ . ♗ . . ♞ . . .
+ . . . . . . . .
+ . . ♘ . ♙ ♘ . .
+ ♙ ♙ ♙ ♙ ♕ ♙ ♙ ♙
+ ♖ . ♗ . ♔ . . ♖
+
+
+Ra8xd8 black moves rook from a8 to d8 capturing white queen at d8
+Qd3xd8 white moves queen from d3 to d8 capturing black queen at d8
+Bc8e6 black moves bishop from c8 to e6
+Qe2d3 white moves queen from e2 to d3
+d6xe5 black moves pawn from d6 to e5 capturing white knight at e5
+Nf3xe5 white moves knight from f3 to e5 capturing black knight at e5
+60
+60
+60
+60
+60
+60
+60
+move 7: white moves knight from f3 to e5 capturing black knight at e5 (Nf3xe5 - elapsed: 70.402565s)
+ ♜ . ♝ ♛ . ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ ♚ . ♟︎
+ . . . ♟︎ . ♟︎ ♟︎ .
+ . ♗ . . ♘ . . .
+ . . . . . . . .
+ . . ♘ . ♙ . . .
+ ♙ ♙ ♙ ♙ ♕ ♙ ♙ ♙
+ ♖ . ♗ . ♔ . . ♖
+
+
+Qf3xf6 white moves queen from f3 to f6 capturing black pawn at f6
+Bc8e6 black moves bishop from c8 to e6
+Nc3e4 white moves knight from c3 to e4
+Ra8b8 black moves rook from a8 to b8
+Qe2f3 white moves queen from e2 to f3
+d6xe5 black moves pawn from d6 to e5 capturing white knight at e5
+230
+230
+230
+230
+230
+230
+230
+move 7: black moves pawn from d6 to e5 capturing white knight at e5 (d6xe5 - elapsed: 6.429444s)
+ ♜ . ♝ ♛ . ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ ♚ . ♟︎
+ . . . . . ♟︎ ♟︎ .
+ . ♗ . . ♟︎ . . .
+ . . . . . . . .
+ . . ♘ . ♙ . . .
+ ♙ ♙ ♙ ♙ ♕ ♙ ♙ ♙
+ ♖ . ♗ . ♔ . . ♖
+
+
+Ra8xd8 black moves rook from a8 to d8 capturing white queen at d8
+Qd3xd8 white moves queen from d3 to d8 capturing black queen at d8
+Bc8e6 black moves bishop from c8 to e6
+Qe2d3 white moves queen from e2 to d3
+Kf7g7 black moves king from f7 to g7
+Bb5c4 white moves bishop from b5 to c4
+65
+65
+65
+65
+65
+65
+65
+move 8: white moves bishop from b5 to c4 (Bb5c4 - elapsed: 94.793999s)
+ ♜ . ♝ ♛ . ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ ♚ . ♟︎
+ . . . . . ♟︎ ♟︎ .
+ . . . . ♟︎ . . .
+ . . ♗ . . . . .
+ . . ♘ . ♙ . . .
+ ♙ ♙ ♙ ♙ ♕ ♙ ♙ ♙
+ ♖ . ♗ . ♔ . . ♖
+
+
+Qf3xf6 white moves queen from f3 to f6 capturing black pawn at f6
+Ng8h6 black moves knight from g8 to h6
+Nc3e4 white moves knight from c3 to e4
+Ra8b8 black moves rook from a8 to b8
+Qe2f3 white moves queen from e2 to f3
+Kf7g7 black moves king from f7 to g7
+235
+235
+235
+235
+235
+235
+235
+move 8: black moves king from f7 to g7 (Kf7g7 - elapsed: 33.115456s)
+ ♜ . ♝ ♛ . ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ . ♚ ♟︎
+ . . . . . ♟︎ ♟︎ .
+ . . . . ♟︎ . . .
+ . . ♗ . . . . .
+ . . ♘ . ♙ . . .
+ ♙ ♙ ♙ ♙ ♕ ♙ ♙ ♙
+ ♖ . ♗ . ♔ . . ♖
+
+
+Kg7xg8 black moves king from g7 to g8 capturing white bishop at g8
+Bc4xg8 white moves bishop from c4 to g8 capturing black knight at g8
+Qd7g4 black moves queen from d7 to g4
+Qe2d3 white moves queen from e2 to d3
+Qd8d7 black moves queen from d8 to d7
+e3e4 white moves pawn from e3 to e4
+50
+50
+50
+50
+50
+50
+50
+move 9: white moves pawn from e3 to e4 (e3e4 - elapsed: 87.969742s)
+ ♜ . ♝ ♛ . ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♟︎ . ♚ ♟︎
+ . . . . . ♟︎ ♟︎ .
+ . . . . ♟︎ . . .
+ . . ♗ . ♙ . . .
+ . . ♘ . . . . .
+ ♙ ♙ ♙ ♙ ♕ ♙ ♙ ♙
+ ♖ . ♗ . ♔ . . ♖
+
+
+Bc4xe6 white moves bishop from c4 to e6 capturing black pawn at e6
+Ra8b8 black moves rook from a8 to b8
+Nb5c3 white moves knight from b5 to c3
+Qd8e7 black moves queen from d8 to e7
+Nc3b5 white moves knight from c3 to b5
+e7e6 black moves pawn from e7 to e6
+220
+220
+220
+220
+220
+220
+220
+move 9: black moves pawn from e7 to e6 (e7e6 - elapsed: 65.213379s)
+ ♜ . ♝ ♛ . ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ ♟︎ ♟︎ .
+ . . . . ♟︎ . . .
+ . . ♗ . ♙ . . .
+ . . ♘ . . . . .
+ ♙ ♙ ♙ ♙ ♕ ♙ ♙ ♙
+ ♖ . ♗ . ♔ . . ♖
+
+
+Qb4xd2 black moves queen from b4 to d2 capturing white pawn at d2
+Bc4d3 white moves bishop from c4 to d3
+Qe7b4 black moves queen from e7 to b4
+Nc3e2 white moves knight from c3 to e2
+Qd8e7 black moves queen from d8 to e7
+Qe2e3 white moves queen from e2 to e3
+-75
+-75
+-75
+-75
+-75
+-75
+-75
+move 10: white moves queen from e2 to e3 (Qe2e3 - elapsed: 70.704460s)
+ ♜ . ♝ ♛ . ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ ♟︎ ♟︎ .
+ . . . . ♟︎ . . .
+ . . ♗ . ♙ . . .
+ . . ♘ . ♕ . . .
+ ♙ ♙ ♙ ♙ . ♙ ♙ ♙
+ ♖ . ♗ . ♔ . . ♖
+
+
+Bc4xe6 white moves bishop from c4 to e6 capturing black pawn at e6
+Ra8c8 black moves rook from a8 to c8
+Nc3e2 white moves knight from c3 to e2
+Bf8b4 black moves bishop from f8 to b4
+Ra1b1 white moves rook from a1 to b1
+Bc8d7 black moves bishop from c8 to d7
+220
+220
+220
+220
+220
+220
+220
+move 10: black moves bishop from c8 to d7 (Bc8d7 - elapsed: 99.941643s)
+ ♜ . . ♛ . ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ ♝ . . ♚ ♟︎
+ . . . . ♟︎ ♟︎ ♟︎ .
+ . . . . ♟︎ . . .
+ . . ♗ . ♙ . . .
+ . . ♘ . ♕ . . .
+ ♙ ♙ ♙ ♙ . ♙ ♙ ♙
+ ♖ . ♗ . ♔ . . ♖
+
+
+Bb4xd2 black moves bishop from b4 to d2 capturing white pawn at d2
+Bc4d3 white moves bishop from c4 to d3
+b7b5 black moves pawn from b7 to b5
+Nc3e2 white moves knight from c3 to e2
+Bf8b4 black moves bishop from f8 to b4
+Ke1d1 white moves king from e1 to d1
+-70
+-70
+-70
+-70
+-70
+-70
+-70
+move 11: white moves king from e1 to d1 (Ke1d1 - elapsed: 168.529984s)
+ ♜ . . ♛ . ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ ♝ . . ♚ ♟︎
+ . . . . ♟︎ ♟︎ ♟︎ .
+ . . . . ♟︎ . . .
+ . . ♗ . ♙ . . .
+ . . ♘ . ♕ . . .
+ ♙ ♙ ♙ ♙ . ♙ ♙ ♙
+ ♖ . ♗ ♔ . . . ♖
+
+
+Bb3xe6 white moves bishop from b3 to e6 capturing black pawn at e6
+Ra8c8 black moves rook from a8 to c8
+Bc4b3 white moves bishop from c4 to b3
+b7b5 black moves pawn from b7 to b5
+Ra1b1 white moves rook from a1 to b1
+Qd8e7 black moves queen from d8 to e7
+220
+220
+220
+220
+220
+220
+220
+move 11: black moves queen from d8 to e7 (Qd8e7 - elapsed: 96.561127s)
+ ♜ . . . . ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ ♝ ♛ . ♚ ♟︎
+ . . . . ♟︎ ♟︎ ♟︎ .
+ . . . . ♟︎ . . .
+ . . ♗ . ♙ . . .
+ . . ♘ . ♕ . . .
+ ♙ ♙ ♙ ♙ . ♙ ♙ ♙
+ ♖ . ♗ ♔ . . . ♖
+
+
+Qd8xd3 black moves queen from d8 to d3 capturing white pawn at d3
+d2d3 white moves pawn from d2 to d3
+Qe7d8 black moves queen from e7 to d8
+Bc4xb5 white moves bishop from c4 to b5 capturing black bishop at b5
+Bd7xb5 black moves bishop from d7 to b5 capturing white knight at b5
+Nc3b5 white moves knight from c3 to b5
+-60
+-60
+-60
+-60
+-60
+-60
+-60
+move 12: white moves knight from c3 to b5 (Nc3b5 - elapsed: 324.696960s)
+ ♜ . . . . ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ ♝ ♛ . ♚ ♟︎
+ . . . . ♟︎ ♟︎ ♟︎ .
+ . ♘ . . ♟︎ . . .
+ . . ♗ . ♙ . . .
+ . . . . ♕ . . .
+ ♙ ♙ ♙ ♙ . ♙ ♙ ♙
+ ♖ . ♗ ♔ . . . ♖
+
+
+Bb5c6 white moves bishop from b5 to c6
+Bf8xc5 black moves bishop from f8 to c5 capturing white queen at c5
+Qe3xc5 white moves queen from e3 to c5 capturing black queen at c5
+Qe7c5 black moves queen from e7 to c5
+Bc4xb5 white moves bishop from c4 to b5 capturing black bishop at b5
+Bd7xb5 black moves bishop from d7 to b5 capturing white knight at b5
+95
+95
+95
+95
+95
+95
+95
+move 12: black moves bishop from d7 to b5 capturing white knight at b5 (Bd7xb5 - elapsed: 609.413452s)
+ ♜ . . . . ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♛ . ♚ ♟︎
+ . . . . ♟︎ ♟︎ ♟︎ .
+ . ♝ . . ♟︎ . . .
+ . . ♗ . ♙ . . .
+ . . . . ♕ . . .
+ ♙ ♙ ♙ ♙ . ♙ ♙ ♙
+ ♖ . ♗ ♔ . . . ♖
+
+
+Rd8xd3 black moves rook from d8 to d3 capturing white pawn at d3
+d2d3 white moves pawn from d2 to d3
+Ra8d8 black moves rook from a8 to d8
+Bb5c4 white moves bishop from b5 to c4
+a7a6 black moves pawn from a7 to a6
+Bc4xb5 white moves bishop from c4 to b5 capturing black bishop at b5
+-65
+-65
+-65
+-65
+-65
+-65
+-65
+move 13: white moves bishop from c4 to b5 capturing black bishop at b5 (Bc4xb5 - elapsed: 199.746063s)
+ ♜ . . . . ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . ♛ . ♚ ♟︎
+ . . . . ♟︎ ♟︎ ♟︎ .
+ . ♗ . . ♟︎ . . .
+ . . . . ♙ . . .
+ . . . . ♕ . . .
+ ♙ ♙ ♙ ♙ . ♙ ♙ ♙
+ ♖ . ♗ ♔ . . . ♖
+
+
+Bc4xe6 white moves bishop from c4 to e6 capturing black pawn at e6
+Qc5e7 black moves queen from c5 to e7
+Bb5c4 white moves bishop from b5 to c4
+Ra8d8 black moves rook from a8 to d8
+Qe3e2 white moves queen from e3 to e2
+Qe7c5 black moves queen from e7 to c5
+225
+225
+225
+225
+225
+225
+225
+move 13: black moves queen from e7 to c5 (Qe7c5 - elapsed: 87.563423s)
+ ♜ . . . . ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ ♟︎ ♟︎ .
+ . ♗ ♛ . ♟︎ . . .
+ . . . . ♙ . . .
+ . . . . ♕ . . .
+ ♙ ♙ ♙ ♙ . ♙ ♙ ♙
+ ♖ . ♗ ♔ . . . ♖
+
+
+Ra8c8 black moves rook from a8 to c8
+f2f3 white moves pawn from f2 to f3
+Kg7f7 black moves king from g7 to f7
+Bb5d7 white moves bishop from b5 to d7
+Bf8xc5 black moves bishop from f8 to c5 capturing white queen at c5
+Qe3xc5 white moves queen from e3 to c5 capturing black queen at c5
+45
+45
+45
+45
+45
+45
+45
+move 14: white moves queen from e3 to c5 capturing black queen at c5 (Qe3xc5 - elapsed: 134.916260s)
+ ♜ . . . . ♝ ♞ ♜
+ ♟︎ ♟︎ ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ ♟︎ ♟︎ .
+ . ♗ ♕ . ♟︎ . . .
+ . . . . ♙ . . .
+ . . . . . . . .
+ ♙ ♙ ♙ ♙ . ♙ ♙ ♙
+ ♖ . ♗ ♔ . . . ♖
+
+
+Bd7xe6 white moves bishop from d7 to e6 capturing black pawn at e6
+f5xe4 black moves pawn from f5 to e4 capturing white pawn at e4
+Bb5d7 white moves bishop from b5 to d7
+f6f5 black moves pawn from f6 to f5
+Rh1f1 white moves rook from h1 to f1
+Bf8xc5 black moves bishop from f8 to c5 capturing white queen at c5
+170
+170
+170
+170
+170
+170
+170
+move 14: black moves bishop from f8 to c5 capturing white queen at c5 (Bf8xc5 - elapsed: 4.843206s)
+ ♜ . . . . . ♞ ♜
+ ♟︎ ♟︎ ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ ♟︎ ♟︎ .
+ . ♗ ♝ . ♟︎ . . .
+ . . . . ♙ . . .
+ . . . . . . . .
+ ♙ ♙ ♙ ♙ . ♙ ♙ ♙
+ ♖ . ♗ ♔ . . . ♖
+
+
+Rd8xd2 black moves rook from d8 to d2 capturing white pawn at d2
+Rf1xf4 white moves rook from f1 to f4 capturing black pawn at f4
+Ra8d8 black moves rook from a8 to d8
+Rh1f1 white moves rook from h1 to f1
+e5xf4 black moves pawn from e5 to f4 capturing white pawn at f4
+f2f4 white moves pawn from f2 to f4
+-65
+-65
+-65
+-65
+-65
+-65
+-65
+move 15: white moves pawn from f2 to f4 (f2f4 - elapsed: 29.133869s)
+ ♜ . . . . . ♞ ♜
+ ♟︎ ♟︎ ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ ♟︎ ♟︎ .
+ . ♗ ♝ . ♟︎ . . .
+ . . . . ♙ ♙ . .
+ . . . . . . . .
+ ♙ ♙ ♙ ♙ . . ♙ ♙
+ ♖ . ♗ ♔ . . . ♖
+
+
+Bd7xe6 white moves bishop from d7 to e6 capturing black pawn at e6
+Ra8d8 black moves rook from a8 to d8
+Bb5d7 white moves bishop from b5 to d7
+a7a6 black moves pawn from a7 to a6
+Rh1f1 white moves rook from h1 to f1
+e5xf4 black moves pawn from e5 to f4 capturing white pawn at f4
+85
+85
+85
+85
+85
+85
+85
+move 15: black moves pawn from e5 to f4 capturing white pawn at f4 (e5xf4 - elapsed: 54.117058s)
+ ♜ . . . . . ♞ ♜
+ ♟︎ ♟︎ ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ ♟︎ ♟︎ .
+ . ♗ ♝ . . . . .
+ . . . . ♙ ♟︎ . .
+ . . . . . . . .
+ ♙ ♙ ♙ ♙ . . ♙ ♙
+ ♖ . ♗ ♔ . . . ♖
+
+
+Kg7xg8 black moves king from g7 to g8 capturing white bishop at g8
+Bc4xg8 white moves bishop from c4 to g8 capturing black knight at g8
+Ra8d8 black moves rook from a8 to d8
+Bb5c4 white moves bishop from b5 to c4
+e6e5 black moves pawn from e6 to e5
+Rh1f1 white moves rook from h1 to f1
+-95
+-95
+-95
+-95
+-95
+-95
+-95
+move 16: white moves rook from h1 to f1 (Rh1f1 - elapsed: 25.625738s)
+ ♜ . . . . . ♞ ♜
+ ♟︎ ♟︎ ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ ♟︎ ♟︎ .
+ . ♗ ♝ . . . . .
+ . . . . ♙ ♟︎ . .
+ . . . . . . . .
+ ♙ ♙ ♙ ♙ . . ♙ ♙
+ ♖ . ♗ ♔ . ♖ . .
+
+
+Bd7xe6 white moves bishop from d7 to e6 capturing black pawn at e6
+Ra8d8 black moves rook from a8 to d8
+Ra1b1 white moves rook from a1 to b1
+Kg7f7 black moves king from g7 to f7
+Bb5d7 white moves bishop from b5 to d7
+g6g5 black moves pawn from g6 to g5
+85
+85
+85
+85
+85
+85
+85
+move 16: black moves pawn from g6 to g5 (g6g5 - elapsed: 69.274628s)
+ ♜ . . . . . ♞ ♜
+ ♟︎ ♟︎ ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ ♟︎ . .
+ . ♗ ♝ . . . ♟︎ .
+ . . . . ♙ ♟︎ . .
+ . . . . . . . .
+ ♙ ♙ ♙ ♙ . . ♙ ♙
+ ♖ . ♗ ♔ . ♖ . .
+
+
+Bc5e7 black moves bishop from c5 to e7
+Bc4d3 white moves bishop from c4 to d3
+Ng8h6 black moves knight from g8 to h6
+c2c3 white moves pawn from c2 to c3
+Ra8e8 black moves rook from a8 to e8
+Bb5c4 white moves bishop from b5 to c4
+-105
+-105
+-105
+-105
+-105
+-105
+-105
+move 17: white moves bishop from b5 to c4 (Bb5c4 - elapsed: 45.596169s)
+ ♜ . . . . . ♞ ♜
+ ♟︎ ♟︎ ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ ♟︎ . .
+ . . ♝ . . . ♟︎ .
+ . . ♗ . ♙ ♟︎ . .
+ . . . . . . . .
+ ♙ ♙ ♙ ♙ . . ♙ ♙
+ ♖ . ♗ ♔ . ♖ . .
+
+
+Bc4xe6 white moves bishop from c4 to e6 capturing black pawn at e6
+f6xg5 black moves pawn from f6 to g5 capturing white pawn at g5
+h4xg5 white moves pawn from h4 to g5 capturing black pawn at g5
+Bc5f8 black moves bishop from c5 to f8
+h2h4 white moves pawn from h2 to h4
+Ra8e8 black moves rook from a8 to e8
+75
+75
+75
+75
+75
+75
+75
+move 17: black moves rook from a8 to e8 (Ra8e8 - elapsed: 47.208385s)
+ . . . . ♜ . ♞ ♜
+ ♟︎ ♟︎ ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ ♟︎ . .
+ . . ♝ . . . ♟︎ .
+ . . ♗ . ♙ ♟︎ . .
+ . . . . . . . .
+ ♙ ♙ ♙ ♙ . . ♙ ♙
+ ♖ . ♗ ♔ . ♖ . .
+
+
+Rh8g8 black moves rook from h8 to g8
+b2b3 white moves pawn from b2 to b3
+Bc5d4 black moves bishop from c5 to d4
+Kd1e2 white moves king from d1 to e2
+Ng8h6 black moves knight from g8 to h6
+Ra1b1 white moves rook from a1 to b1
+-110
+-110
+-110
+-110
+-110
+-110
+-110
+move 18: white moves rook from a1 to b1 (Ra1b1 - elapsed: 50.251564s)
+ . . . . ♜ . ♞ ♜
+ ♟︎ ♟︎ ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ ♟︎ . .
+ . . ♝ . . . ♟︎ .
+ . . ♗ . ♙ ♟︎ . .
+ . . . . . . . .
+ ♙ ♙ ♙ ♙ . . ♙ ♙
+ . ♖ ♗ ♔ . ♖ . .
+
+
+Bc4xe6 white moves bishop from c4 to e6 capturing black pawn at e6
+f6xg5 black moves pawn from f6 to g5 capturing white pawn at g5
+h4xg5 white moves pawn from h4 to g5 capturing black pawn at g5
+Bc5e7 black moves bishop from c5 to e7
+h2h4 white moves pawn from h2 to h4
+Ng8h6 black moves knight from g8 to h6
+75
+75
+75
+75
+75
+75
+75
+move 18: black moves knight from g8 to h6 (Ng8h6 - elapsed: 54.915859s)
+ . . . . ♜ . . ♜
+ ♟︎ ♟︎ ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ ♟︎ . ♞
+ . . ♝ . . . ♟︎ .
+ . . ♗ . ♙ ♟︎ . .
+ . . . . . . . .
+ ♙ ♙ ♙ ♙ . . ♙ ♙
+ . ♖ ♗ ♔ . ♖ . .
+
+
+Bd4f6 black moves bishop from d4 to f6
+b2b3 white moves pawn from b2 to b3
+f6xg5 black moves pawn from f6 to g5 capturing white pawn at g5
+h4xg5 white moves pawn from h4 to g5 capturing black pawn at g5
+Bc5d4 black moves bishop from c5 to d4
+h2h4 white moves pawn from h2 to h4
+-120
+-120
+-120
+-120
+-120
+-120
+-120
+move 19: white moves pawn from h2 to h4 (h2h4 - elapsed: 80.111282s)
+ . . . . ♜ . . ♜
+ ♟︎ ♟︎ ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ ♟︎ . ♞
+ . . ♝ . . . ♟︎ .
+ . . ♗ . ♙ ♟︎ . ♙
+ . . . . . . . .
+ ♙ ♙ ♙ ♙ . . ♙ .
+ . ♖ ♗ ♔ . ♖ . .
+
+
+Rf1xf4 white moves rook from f1 to f4 capturing black pawn at f4
+f6xg5 black moves pawn from f6 to g5 capturing white pawn at g5
+h4xg5 white moves pawn from h4 to g5 capturing black pawn at g5
+Rh8g8 black moves rook from h8 to g8
+Bc4d3 white moves bishop from c4 to d3
+Bc5f8 black moves bishop from c5 to f8
+75
+75
+75
+75
+75
+75
+75
+move 19: black moves bishop from c5 to f8 (Bc5f8 - elapsed: 110.043343s)
+ . . . . ♜ ♝ . ♜
+ ♟︎ ♟︎ ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ ♟︎ . ♞
+ . . . . . . ♟︎ .
+ . . ♗ . ♙ ♟︎ . ♙
+ . . . . . . . .
+ ♙ ♙ ♙ ♙ . . ♙ .
+ . ♖ ♗ ♔ . ♖ . .
+
+
+a7a6 black moves pawn from a7 to a6
+Bc1d2 white moves bishop from c1 to d2
+Rh8g8 black moves rook from h8 to g8
+d2d3 white moves pawn from d2 to d3
+f6xg5 black moves pawn from f6 to g5 capturing white pawn at g5
+h4xg5 white moves pawn from h4 to g5 capturing black pawn at g5
+-90
+-90
+-90
+-90
+-90
+-90
+-90
+move 20: white moves pawn from h4 to g5 capturing black pawn at g5 (h4xg5 - elapsed: 40.047146s)
+ . . . . ♜ ♝ . ♜
+ ♟︎ ♟︎ ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ ♟︎ . ♞
+ . . . . . . ♙ .
+ . . ♗ . ♙ ♟︎ . .
+ . . . . . . . .
+ ♙ ♙ ♙ ♙ . . ♙ .
+ . ♖ ♗ ♔ . ♖ . .
+
+
+Bc1xf4 white moves bishop from c1 to f4 capturing black pawn at f4
+a7a6 black moves pawn from a7 to a6
+Rf1f2 white moves rook from f1 to f2
+Rh8g8 black moves rook from h8 to g8
+d2d3 white moves pawn from d2 to d3
+f6xg5 black moves pawn from f6 to g5 capturing white pawn at g5
+75
+75
+75
+75
+75
+75
+75
+move 20: black moves pawn from f6 to g5 capturing white pawn at g5 (f6xg5 - elapsed: 4.574408s)
+ . . . . ♜ ♝ . ♜
+ ♟︎ ♟︎ ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ . . ♞
+ . . . . . . ♟︎ .
+ . . ♗ . ♙ ♟︎ . .
+ . . . . . . . .
+ ♙ ♙ ♙ ♙ . . ♙ .
+ . ♖ ♗ ♔ . ♖ . .
+
+
+Bb4e7 black moves bishop from b4 to e7
+d2d3 white moves pawn from d2 to d3
+Bf8b4 black moves bishop from f8 to b4
+Bc4b3 white moves bishop from c4 to b3
+b7b5 black moves pawn from b7 to b5
+Rf1h1 white moves rook from f1 to h1
+-105
+-105
+-105
+-105
+-105
+-105
+-105
+move 21: white moves rook from f1 to h1 (Rf1h1 - elapsed: 28.790226s)
+ . . . . ♜ ♝ . ♜
+ ♟︎ ♟︎ ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ . . ♞
+ . . . . . . ♟︎ .
+ . . ♗ . ♙ ♟︎ . .
+ . . . . . . . .
+ ♙ ♙ ♙ ♙ . . ♙ .
+ . ♖ ♗ ♔ . . . ♖
+
+
+Bc4xe6 white moves bishop from c4 to e6 capturing black pawn at e6
+Ng4f6 black moves knight from g4 to f6
+Kd1e1 white moves king from d1 to e1
+a7a6 black moves pawn from a7 to a6
+Rh1f1 white moves rook from h1 to f1
+Nh6g4 black moves knight from h6 to g4
+75
+75
+75
+75
+75
+75
+75
+move 21: black moves knight from h6 to g4 (Nh6g4 - elapsed: 41.330681s)
+ . . . . ♜ ♝ . ♜
+ ♟︎ ♟︎ ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ . . .
+ . . . . . . ♟︎ .
+ . . ♗ . ♙ ♟︎ ♞ .
+ . . . . . . . .
+ ♙ ♙ ♙ ♙ . . ♙ .
+ . ♖ ♗ ♔ . . . ♖
+
+
+Ng4xe5 black moves knight from g4 to e5 capturing white pawn at e5
+Bc4d3 white moves bishop from c4 to d3
+Nf6g4 black moves knight from f6 to g4
+e4e5 white moves pawn from e4 to e5
+Ng4f6 black moves knight from g4 to f6
+Kd1e2 white moves king from d1 to e2
+-160
+-160
+-160
+-160
+-160
+-160
+-160
+move 22: white moves king from d1 to e2 (Kd1e2 - elapsed: 60.988644s)
+ . . . . ♜ ♝ . ♜
+ ♟︎ ♟︎ ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ . . .
+ . . . . . . ♟︎ .
+ . . ♗ . ♙ ♟︎ ♞ .
+ . . . . . . . .
+ ♙ ♙ ♙ ♙ ♔ . ♙ .
+ . ♖ ♗ . . . . ♖
+
+
+Rh5xg5 white moves rook from h5 to g5 capturing black pawn at g5
+Ne5g6 black moves knight from e5 to g6
+Rh1h5 white moves rook from h1 to h5
+Re8e7 black moves rook from e8 to e7
+Bc4b5 white moves bishop from c4 to b5
+Ng4e5 black moves knight from g4 to e5
+65
+65
+65
+65
+65
+65
+65
+move 22: black moves knight from g4 to e5 (Ng4e5 - elapsed: 50.108845s)
+ . . . . ♜ ♝ . ♜
+ ♟︎ ♟︎ ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ . . .
+ . . . . ♞ . ♟︎ .
+ . . ♗ . ♙ ♟︎ . .
+ . . . . . . . .
+ ♙ ♙ ♙ ♙ ♔ . ♙ .
+ . ♖ ♗ . . . . ♖
+
+
+e6xd5 black moves pawn from e6 to d5 capturing white pawn at d5
+d4d5 white moves pawn from d4 to d5
+Ne5c6 black moves knight from e5 to c6
+d2d4 white moves pawn from d2 to d4
+Kg7f6 black moves king from g7 to f6
+Bc4b3 white moves bishop from c4 to b3
+-135
+-135
+-135
+-135
+-135
+-135
+-135
+move 23: white moves bishop from c4 to b3 (Bc4b3 - elapsed: 15.875562s)
+ . . . . ♜ ♝ . ♜
+ ♟︎ ♟︎ ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ . . .
+ . . . . ♞ . ♟︎ .
+ . . . . ♙ ♟︎ . .
+ . ♗ . . . . . .
+ ♙ ♙ ♙ ♙ ♔ . ♙ .
+ . ♖ ♗ . . . . ♖
+
+
+Bb3xe6 white moves bishop from b3 to e6 capturing black pawn at e6
+Rh8g8 black moves rook from h8 to g8
+Ke2d1 white moves king from e2 to d1
+Ne5f7 black moves knight from e5 to f7
+Rh1h5 white moves rook from h1 to h5
+b7b5 black moves pawn from b7 to b5
+70
+70
+70
+70
+70
+70
+70
+move 23: black moves pawn from b7 to b5 (b7b5 - elapsed: 80.099899s)
+ . . . . ♜ ♝ . ♜
+ ♟︎ . ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ . . .
+ . ♟︎ . . ♞ . ♟︎ .
+ . . . . ♙ ♟︎ . .
+ . ♗ . . . . . .
+ ♙ ♙ ♙ ♙ ♔ . ♙ .
+ . ♖ ♗ . . . . ♖
+
+
+e6xd5 black moves pawn from e6 to d5 capturing white pawn at d5
+d4d5 white moves pawn from d4 to d5
+Ne5c6 black moves knight from e5 to c6
+d2d4 white moves pawn from d2 to d4
+Kg7f6 black moves king from g7 to f6
+Rh1h2 white moves rook from h1 to h2
+-130
+-130
+-130
+-130
+-130
+-130
+-130
+move 24: white moves rook from h1 to h2 (Rh1h2 - elapsed: 63.440445s)
+ . . . . ♜ ♝ . ♜
+ ♟︎ . ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ . . .
+ . ♟︎ . . ♞ . ♟︎ .
+ . . . . ♙ ♟︎ . .
+ . ♗ . . . . . .
+ ♙ ♙ ♙ ♙ ♔ . ♙ ♖
+ . ♖ ♗ . . . . .
+
+
+Ke2xf3 white moves king from e2 to f3 capturing black pawn at f3
+f4f3 black moves pawn from f4 to f3
+e4e5 white moves pawn from e4 to e5
+Nc6d8 black moves knight from c6 to d8
+c2c3 white moves pawn from c2 to c3
+Ne5c6 black moves knight from e5 to c6
+35
+35
+35
+35
+35
+35
+35
+move 24: black moves knight from e5 to c6 (Ne5c6 - elapsed: 56.474041s)
+ . . . . ♜ ♝ . ♜
+ ♟︎ . ♟︎ . . . ♚ ♟︎
+ . . ♞ . ♟︎ . . .
+ . ♟︎ . . . . ♟︎ .
+ . . . . ♙ ♟︎ . .
+ . ♗ . . . . . .
+ ♙ ♙ ♙ ♙ ♔ . ♙ ♖
+ . ♖ ♗ . . . . .
+
+
+b4xc3 black moves pawn from b4 to c3 capturing white pawn at c3
+Bb3c2 white moves bishop from b3 to c2
+b5b4 black moves pawn from b5 to b4
+Ke2d1 white moves king from e2 to d1
+Nc6a5 black moves knight from c6 to a5
+c2c3 white moves pawn from c2 to c3
+-200
+-200
+-200
+-200
+-200
+-200
+-200
+move 25: white moves pawn from c2 to c3 (c2c3 - elapsed: 25.235676s)
+ . . . . ♜ ♝ . ♜
+ ♟︎ . ♟︎ . . . ♚ ♟︎
+ . . ♞ . ♟︎ . . .
+ . ♟︎ . . . . ♟︎ .
+ . . . . ♙ ♟︎ . .
+ . ♗ ♙ . . . . .
+ ♙ ♙ . ♙ ♔ . ♙ ♖
+ . ♖ ♗ . . . . .
+
+
+Bc1xf4 white moves bishop from c1 to f4 capturing black pawn at f4
+Rh8g8 black moves rook from h8 to g8
+d2d3 white moves pawn from d2 to d3
+Kg7f6 black moves king from g7 to f6
+Ke2d1 white moves king from e2 to d1
+Nc6d8 black moves knight from c6 to d8
+35
+35
+35
+35
+35
+35
+35
+move 25: black moves knight from c6 to d8 (Nc6d8 - elapsed: 51.146652s)
+ . . . ♞ ♜ ♝ . ♜
+ ♟︎ . ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ . . .
+ . ♟︎ . . . . ♟︎ .
+ . . . . ♙ ♟︎ . .
+ . ♗ ♙ . . . . .
+ ♙ ♙ . ♙ ♔ . ♙ ♖
+ . ♖ ♗ . . . . .
+
+
+b4xc3 black moves pawn from b4 to c3 capturing white pawn at c3
+g3xf4 white moves pawn from g3 to f4 capturing black pawn at f4
+b5b4 black moves pawn from b5 to b4
+g2g3 white moves pawn from g2 to g3
+h7h6 black moves pawn from h7 to h6
+Ke2f3 white moves king from e2 to f3
+-120
+-120
+-120
+-120
+-120
+-120
+-120
+move 26: white moves king from e2 to f3 (Ke2f3 - elapsed: 25.927593s)
+ . . . ♞ ♜ ♝ . ♜
+ ♟︎ . ♟︎ . . . ♚ ♟︎
+ . . . . ♟︎ . . .
+ . ♟︎ . . . . ♟︎ .
+ . . . . ♙ ♟︎ . .
+ . ♗ ♙ . . ♔ . .
+ ♙ ♙ . ♙ . . ♙ ♖
+ . ♖ ♗ . . . . .
+
+
+Rh2xh7 white moves rook from h2 to h7 capturing black pawn at h7
+Rh8g8 black moves rook from h8 to g8
+Bb3c2 white moves bishop from b3 to c2
+a7a6 black moves pawn from a7 to a6
+Rb1a1 white moves rook from b1 to a1
+Kg7f6 black moves king from g7 to f6
+30
+30
+30
+30
+30
+30
+30
+move 26: black moves king from g7 to f6 (Kg7f6 - elapsed: 18.137732s)
+ . . . ♞ ♜ ♝ . ♜
+ ♟︎ . ♟︎ . . . . ♟︎
+ . . . . ♟︎ ♚ . .
+ . ♟︎ . . . . ♟︎ .
+ . . . . ♙ ♟︎ . .
+ . ♗ ♙ . . ♔ . .
+ ♙ ♙ . ♙ . . ♙ ♖
+ . ♖ ♗ . . . . .
+
+
+b4xc3 black moves pawn from b4 to c3 capturing white pawn at c3
+g3xf4 white moves pawn from g3 to f4 capturing black pawn at f4
+b5b4 black moves pawn from b5 to b4
+g2g3 white moves pawn from g2 to g3
+Re8e7 black moves rook from e8 to e7
+d2d3 white moves pawn from d2 to d3
+-140
+-140
+-140
+-140
+-140
+-140
+-140
+move 27: white moves pawn from d2 to d3 (d2d3 - elapsed: 19.030092s)
+ . . . ♞ ♜ ♝ . ♜
+ ♟︎ . ♟︎ . . . . ♟︎
+ . . . . ♟︎ ♚ . .
+ . ♟︎ . . . . ♟︎ .
+ . . . . ♙ ♟︎ . .
+ . ♗ ♙ ♙ . ♔ . .
+ ♙ ♙ . . . . ♙ ♖
+ . ♖ ♗ . . . . .
+
+
+Bc1xf4 white moves bishop from c1 to f4 capturing black pawn at f4
+Kf6f5 black moves king from f6 to f5
+e4e5 white moves pawn from e4 to e5
+b5b4 black moves pawn from b5 to b4
+d3d4 white moves pawn from d3 to d4
+a7a5 black moves pawn from a7 to a5
+25
+25
+25
+25
+25
+25
+25
+move 27: black moves pawn from a7 to a5 (a7a5 - elapsed: 25.454273s)
+ . . . ♞ ♜ ♝ . ♜
+ . . ♟︎ . . . . ♟︎
+ . . . . ♟︎ ♚ . .
+ ♟︎ ♟︎ . . . . ♟︎ .
+ . . . . ♙ ♟︎ . .
+ . ♗ ♙ ♙ . ♔ . .
+ ♙ ♙ . . . . ♙ ♖
+ . ♖ ♗ . . . . .
+
+
+b4xc3 black moves pawn from b4 to c3 capturing white pawn at c3
+g3xf4 white moves pawn from g3 to f4 capturing black pawn at f4
+b5b4 black moves pawn from b5 to b4
+g2g3 white moves pawn from g2 to g3
+Re8e7 black moves rook from e8 to e7
+Bb3c2 white moves bishop from b3 to c2
+-140
+-140
+-140
+-140
+-140
+-140
+-140
+move 28: white moves bishop from b3 to c2 (Bb3c2 - elapsed: 20.441135s)
+ . . . ♞ ♜ ♝ . ♜
+ . . ♟︎ . . . . ♟︎
+ . . . . ♟︎ ♚ . .
+ ♟︎ ♟︎ . . . . ♟︎ .
+ . . . . ♙ ♟︎ . .
+ . . ♙ ♙ . ♔ . .
+ ♙ ♙ ♗ . . . ♙ ♖
+ . ♖ ♗ . . . . .
+
+
+Kf3xf4 white moves king from f3 to f4 capturing black pawn at f4
+g5g4 black moves pawn from g5 to g4
+Bc1d2 white moves bishop from c1 to d2
+a5xb4 black moves pawn from a5 to b4 capturing white pawn at b4
+c3xb4 white moves pawn from c3 to b4 capturing black pawn at b4
+b5b4 black moves pawn from b5 to b4
+10
+10
+10
+10
+10
+10
+10
+move 28: black moves pawn from b5 to b4 (b5b4 - elapsed: 27.982796s)
+ . . . ♞ ♜ ♝ . ♜
+ . . ♟︎ . . . . ♟︎
+ . . . . ♟︎ ♚ . .
+ ♟︎ . . . . . ♟︎ .
+ . ♟︎ . . ♙ ♟︎ . .
+ . . ♙ ♙ . ♔ . .
+ ♙ ♙ ♗ . . . ♙ ♖
+ . ♖ ♗ . . . . .
+
+
+Rh8g8 black moves rook from h8 to g8
+Rb1c1 white moves rook from b1 to c1
+a5xb4 black moves pawn from a5 to b4 capturing white pawn at b4
+c3xb4 white moves pawn from c3 to b4 capturing black pawn at b4
+Nd8f7 black moves knight from d8 to f7
+Bc1d2 white moves bishop from c1 to d2
+-140
+-140
+-140
+-140
+-140
+-140
+-140
+move 29: white moves bishop from c1 to d2 (Bc1d2 - elapsed: 22.594351s)
+ . . . ♞ ♜ ♝ . ♜
+ . . ♟︎ . . . . ♟︎
+ . . . . ♟︎ ♚ . .
+ ♟︎ . . . . . ♟︎ .
+ . ♟︎ . . ♙ ♟︎ . .
+ . . ♙ ♙ . ♔ . .
+ ♙ ♙ ♗ ♗ . . ♙ ♖
+ . ♖ . . . . . .
+
+
+Kf3xf4 white moves king from f3 to f4 capturing black pawn at f4
+g5g4 black moves pawn from g5 to g4
+Rb1c1 white moves rook from b1 to c1
+a5xb4 black moves pawn from a5 to b4 capturing white pawn at b4
+c3xb4 white moves pawn from c3 to b4 capturing black pawn at b4
+Kf6g6 black moves king from f6 to g6
+10
+10
+10
+10
+10
+10
+10
+move 29: black moves king from f6 to g6 (Kf6g6 - elapsed: 67.223724s)
+ . . . ♞ ♜ ♝ . ♜
+ . . ♟︎ . . . . ♟︎
+ . . . . ♟︎ . ♚ .
+ ♟︎ . . . . . ♟︎ .
+ . ♟︎ . . ♙ ♟︎ . .
+ . . ♙ ♙ . ♔ . .
+ ♙ ♙ ♗ ♗ . . ♙ ♖
+ . ♖ . . . . . .
+
+
+a5xb4 black moves pawn from a5 to b4 capturing white bishop at b4
+Bd2xb4 white moves bishop from d2 to b4 capturing black bishop at b4
+Bf8xb4 black moves bishop from f8 to b4 capturing white pawn at b4
+c3xb4 white moves pawn from c3 to b4 capturing black pawn at b4
+c7c6 black moves pawn from c7 to c6
+Bc2a4 white moves bishop from c2 to a4
+-100
+-100
+-100
+-100
+-100
+-100
+-100
+move 30: white moves bishop from c2 to a4 (Bc2a4 - elapsed: 30.047066s)
+ . . . ♞ ♜ ♝ . ♜
+ . . ♟︎ . . . . ♟︎
+ . . . . ♟︎ . ♚ .
+ ♟︎ . . . . . ♟︎ .
+ ♗ ♟︎ . . ♙ ♟︎ . .
+ . . ♙ ♙ . ♔ . .
+ ♙ ♙ . ♗ . . ♙ ♖
+ . ♖ . . . . . .
+
+
+Kf3xf4 white moves king from f3 to f4 capturing black pawn at f4
+g5g4 black moves pawn from g5 to g4
+Ba4b3 white moves bishop from a4 to b3
+Rh8g8 black moves rook from h8 to g8
+c3c4 white moves pawn from c3 to c4
+c7c6 black moves pawn from c7 to c6
+70
+70
+70
+70
+70
+70
+70
+move 30: black moves pawn from c7 to c6 (c7c6 - elapsed: 13.239183s)
+ . . . ♞ ♜ ♝ . ♜
+ . . . . . . . ♟︎
+ . . ♟︎ . ♟︎ . ♚ .
+ ♟︎ . . . . . ♟︎ .
+ ♗ ♟︎ . . ♙ ♟︎ . .
+ . . ♙ ♙ . ♔ . .
+ ♙ ♙ . ♗ . . ♙ ♖
+ . ♖ . . . . . .
+
+
+Bg7xe5 black moves bishop from g7 to e5 capturing white pawn at e5
+Bd2xb4 white moves bishop from d2 to b4 capturing black pawn at b4
+Bf8g7 black moves bishop from f8 to g7
+e4e5 white moves pawn from e4 to e5
+a5xb4 black moves pawn from a5 to b4 capturing white pawn at b4
+c3xb4 white moves pawn from c3 to b4 capturing black pawn at b4
+-110
+-110
+-110
+-110
+-110
+-110
+-110
+move 31: white moves pawn from c3 to b4 capturing black pawn at b4 (c3xb4 - elapsed: 19.485598s)
+ . . . ♞ ♜ ♝ . ♜
+ . . . . . . . ♟︎
+ . . ♟︎ . ♟︎ . ♚ .
+ ♟︎ . . . . . ♟︎ .
+ ♗ ♙ . . ♙ ♟︎ . .
+ . . . ♙ . ♔ . .
+ ♙ ♙ . ♗ . . ♙ ♖
+ . ♖ . . . . . .
+
+
+Kf3xf4 white moves king from f3 to f4 capturing black pawn at f4
+g5g4 black moves pawn from g5 to g4
+Bd2c1 white moves bishop from d2 to c1
+Re8e7 black moves rook from e8 to e7
+Rb1d1 white moves rook from b1 to d1
+Bf8xb4 black moves bishop from f8 to b4 capturing white pawn at b4
+50
+50
+50
+50
+50
+50
+50
+move 31: black moves bishop from f8 to b4 capturing white pawn at b4 (Bf8xb4 - elapsed: 48.280731s)
+ . . . ♞ ♜ . . ♜
+ . . . . . . . ♟︎
+ . . ♟︎ . ♟︎ . ♚ .
+ ♟︎ . . . . . ♟︎ .
+ ♗ ♝ . . ♙ ♟︎ . .
+ . . . ♙ . ♔ . .
+ ♙ ♙ . ♗ . . ♙ ♖
+ . ♖ . . . . . .
+
+
+h7h6 black moves pawn from h7 to h6
+Bb3c4 white moves bishop from b3 to c4
+Rh8g8 black moves rook from h8 to g8
+Ba4b3 white moves bishop from a4 to b3
+a5xb4 black moves pawn from a5 to b4 capturing white bishop at b4
+Bd2xb4 white moves bishop from d2 to b4 capturing black bishop at b4
+-85
+-85
+-85
+-85
+-85
+-85
+-85
+move 32: white moves bishop from d2 to b4 capturing black bishop at b4 (Bd2xb4 - elapsed: 21.983335s)
+ . . . ♞ ♜ . . ♜
+ . . . . . . . ♟︎
+ . . ♟︎ . ♟︎ . ♚ .
+ ♟︎ . . . . . ♟︎ .
+ ♗ ♗ . . ♙ ♟︎ . .
+ . . . ♙ . ♔ . .
+ ♙ ♙ . . . . ♙ ♖
+ . ♖ . . . . . .
+
+
+Kf3xg4 white moves king from f3 to g4 capturing black pawn at g4
+g5g4 black moves pawn from g5 to g4
+e4e5 white moves pawn from e4 to e5
+Rh8f8 black moves rook from h8 to f8
+Ba4b3 white moves bishop from a4 to b3
+a5xb4 black moves pawn from a5 to b4 capturing white bishop at b4
+55
+55
+55
+55
+55
+55
+55
+move 32: black moves pawn from a5 to b4 capturing white bishop at b4 (a5xb4 - elapsed: 1.604080s)
+ . . . ♞ ♜ . . ♜
+ . . . . . . . ♟︎
+ . . ♟︎ . ♟︎ . ♚ .
+ . . . . . . ♟︎ .
+ ♗ ♟︎ . . ♙ ♟︎ . .
+ . . . ♙ . ♔ . .
+ ♙ ♙ . . . . ♙ ♖
+ . ♖ . . . . . .
+
+
+g5xf4 black moves pawn from g5 to f4 capturing white pawn at f4
+g3xf4 white moves pawn from g3 to f4 capturing black pawn at f4
+h7h6 black moves pawn from h7 to h6
+Ba4b3 white moves bishop from a4 to b3
+Rh8g8 black moves rook from h8 to g8
+g2g3 white moves pawn from g2 to g3
+-90
+-90
+-90
+-90
+-90
+-90
+-90
+move 33: white moves pawn from g2 to g3 (g2g3 - elapsed: 8.722752s)
+ . . . ♞ ♜ . . ♜
+ . . . . . . . ♟︎
+ . . ♟︎ . ♟︎ . ♚ .
+ . . . . . . ♟︎ .
+ ♗ ♟︎ . . ♙ ♟︎ . .
+ . . . ♙ . ♔ ♙ .
+ ♙ ♙ . . . . . ♖
+ . ♖ . . . . . .
+
+
+Rh2xh7 white moves rook from h2 to h7 capturing black pawn at h7
+g5xf4 black moves pawn from g5 to f4 capturing white pawn at f4
+Kf3e2 white moves king from f3 to e2
+Re8f8 black moves rook from e8 to f8
+g3xf4 white moves pawn from g3 to f4 capturing black pawn at f4
+Rh8g8 black moves rook from h8 to g8
+40
+40
+40
+40
+40
+40
+40
+move 33: black moves rook from h8 to g8 (Rh8g8 - elapsed: 16.002827s)
+ . . . ♞ ♜ . ♜ .
+ . . . . . . . ♟︎
+ . . ♟︎ . ♟︎ . ♚ .
+ . . . . . . ♟︎ .
+ ♗ ♟︎ . . ♙ ♟︎ . .
+ . . . ♙ . ♔ ♙ .
+ ♙ ♙ . . . . . ♖
+ . ♖ . . . . . .
+
+
+f4xg3 black moves pawn from f4 to g3 capturing white pawn at g3
+Kf3xg4 white moves king from f3 to g4 capturing black pawn at g4
+g5g4 black moves pawn from g5 to g4
+Ba4b3 white moves bishop from a4 to b3
+e6e5 black moves pawn from e6 to e5
+Rh2g2 white moves rook from h2 to g2
+-85
+-85
+-85
+-85
+-85
+-85
+-85
+move 34: white moves rook from h2 to g2 (Rh2g2 - elapsed: 8.164565s)
+ . . . ♞ ♜ . ♜ .
+ . . . . . . . ♟︎
+ . . ♟︎ . ♟︎ . ♚ .
+ . . . . . . ♟︎ .
+ ♗ ♟︎ . . ♙ ♟︎ . .
+ . . . ♙ . ♔ ♙ .
+ ♙ ♙ . . . . ♖ .
+ . ♖ . . . . . .
+
+
+Rg2xg5 white moves rook from g2 to g5 capturing black pawn at g5
+Rf4f6 black moves rook from f4 to f6
+Kf3e2 white moves king from f3 to e2
+Rf8xf4 black moves rook from f8 to f4 capturing white pawn at f4
+g3xf4 white moves pawn from g3 to f4 capturing black pawn at f4
+Re8f8 black moves rook from e8 to f8
+45
+45
+45
+45
+45
+45
+45
+move 34: black moves rook from e8 to f8 (Re8f8 - elapsed: 10.833561s)
+ . . . ♞ . ♜ ♜ .
+ . . . . . . . ♟︎
+ . . ♟︎ . ♟︎ . ♚ .
+ . . . . . . ♟︎ .
+ ♗ ♟︎ . . ♙ ♟︎ . .
+ . . . ♙ . ♔ ♙ .
+ ♙ ♙ . . . . ♖ .
+ . ♖ . . . . . .
+
+
+b3xa2 black moves pawn from b3 to a2 capturing white pawn at a2
+g3xf4 white moves pawn from g3 to f4 capturing black pawn at f4
+b4b3 black moves pawn from b4 to b3
+Bb3c4 white moves bishop from b3 to c4
+c6c5 black moves pawn from c6 to c5
+Ba4b3 white moves bishop from a4 to b3
+-120
+-120
+-120
+-120
+-120
+-120
+-120
+move 35: white moves bishop from a4 to b3 (Ba4b3 - elapsed: 8.157827s)
+ . . . ♞ . ♜ ♜ .
+ . . . . . . . ♟︎
+ . . ♟︎ . ♟︎ . ♚ .
+ . . . . . . ♟︎ .
+ . ♟︎ . . ♙ ♟︎ . .
+ . ♗ . ♙ . ♔ ♙ .
+ ♙ ♙ . . . . ♖ .
+ . ♖ . . . . . .
+
+
+Rg2xg5 white moves rook from g2 to g5 capturing black pawn at g5
+c5c4 black moves pawn from c5 to c4
+Kf3e2 white moves king from f3 to e2
+Rf8xf4 black moves rook from f8 to f4 capturing white pawn at f4
+g3xf4 white moves pawn from g3 to f4 capturing black pawn at f4
+c6c5 black moves pawn from c6 to c5
+60
+60
+60
+60
+60
+60
+60
+move 35: black moves pawn from c6 to c5 (c6c5 - elapsed: 9.454857s)
+ . . . ♞ . ♜ ♜ .
+ . . . . . . . ♟︎
+ . . . . ♟︎ . ♚ .
+ . . ♟︎ . . . ♟︎ .
+ . ♟︎ . . ♙ ♟︎ . .
+ . ♗ . ♙ . ♔ ♙ .
+ ♙ ♙ . . . . ♖ .
+ . ♖ . . . . . .
+
+
+b3xa2 black moves pawn from b3 to a2 capturing white pawn at a2
+g3xf4 white moves pawn from g3 to f4 capturing black pawn at f4
+b4b3 black moves pawn from b4 to b3
+Bb3c4 white moves bishop from b3 to c4
+h7h6 black moves pawn from h7 to h6
+Kf3f2 white moves king from f3 to f2
+-120
+-120
+-120
+-120
+-120
+-120
+-120
+move 36: white moves king from f3 to f2 (Kf3f2 - elapsed: 8.970316s)
+ . . . ♞ . ♜ ♜ .
+ . . . . . . . ♟︎
+ . . . . ♟︎ . ♚ .
+ . . ♟︎ . . . ♟︎ .
+ . ♟︎ . . ♙ ♟︎ . .
+ . ♗ . ♙ . . ♙ .
+ ♙ ♙ . . . ♔ ♖ .
+ . ♖ . . . . . .
+
+
+Bc4xe6 white moves bishop from c4 to e6 capturing black pawn at e6
+h5xg4 black moves pawn from h5 to g4 capturing white pawn at g4
+g3g4 white moves pawn from g3 to g4
+h7h5 black moves pawn from h7 to h5
+Bb3xc4 white moves bishop from b3 to c4 capturing black pawn at c4
+c5c4 black moves pawn from c5 to c4
+25
+25
+25
+25
+25
+25
+25
+move 36: black moves pawn from c5 to c4 (c5c4 - elapsed: 12.872402s)
+ . . . ♞ . ♜ ♜ .
+ . . . . . . . ♟︎
+ . . . . ♟︎ . ♚ .
+ . . . . . . ♟︎ .
+ . ♟︎ ♟︎ . ♙ ♟︎ . .
+ . ♗ . ♙ . . ♙ .
+ ♙ ♙ . . . ♔ ♖ .
+ . ♖ . . . . . .
+
+
+Rf4xe4 black moves rook from f4 to e4 capturing white pawn at e4
+Rb1c1 white moves rook from b1 to c1
+Rf8f4 black moves rook from f8 to f4
+Kf2xg3 white moves king from f2 to g3 capturing black pawn at g3
+f4xg3 black moves pawn from f4 to g3 capturing white pawn at g3
+Bb3xc4 white moves bishop from b3 to c4 capturing black pawn at c4
+-95
+-95
+-95
+-95
+-95
+-95
+-95
+move 37: white moves bishop from b3 to c4 capturing black pawn at c4 (Bb3xc4 - elapsed: 2.005150s)
+ . . . ♞ . ♜ ♜ .
+ . . . . . . . ♟︎
+ . . . . ♟︎ . ♚ .
+ . . . . . . ♟︎ .
+ . ♟︎ ♗ . ♙ ♟︎ . .
+ . . . ♙ . . ♙ .
+ ♙ ♙ . . . ♔ ♖ .
+ . ♖ . . . . . .
+
+
+Bb3xe6 white moves bishop from b3 to e6 capturing black pawn at e6
+h5xg4 black moves pawn from h5 to g4 capturing white pawn at g4
+g3g4 white moves pawn from g3 to g4
+h7h5 black moves pawn from h7 to h5
+Bc4xb3 white moves bishop from c4 to b3 capturing black pawn at b3
+b4b3 black moves pawn from b4 to b3
+125
+125
+125
+125
+125
+125
+125
+move 37: black moves pawn from b4 to b3 (b4b3 - elapsed: 12.199647s)
+ . . . ♞ . ♜ ♜ .
+ . . . . . . . ♟︎
+ . . . . ♟︎ . ♚ .
+ . . . . . . ♟︎ .
+ . . ♗ . ♙ ♟︎ . .
+ . ♟︎ . ♙ . . ♙ .
+ ♙ ♙ . . . ♔ ♖ .
+ . ♖ . . . . . .
+
+
+Rb7xb2 black moves rook from b7 to b2 capturing white pawn at b2
+g3xf4 white moves pawn from g3 to f4 capturing black pawn at f4
+Rg7b7 black moves rook from g7 to b7
+Bb3d1 white moves bishop from b3 to d1
+Rg8g7 black moves rook from g8 to g7
+Bc4xb3 white moves bishop from c4 to b3 capturing black pawn at b3
+75
+75
+75
+75
+75
+75
+75
+move 38: white moves bishop from c4 to b3 capturing black pawn at b3 (Bc4xb3 - elapsed: 8.043300s)
+ . . . ♞ . ♜ ♜ .
+ . . . . . . . ♟︎
+ . . . . ♟︎ . ♚ .
+ . . . . . . ♟︎ .
+ . . . . ♙ ♟︎ . .
+ . ♗ . ♙ . . ♙ .
+ ♙ ♙ . . . ♔ ♖ .
+ . ♖ . . . . . .
+
+
+Rg2xg5 white moves rook from g2 to g5 capturing black pawn at g5
+e6e5 black moves pawn from e6 to e5
+Kf2e1 white moves king from f2 to e1
+Rf8xf4 black moves rook from f8 to f4 capturing white pawn at f4
+g3xf4 white moves pawn from g3 to f4 capturing black pawn at f4
+Rg8g7 black moves rook from g8 to g7
+260
+260
+260
+260
+260
+260
+260
+move 38: black moves rook from g8 to g7 (Rg8g7 - elapsed: 10.489913s)
+ . . . ♞ . ♜ . .
+ . . . . . . ♜ ♟︎
+ . . . . ♟︎ . ♚ .
+ . . . . . . ♟︎ .
+ . . . . ♙ ♟︎ . .
+ . ♗ . ♙ . . ♙ .
+ ♙ ♙ . . . ♔ ♖ .
+ . ♖ . . . . . .
+
+
+Rb7xb2 black moves rook from b7 to b2 capturing white pawn at b2
+Bb3c4 white moves bishop from b3 to c4
+Rg7b7 black moves rook from g7 to b7
+Kf2e1 white moves king from f2 to e1
+Rf8xf4 black moves rook from f8 to f4 capturing white pawn at f4
+g3xf4 white moves pawn from g3 to f4 capturing black pawn at f4
+-15
+-15
+-15
+-15
+-15
+-15
+-15
+move 39: white moves pawn from g3 to f4 capturing black pawn at f4 (g3xf4 - elapsed: 19.380341s)
+ . . . ♞ . ♜ . .
+ . . . . . . ♜ ♟︎
+ . . . . ♟︎ . ♚ .
+ . . . . . . ♟︎ .
+ . . . . ♙ ♙ . .
+ . ♗ . ♙ . . . .
+ ♙ ♙ . . . ♔ ♖ .
+ . ♖ . . . . . .
+
+
+Rg2xg5 white moves rook from g2 to g5 capturing black pawn at g5
+Rf4f6 black moves rook from f4 to f6
+Bb3d5 white moves bishop from b3 to d5
+e6e5 black moves pawn from e6 to e5
+Kf2g1 white moves king from f2 to g1
+Rf8xf4 black moves rook from f8 to f4 capturing white pawn at f4
+265
+265
+265
+265
+265
+265
+265
+move 39: black moves rook from f8 to f4 capturing white pawn at f4 (Rf8xf4 - elapsed: 53.869938s)
+ . . . ♞ . . . .
+ . . . . . . ♜ ♟︎
+ . . . . ♟︎ . ♚ .
+ . . . . . . ♟︎ .
+ . . . . ♙ ♜ . .
+ . ♗ . ♙ . . . .
+ ♙ ♙ . . . ♔ ♖ .
+ . ♖ . . . . . .
+
+
+Rb7xb2 black moves rook from b7 to b2 capturing white pawn at b2
+Bb3c4 white moves bishop from b3 to c4
+h7h6 black moves pawn from h7 to h6
+Rb1g1 white moves rook from b1 to g1
+Rg7b7 black moves rook from g7 to b7
+Kf2e2 white moves king from f2 to e2
+-15
+-15
+-15
+-15
+-15
+-15
+-15
+move 40: white moves king from f2 to e2 (Kf2e2 - elapsed: 5.205135s)
+ . . . ♞ . . . .
+ . . . . . . ♜ ♟︎
+ . . . . ♟︎ . ♚ .
+ . . . . . . ♟︎ .
+ . . . . ♙ ♜ . .
+ . ♗ . ♙ . . . .
+ ♙ ♙ . . ♔ . ♖ .
+ . ♖ . . . . . .
+
+
+Rg2xg5 white moves rook from g2 to g5 capturing black pawn at g5
+Rb7d7 black moves rook from b7 to d7
+Rc1c2 white moves rook from c1 to c2
+Rg7b7 black moves rook from g7 to b7
+Rb1c1 white moves rook from b1 to c1
+e6e5 black moves pawn from e6 to e5
+270
+270
+270
+270
+270
+270
+270
+move 40: black moves pawn from e6 to e5 (e6e5 - elapsed: 16.439211s)
+ . . . ♞ . . . .
+ . . . . . . ♜ ♟︎
+ . . . . . . ♚ .
+ . . . . ♟︎ . ♟︎ .
+ . . . . ♙ ♜ . .
+ . ♗ . ♙ . . . .
+ ♙ ♙ . . ♔ . ♖ .
+ . ♖ . . . . . .
+
+
+Rf4h4 black moves rook from f4 to h4
+Rg1h1 white moves rook from g1 to h1
+h7h6 black moves pawn from h7 to h6
+Bb3a4 white moves bishop from b3 to a4
+Kg6h5 black moves king from g6 to h5
+Rb1g1 white moves rook from b1 to g1
+105
+105
+105
+105
+105
+105
+105
+move 41: white moves rook from b1 to g1 (Rb1g1 - elapsed: 16.527622s)
+ . . . ♞ . . . .
+ . . . . . . ♜ ♟︎
+ . . . . . . ♚ .
+ . . . . ♟︎ . ♟︎ .
+ . . . . ♙ ♜ . .
+ . ♗ . ♙ . . . .
+ ♙ ♙ . . ♔ . ♖ .
+ . . . . . . ♖ .
+
+
+Rg1xg5 white moves rook from g1 to g5 capturing black pawn at g5
+Rf4f6 black moves rook from f4 to f6
+Rg2h2 white moves rook from g2 to h2
+Kg6h7 black moves king from g6 to h7
+Bb3d5 white moves bishop from b3 to d5
+h7h6 black moves pawn from h7 to h6
+270
+270
+270
+270
+270
+270
+270
+move 41: black moves pawn from h7 to h6 (h7h6 - elapsed: 18.657795s)
+ . . . ♞ . . . .
+ . . . . . . ♜ .
+ . . . . . . ♚ ♟︎
+ . . . . ♟︎ . ♟︎ .
+ . . . . ♙ ♜ . .
+ . ♗ . ♙ . . . .
+ ♙ ♙ . . ♔ . ♖ .
+ . . . . . . ♖ .
+
+
+Rb7xb2 black moves rook from b7 to b2 capturing white pawn at b2
+Bb3d5 white moves bishop from b3 to d5
+e5xf4 black moves pawn from e5 to f4 capturing white rook at f4
+Rf1xf4 white moves rook from f1 to f4 capturing black rook at f4
+Rg7b7 black moves rook from g7 to b7
+Rg1f1 white moves rook from g1 to f1
+-5
+-5
+-5
+-5
+-5
+-5
+-5
+move 42: white moves rook from g1 to f1 (Rg1f1 - elapsed: 46.593449s)
+ . . . ♞ . . . .
+ . . . . . . ♜ .
+ . . . . . . ♚ ♟︎
+ . . . . ♟︎ . ♟︎ .
+ . . . . ♙ ♜ . .
+ . ♗ . ♙ . . . .
+ ♙ ♙ . . ♔ . ♖ .
+ . . . . . ♖ . .
+
+
+Rg2xg5 white moves rook from g2 to g5 capturing black pawn at g5
+Nc6e7 black moves knight from c6 to e7
+Ke1xf1 white moves king from e1 to f1 capturing black rook at f1
+Rf4xf1 black moves rook from f4 to f1 capturing white rook at f1
+Ke2e1 white moves king from e2 to e1
+Nd8c6 black moves knight from d8 to c6
+265
+265
+265
+265
+265
+265
+265
+move 42: black moves knight from d8 to c6 (Nd8c6 - elapsed: 23.722284s)
+ . . . . . . . .
+ . . . . . . ♜ .
+ . . ♞ . . . ♚ ♟︎
+ . . . . ♟︎ . ♟︎ .
+ . . . . ♙ ♜ . .
+ . ♗ . ♙ . . . .
+ ♙ ♙ . . ♔ . ♖ .
+ . . . . . ♖ . .
+
+
+Ne5f7 black moves knight from e5 to f7
+Ba4e8 white moves bishop from a4 to e8
+Nc6e5 black moves knight from c6 to e5
+Bb3a4 white moves bishop from b3 to a4
+e5xf4 black moves pawn from e5 to f4 capturing white rook at f4
+Rf1xf4 white moves rook from f1 to f4 capturing black rook at f4
+115
+115
+115
+115
+115
+115
+115
+move 43: white moves rook from f1 to f4 capturing black rook at f4 (Rf1xf4 - elapsed: 57.111725s)
+ . . . . . . . .
+ . . . . . . ♜ .
+ . . ♞ . . . ♚ ♟︎
+ . . . . ♟︎ . ♟︎ .
+ . . . . ♙ ♖ . .
+ . ♗ . ♙ . . . .
+ ♙ ♙ . . ♔ . ♖ .
+ . . . . . . . .
+
+
+Be6xa2 white moves bishop from e6 to a2 capturing black knight at a2
+Nb4xa2 black moves knight from b4 to a2 capturing white pawn at a2
+Bd5e6 white moves bishop from d5 to e6
+Nc6b4 black moves knight from c6 to b4
+Bb3d5 white moves bishop from b3 to d5
+e5xf4 black moves pawn from e5 to f4 capturing white rook at f4
+265
+265
+265
+265
+265
+265
+265
+move 43: black moves pawn from e5 to f4 capturing white rook at f4 (e5xf4 - elapsed: 2.754819s)
+ . . . . . . . .
+ . . . . . . ♜ .
+ . . ♞ . . . ♚ ♟︎
+ . . . . . . ♟︎ .
+ . . . . ♙ ♟︎ . .
+ . ♗ . ♙ . . . .
+ ♙ ♙ . . ♔ . ♖ .
+ . . . . . . . .
+
+
+Re7xe4 black moves rook from e7 to e4 capturing white pawn at e4
+Rg2f2 white moves rook from g2 to f2
+Rg7e7 black moves rook from g7 to e7
+Ke2d1 white moves king from e2 to d1
+Nc6d4 black moves knight from c6 to d4
+Bb3a4 white moves bishop from b3 to a4
+40
+40
+40
+40
+40
+40
+40
+move 44: white moves bishop from b3 to a4 (Bb3a4 - elapsed: 14.287856s)
+ . . . . . . . .
+ . . . . . . ♜ .
+ . . ♞ . . . ♚ ♟︎
+ . . . . . . ♟︎ .
+ ♗ . . . ♙ ♟︎ . .
+ . . . ♙ . . . .
+ ♙ ♙ . . ♔ . ♖ .
+ . . . . . . . .
+
+
+Rg2xg5 white moves rook from g2 to g5 capturing black pawn at g5
+Nc6e7 black moves knight from c6 to e7
+Ba4b5 white moves bishop from a4 to b5
+Rf7f6 black moves rook from f7 to f6
+Ke2d1 white moves king from e2 to d1
+Rg7f7 black moves rook from g7 to f7
+265
+265
+265
+265
+265
+265
+265
+move 44: black moves rook from g7 to f7 (Rg7f7 - elapsed: 20.662146s)
+ . . . . . . . .
+ . . . . . ♜ . .
+ . . ♞ . . . ♚ ♟︎
+ . . . . . . ♟︎ .
+ ♗ . . . ♙ ♟︎ . .
+ . . . ♙ . . . .
+ ♙ ♙ . . ♔ . ♖ .
+ . . . . . . . .
+
+
+Ne5f7 black moves knight from e5 to f7
+Ba4e8 white moves bishop from a4 to e8
+Nc6e5 black moves knight from c6 to e5
+Rg2f2 white moves rook from g2 to f2
+Rf7f6 black moves rook from f7 to f6
+Ke2d1 white moves king from e2 to d1
+115
+115
+115
+115
+115
+115
+115
+move 45: white moves king from e2 to d1 (Ke2d1 - elapsed: 10.432708s)
+ . . . . . . . .
+ . . . . . ♜ . .
+ . . ♞ . . . ♚ ♟︎
+ . . . . . . ♟︎ .
+ ♗ . . . ♙ ♟︎ . .
+ . . . ♙ . . . .
+ ♙ ♙ . . . . ♖ .
+ . . . ♔ . . . .
+
+
+Rg2xg5 white moves rook from g2 to g5 capturing black pawn at g5
+Nc6e7 black moves knight from c6 to e7
+Bb5c4 white moves bishop from b5 to c4
+Kg6g7 black moves king from g6 to g7
+Ba4b5 white moves bishop from a4 to b5
+Rf7f6 black moves rook from f7 to f6
+270
+270
+270
+270
+270
+270
+270
+move 45: black moves rook from f7 to f6 (Rf7f6 - elapsed: 21.481022s)
+ . . . . . . . .
+ . . . . . . . .
+ . . ♞ . . ♜ ♚ ♟︎
+ . . . . . . ♟︎ .
+ ♗ . . . ♙ ♟︎ . .
+ . . . ♙ . . . .
+ ♙ ♙ . . . . ♖ .
+ . . . ♔ . . . .
+
+
+Ne5f7 black moves knight from e5 to f7
+d3d4 white moves pawn from d3 to d4
+g5g4 black moves pawn from g5 to g4
+Ba4b5 white moves bishop from a4 to b5
+Nc6e5 black moves knight from c6 to e5
+Rg2c2 white moves rook from g2 to c2
+120
+120
+120
+120
+120
+120
+120
+move 46: white moves rook from g2 to c2 (Rg2c2 - elapsed: 8.463406s)
+ . . . . . . . .
+ . . . . . . . .
+ . . ♞ . . ♜ ♚ ♟︎
+ . . . . . . ♟︎ .
+ ♗ . . . ♙ ♟︎ . .
+ . . . ♙ . . . .
+ ♙ ♙ ♖ . . . . .
+ . . . ♔ . . . .
+
+
+Be8g6 white moves bishop from e8 to g6
+Kg7f8 black moves king from g7 to f8
+Rc2c7 white moves rook from c2 to c7
+Kg6g7 black moves king from g6 to g7
+Ba4e8 white moves bishop from a4 to e8
+Nc6b4 black moves knight from c6 to b4
+155
+155
+155
+155
+155
+155
+155
+move 46: black moves knight from c6 to b4 (Nc6b4 - elapsed: 7.989527s)
+ . . . . . . . .
+ . . . . . . . .
+ . . . . . ♜ ♚ ♟︎
+ . . . . . . ♟︎ .
+ ♗ ♞ . . ♙ ♟︎ . .
+ . . . ♙ . . . .
+ ♙ ♙ ♖ . . . . .
+ . . . ♔ . . . .
+
+
+Kg7xf6 black moves king from g7 to f6 capturing white pawn at f6
+e5xf6 white moves pawn from e5 to f6 capturing black rook at f6
+Nb4xc2 black moves knight from b4 to c2 capturing white rook at c2
+e4e5 white moves pawn from e4 to e5
+Kg6g7 black moves king from g6 to g7
+Ba4e8 white moves bishop from a4 to e8
+20
+20
+20
+20
+20
+20
+20
+move 47: white moves bishop from a4 to e8 (Ba4e8 - elapsed: 2.718308s)
+ . . . . ♗ . . .
+ . . . . . . . .
+ . . . . . ♜ ♚ ♟︎
+ . . . . . . ♟︎ .
+ . ♞ . . ♙ ♟︎ . .
+ . . . ♙ . . . .
+ ♙ ♙ ♖ . . . . .
+ . . . ♔ . . . .
+
+
+Be8xf7 white moves bishop from e8 to f7 capturing black rook at f7
+Rf6xf7 black moves rook from f6 to f7 capturing white rook at f7
+Rc7f7 white moves rook from c7 to f7
+Kg7f8 black moves king from g7 to f8
+Rc2c7 white moves rook from c2 to c7
+Kg6g7 black moves king from g6 to g7
+155
+155
+155
+155
+155
+155
+155
+move 47: black moves king from g6 to g7 (Kg6g7 - elapsed: 0.714777s)
+ . . . . ♗ . . .
+ . . . . . . ♚ .
+ . . . . . ♜ . ♟︎
+ . . . . . . ♟︎ .
+ . ♞ . . ♙ ♟︎ . .
+ . . . ♙ . . . .
+ ♙ ♙ ♖ . . . . .
+ . . . ♔ . . . .
+
+
+Kf8e7 black moves king from f8 to e7
+Rc7c8 white moves rook from c7 to c8
+Nb4xa2 black moves knight from b4 to a2 capturing white pawn at a2
+Be8d7 white moves bishop from e8 to d7
+Kg7f8 black moves king from g7 to f8
+Rc2c7 white moves rook from c2 to c7
+5
+5
+5
+5
+5
+5
+5
+move 48: white moves rook from c2 to c7 (Rc2c7 - elapsed: 6.442336s)
+ . . . . ♗ . . .
+ . . ♖ . . . ♚ .
+ . . . . . ♜ . ♟︎
+ . . . . . . ♟︎ .
+ . ♞ . . ♙ ♟︎ . .
+ . . . ♙ . . . .
+ ♙ ♙ . . . . . .
+ . . . ♔ . . . .
+
+
+Rh7xh6 white moves rook from h7 to h6 capturing black pawn at h6
+Na2b4 black moves knight from a2 to b4
+Rc7h7 white moves rook from c7 to h7
+Nb4xa2 black moves knight from b4 to a2 capturing white pawn at a2
+Be8b5 white moves bishop from e8 to b5
+Kg7f8 black moves king from g7 to f8
+140
+140
+140
+140
+140
+140
+140
+move 48: black moves king from g7 to f8 (Kg7f8 - elapsed: 1.678575s)
+ . . . . ♗ ♚ . .
+ . . ♖ . . . . .
+ . . . . . ♜ . ♟︎
+ . . . . . . ♟︎ .
+ . ♞ . . ♙ ♟︎ . .
+ . . . ♙ . . . .
+ ♙ ♙ . . . . . .
+ . . . ♔ . . . .
+
+
+Na2c1 black moves knight from a2 to c1
+Bb5xc6 white moves bishop from b5 to c6 capturing black rook at c6
+Rf6xc6 black moves rook from f6 to c6 capturing white rook at c6
+Rc7c6 white moves rook from c7 to c6
+Nb4xa2 black moves knight from b4 to a2 capturing white pawn at a2
+Be8b5 white moves bishop from e8 to b5
+15
+15
+15
+15
+15
+15
+15
+move 49: white moves bishop from e8 to b5 (Be8b5 - elapsed: 5.466784s)
+ . . . . . ♚ . .
+ . . ♖ . . . . .
+ . . . . . ♜ . ♟︎
+ . ♗ . . . . ♟︎ .
+ . ♞ . . ♙ ♟︎ . .
+ . . . ♙ . . . .
+ ♙ ♙ . . . . . .
+ . . . ♔ . . . .
+
+
+Bb5xd3 white moves bishop from b5 to d3 capturing black knight at d3
+Nb4xd3 black moves knight from b4 to d3 capturing white pawn at d3
+Ra7a4 white moves rook from a7 to a4
+Na2b4 black moves knight from a2 to b4
+Rc7a7 white moves rook from c7 to a7
+Nb4xa2 black moves knight from b4 to a2 capturing white pawn at a2
+140
+140
+140
+140
+140
+140
+140
+move 49: black moves knight from b4 to a2 capturing white pawn at a2 (Nb4xa2 - elapsed: 3.568575s)
+ . . . . . ♚ . .
+ . . ♖ . . . . .
+ . . . . . ♜ . ♟︎
+ . ♗ . . . . ♟︎ .
+ . . . . ♙ ♟︎ . .
+ . . . ♙ . . . .
+ ♞ ♙ . . . . . .
+ . . . ♔ . . . .
+
+
+Ke7f7 black moves king from e7 to f7
+Rc8e8 white moves rook from c8 to e8
+Rf6f5 black moves rook from f6 to f5
+e4e5 white moves pawn from e4 to e5
+Kf8e7 black moves king from f8 to e7
+Rc7c8 white moves rook from c7 to c8
+5
+5
+5
+5
+5
+5
+5
+move 50: white moves rook from c7 to c8 (Rc7c8 - elapsed: 3.675292s)
+ . . ♖ . . ♚ . .
+ . . . . . . . .
+ . . . . . ♜ . ♟︎
+ . ♗ . . . . ♟︎ .
+ . . . . ♙ ♟︎ . .
+ . . . ♙ . . . .
+ ♞ ♙ . . . . . .
+ . . . ♔ . . . .
+
+
+Bc4xd3 white moves bishop from c4 to d3 capturing black knight at d3
+Nb4xd3 black moves knight from b4 to d3 capturing white pawn at d3
+Rc8g8 white moves rook from c8 to g8
+Na2b4 black moves knight from a2 to b4
+Bb5c4 white moves bishop from b5 to c4
+Kf8e7 black moves king from f8 to e7
+145
+145
+145
+145
+145
+145
+145
+move 50: black moves king from f8 to e7 (Kf8e7 - elapsed: 0.766668s)
+ . . ♖ . . . . .
+ . . . . ♚ . . .
+ . . . . . ♜ . ♟︎
+ . ♗ . . . . ♟︎ .
+ . . . . ♙ ♟︎ . .
+ . . . ♙ . . . .
+ ♞ ♙ . . . . . .
+ . . . ♔ . . . .
+
+
+[Event "Charles's chess bot game"]
+[Site "Charles's Computer"]
+[Date "2023.11.22"]
+[Round "1"]
+[White "Charles's Bot"]
+[Black "Charles's Bot"]
+[Black "*"]
+
+1. Nb1c3 f7f6 2. e2e3 d7d6 3. Bf1c4 g7g6 4. Ng1f3 Nb8c6 5. Qd1e2 Nc6e5 6. Bc4b5 Ke8f7 7. Nf3xe5 d6xe5 8. Bb5c4 Kf7g7 9. e3e4 e7e6 10. Qe2e3 Bc8d7 11. Ke1d1 Qd8e7 12. Nc3b5 Bd7xb5 13. Bc4xb5 Qe7c5 14. Qe3xc5 Bf8xc5 15. f2f4 e5xf4 16. Rh1f1 g6g5 17. Bb5c4 Ra8e8 18. Ra1b1 Ng8h6 19. h2h4 Bc5f8 20. h4xg5 f6xg5 21. Rf1h1 Nh6g4 22. Kd1e2 Ng4e5 23. Bc4b3 b7b5 24. Rh1h2 Ne5c6 25. c2c3 Nc6d8 26. Ke2f3 Kg7f6 27. d2d3 a7a5 28. Bb3c2 b5b4 29. Bc1d2 Kf6g6 30. Bc2a4 c7c6 31. c3xb4 Bf8xb4 32. Bd2xb4 a5xb4 33. g2g3 Rh8g8 34. Rh2g2 Re8f8 35. Ba4b3 c6c5 36. Kf3f2 c5c4 37. Bb3xc4 b4b3 38. Bc4xb3 Rg8g7 39. g3xf4 Rf8xf4 40. Kf2e2 e6e5 41. Rb1g1 h7h6 42. Rg1f1 Nd8c6 43. Rf1xf4 e5xf4 44. Bb3a4 Rg7f7 45. Ke2d1 Rf7f6 46. Rg2c2 Nc6b4 47. Ba4e8 Kg6g7 48. Rc2c7 Kg7f8 49. Be8b5 Nb4xa2 50. Rc7c8 Kf8e7 

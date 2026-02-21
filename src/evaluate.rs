@@ -298,6 +298,10 @@ pub fn evaluate_board(board: &Board) -> i32 {
     let phase = board.get_phase();
     let endgame_weight = (MAX_PHASE - phase).max(0);
 
+    // TODO: Endgame evaluation terms disabled - too slow without incremental tracking
+    // These iterate through bitboards on every evaluation call, causing 2-3x slowdown
+    // Need to track incrementally like material/PST scores
+    /*
     if endgame_weight > 0 {
         // Only compute endgame terms if we're in endgame (phase < MAX_PHASE)
         let king_activity = evaluate_king_activity(board);
@@ -311,6 +315,7 @@ pub fn evaluate_board(board: &Board) -> i32 {
         unsigned_score += (passed_pawns * endgame_weight) / MAX_PHASE;
         unsigned_score += unstoppable; // Always apply (it's already huge if detected)
     }
+    */
 
     if board.get_active_color() == Color::White {
         unsigned_score
