@@ -104,7 +104,7 @@ pub const PIECES_CAN_PROMOTE_TO: [PieceType; 4] = [
     PieceType::Knight,
 ];
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct Position {
     pub rank: u8, // row, 1 is start
     pub file: u8, // col, 1 is start

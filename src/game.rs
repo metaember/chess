@@ -69,6 +69,7 @@ impl Game {
                     break;
                 }
             };
+            #[cfg(debug_assertions)]
             if !self.silent && print_search {
                 search_result.print();
             }

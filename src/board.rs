@@ -1394,7 +1394,7 @@ impl Board {
             .filter(|m| {
                 let mut can_move_to = true;
                 // here handle the pins
-                // we iterate over all the pinnied pieces
+                // we iterate over all the pinned pieces
                 for PinnedPiece {
                     piece: pinned_piece,
                     valid_responses,
@@ -1403,7 +1403,6 @@ impl Board {
                     // if the pinned piece is the one we're currently considering
                     if *pinned_piece == m.piece {
                         // check if the move is allowed by the pin
-                        // TODO OPTIMISE: this is a nested loop, can we rewrite another way?
                         can_move_to = valid_responses.iter().find(|&&x| x == m.to).is_some();
                     }
                 }

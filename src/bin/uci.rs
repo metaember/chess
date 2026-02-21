@@ -566,11 +566,8 @@ fn run_search_with_info(
 
     match best_result {
         Some(result) => {
-            let ponder_move = if result.moves.len() >= 2 {
-                Some(result.moves[1].clone())
-            } else {
-                None
-            };
+            // Ponder move could be retrieved from TT in the future
+            let ponder_move = None;
             (result.best_move, ponder_move)
         }
         None => (None, None),

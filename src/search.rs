@@ -376,11 +376,10 @@ pub struct SearchResult {
     pub best_score: i32,
     pub nodes_searched: i32,
     pub quiescent_nodes_searched: i32,
-    // TODO remove these two fields in prod for speed reasons
-    pub moves: Vec<Move>, // path of moves down the tree
 }
 
 impl SearchResult {
+    #[cfg(debug_assertions)]
     pub fn print(&self) {
         println!(
             "Search result: [{}, nodes: {} tot, {} quies] {}: {}",
@@ -390,11 +389,6 @@ impl SearchResult {
             self.best_move.unwrap().to_algebraic(),
             self.best_move.unwrap().to_human()
         );
-        println!("Move path:");
-        self.moves
-            .iter()
-            .rev()
-            .for_each(|m| println!("  • {}: {}", m.to_algebraic(), m.to_human()));
     }
 }
 
@@ -410,7 +404,7 @@ pub fn search_with_book(
             best_score: 0,
             nodes_searched: 0,
             quiescent_nodes_searched: 0,
-            moves: vec![],
+            
         });
     }
     minimax(max_depth, board)
@@ -502,7 +496,7 @@ pub fn iterative_deepening(
             best_score: result.best_score,
             nodes_searched: total_nodes,
             quiescent_nodes_searched: total_quiescent_nodes,
-            moves: result.moves,
+            
         });
     }
 
@@ -636,7 +630,6 @@ pub fn iterative_deepening_with_control(
                     best_score: search_result.best_score,
                     nodes_searched: total_nodes,
                     quiescent_nodes_searched: total_quiescent_nodes,
-                    moves: search_result.moves,
                 });
             }
             Err(SearchAborted) => {
@@ -651,7 +644,7 @@ pub fn iterative_deepening_with_control(
         best_score: 0,
         nodes_searched: total_nodes,
         quiescent_nodes_searched: total_quiescent_nodes,
-        moves: vec![],
+        
     }))
 }
 
@@ -717,7 +710,7 @@ pub fn negamax_with_control(
             best_score: score,
             nodes_searched: 0,
             quiescent_nodes_searched: 0,
-            moves: vec![],
+            
         });
     }
 
@@ -750,7 +743,7 @@ pub fn negamax_with_control(
                     best_score: beta,
                     nodes_searched: result.nodes_searched,
                     quiescent_nodes_searched: result.quiescent_nodes_searched,
-                    moves: vec![],
+                    
                 });
             }
         }
@@ -764,7 +757,7 @@ pub fn negamax_with_control(
                 best_score: MIN_SCORE + (100 - max_depth as i32), // Prefer shorter mates
                 nodes_searched: 0,
                 quiescent_nodes_searched: 0,
-                moves: vec![],
+                
             })
         }
         Err(Status::Stalemate) => {
@@ -773,7 +766,7 @@ pub fn negamax_with_control(
                 best_score: 0,
                 nodes_searched: 0,
                 quiescent_nodes_searched: 0,
-                moves: vec![],
+                
             })
         }
         _ => return Err(SearchAborted),
@@ -801,7 +794,6 @@ pub fn negamax_with_control(
     let mut current_best_score = MIN_SCORE;
     let mut total_nodes_searched = 0;
     let mut total_quiescent_nodes_searched = 0;
-    let mut current_moves = vec![];
 
     const LMR_FULL_DEPTH_MOVES: usize = 4;
     const LMR_REDUCTION_LIMIT: u8 = 3;
@@ -857,7 +849,7 @@ pub fn negamax_with_control(
                 best_score: evaluation,
                 nodes_searched,
                 quiescent_nodes_searched,
-                moves,
+                
             }) => {
                 total_nodes_searched += nodes_searched + 1;
                 total_quiescent_nodes_searched += quiescent_nodes_searched;
@@ -866,7 +858,6 @@ pub fn negamax_with_control(
                 if evaluation > current_best_score {
                     current_best_score = evaluation;
                     current_best_move = *m;
-                    current_moves = moves;
                 }
 
                 if evaluation >= beta {
@@ -882,7 +873,7 @@ pub fn negamax_with_control(
                         best_score: beta,
                         nodes_searched: total_nodes_searched,
                         quiescent_nodes_searched: total_quiescent_nodes_searched,
-                        moves: current_moves,
+                        
                     });
                 }
                 alpha = alpha.max(evaluation);
@@ -907,14 +898,13 @@ pub fn negamax_with_control(
         Some(current_best_move),
     );
 
-    current_moves.push(current_best_move);
 
     Ok(SearchResult {
         best_move: Some(current_best_move),
         best_score: current_best_score,
         nodes_searched: total_nodes_searched,
         quiescent_nodes_searched: total_quiescent_nodes_searched,
-        moves: current_moves,
+        
     })
 }
 
@@ -938,7 +928,7 @@ fn negamax_with_tt_mut(
             best_score: score,
             nodes_searched: 0,
             quiescent_nodes_searched: 0,
-            moves: vec![],
+            
         });
     }
 
@@ -976,7 +966,7 @@ fn negamax_with_tt_mut(
                     best_score: beta,
                     nodes_searched: result.nodes_searched,
                     quiescent_nodes_searched: result.quiescent_nodes_searched,
-                    moves: vec![],
+                    
                 });
             }
         }
@@ -987,10 +977,10 @@ fn negamax_with_tt_mut(
         Err(Status::Checkmate(_)) => {
             return Ok(SearchResult {
                 best_move: None,
-                best_score: MIN_SCORE,
+                best_score: MIN_SCORE + (100 - max_depth as i32), // Prefer shorter mates
                 nodes_searched: 0,
                 quiescent_nodes_searched: 0,
-                moves: vec![],
+                
             })
         }
         Err(Status::Stalemate) => {
@@ -999,7 +989,7 @@ fn negamax_with_tt_mut(
                 best_score: 0,
                 nodes_searched: 0,
                 quiescent_nodes_searched: 0,
-                moves: vec![],
+                
             })
         }
         _ => panic!("No legal moves, not a stalemate or a checkmate"),
@@ -1038,7 +1028,6 @@ fn negamax_with_tt_mut(
     let mut current_best_score = MIN_SCORE;
     let mut total_nodes_searched = 0;
     let mut total_quiescent_nodes_searched = 0;
-    let mut current_moves = vec![];
 
     // Late Move Reductions (LMR) parameters
     const LMR_FULL_DEPTH_MOVES: usize = 4; // Number of moves to search at full depth
@@ -1138,7 +1127,7 @@ fn negamax_with_tt_mut(
                 best_score: evaluation,
                 nodes_searched,
                 quiescent_nodes_searched,
-                moves,
+                
             }) => {
                 total_nodes_searched += nodes_searched;
                 total_quiescent_nodes_searched += quiescent_nodes_searched;
@@ -1147,7 +1136,6 @@ fn negamax_with_tt_mut(
                 if evaluation > current_best_score {
                     current_best_score = evaluation;
                     current_best_move = *m;
-                    current_moves = moves;
                 }
 
                 if evaluation >= beta {
@@ -1171,7 +1159,7 @@ fn negamax_with_tt_mut(
                         best_score: beta,
                         nodes_searched: total_nodes_searched,
                         quiescent_nodes_searched: total_quiescent_nodes_searched,
-                        moves: current_moves,
+                        
                     });
                 }
                 alpha = alpha.max(evaluation);
@@ -1201,14 +1189,13 @@ fn negamax_with_tt_mut(
         Some(current_best_move),
     );
 
-    current_moves.push(current_best_move);
 
     Ok(SearchResult {
         best_move: Some(current_best_move),
         best_score: current_best_score,
         nodes_searched: total_nodes_searched,
         quiescent_nodes_searched: total_quiescent_nodes_searched,
-        moves: current_moves,
+        
     })
 }
 
@@ -1248,7 +1235,7 @@ fn negamax_mut(
                 best_score: score,
                 nodes_searched: 1,
                 quiescent_nodes_searched: 0,
-                moves: vec![],
+                
             });
         };
     };
@@ -1261,10 +1248,10 @@ fn negamax_mut(
         Err(Status::Checkmate(_)) => {
             return Ok(SearchResult {
                 best_move: None,
-                best_score: MIN_SCORE,
+                best_score: MIN_SCORE + (100 - max_depth as i32), // Prefer shorter mates
                 nodes_searched: 0,
                 quiescent_nodes_searched: 0,
-                moves: vec![],
+                
             })
         }
         Err(Status::Stalemate) => {
@@ -1273,7 +1260,7 @@ fn negamax_mut(
                 best_score: 0,
                 nodes_searched: 0,
                 quiescent_nodes_searched: 0,
-                moves: vec![],
+                
             })
         }
         _ => panic!("No legal moves, not a stalemate or a checkmate"),
@@ -1299,7 +1286,6 @@ fn negamax_mut(
     let mut current_best_score = MIN_SCORE;
     let mut total_nodes_searched = 0;
     let mut total_quiescent_nodes_searched = 0;
-    let mut current_moves = vec![];
 
     for m in &legal_moves {
         if let Some(captured) = m.captured {
@@ -1325,7 +1311,7 @@ fn negamax_mut(
                 best_score: evaluation,
                 nodes_searched,
                 quiescent_nodes_searched,
-                moves,
+                
             }) => {
                 total_nodes_searched += nodes_searched;
                 total_quiescent_nodes_searched += quiescent_nodes_searched;
@@ -1334,7 +1320,6 @@ fn negamax_mut(
                 if evaluation > current_best_score {
                     current_best_score = evaluation;
                     current_best_move = *m;
-                    current_moves = moves;
                 };
 
                 if use_ab_pruning {
@@ -1357,14 +1342,13 @@ fn negamax_mut(
         }
     }
 
-    current_moves.push(current_best_move);
 
     Ok(SearchResult {
         best_move: Some(current_best_move),
         best_score: current_best_score,
         nodes_searched: total_nodes_searched,
         quiescent_nodes_searched: total_quiescent_nodes_searched,
-        moves: current_moves,
+        
     })
 }
 
@@ -1406,7 +1390,7 @@ fn negamax_captures_only_mut_with_depth(
             best_score: beta,
             nodes_searched: 1,
             quiescent_nodes_searched: 1,
-            moves: vec![],
+            
         });
     }
 
@@ -1417,7 +1401,7 @@ fn negamax_captures_only_mut_with_depth(
             best_score: evaluation,
             nodes_searched: 1,
             quiescent_nodes_searched: 1,
-            moves: vec![],
+            
         });
     }
 
@@ -1435,7 +1419,6 @@ fn negamax_captures_only_mut_with_depth(
     let mut current_best_move = None;
     let mut total_nodes_searched = 0;
     let mut total_quiescent_nodes_searched = 0;
-    let mut current_moves = vec![];
 
     for m in captures {
         // SEE pruning: skip losing captures
@@ -1457,15 +1440,13 @@ fn negamax_captures_only_mut_with_depth(
 
         if evaluation >= beta {
             current_best_move = Some(m);
-            current_moves = search_res.moves;
-            current_moves.push(m);
 
             return Ok(SearchResult {
                 best_move: current_best_move,
                 best_score: beta,
                 nodes_searched: total_nodes_searched,
                 quiescent_nodes_searched: total_quiescent_nodes_searched,
-                moves: current_moves,
+                
             });
         }
         alpha = alpha.max(evaluation);
@@ -1475,7 +1456,7 @@ fn negamax_captures_only_mut_with_depth(
         best_score: alpha,
         nodes_searched: total_nodes_searched,
         quiescent_nodes_searched: total_quiescent_nodes_searched,
-        moves: current_moves,
+        
     });
 }
 
