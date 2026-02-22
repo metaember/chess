@@ -24,6 +24,7 @@ COPY --from=rust-builder /build/target/release/uci_movepicker /app/engines/uci
 RUN chmod +x /app/engines/uci
 
 # Copy opening book (Polyglot format)
+# Note: Cerebellum3Merge.bin must be present locally (not in git, too large)
 COPY book/Cerebellum3Merge.bin /app/book/Cerebellum3Merge.bin
 COPY book/book.txt /app/book/book.txt
 
