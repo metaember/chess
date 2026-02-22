@@ -7,8 +7,9 @@ use std::time::Instant;
 use crate::board::*;
 use crate::book::Book;
 use crate::evaluate::*;
+use crate::movepicker::MovePicker;
 use crate::tt::{TranspositionTable, TTFlag};
-use crate::types::{Color, Move, MoveFlag, PieceType, Position, Status};
+use crate::types::{Color, CompactMove, Move, MoveFlag, MoveType, PieceType, Position, Status};
 
 pub const MIN_SCORE: i32 = -1_000_000_000;
 pub const MAX_SCORE: i32 = 1_000_000_000;
@@ -21,16 +22,24 @@ pub struct SearchState {
     /// These are moves that were good in sibling nodes and might be good here too
     pub killer_moves: [[Option<Move>; 2]; MAX_PLY],
 
+    /// Compact killer moves for MovePicker (same data, different format)
+    pub killer_moves_compact: [[Option<CompactMove>; 2]; MAX_PLY],
+
     /// History heuristic: [color][from_square][to_square] -> score
     /// Accumulates bonuses for quiet moves that cause beta cutoffs
     pub history: [[[i32; 64]; 64]; 2],
+
+    /// Compact history for MovePicker (i16 version for MoveList scores)
+    pub history_compact: [[[i16; 64]; 64]; 2],
 }
 
 impl SearchState {
     pub fn new() -> Self {
         SearchState {
             killer_moves: [[None; 2]; MAX_PLY],
+            killer_moves_compact: [[None; 2]; MAX_PLY],
             history: [[[0; 64]; 64]; 2],
+            history_compact: [[[0; 64]; 64]; 2],
         }
     }
 
@@ -100,9 +109,61 @@ impl SearchState {
             for from in 0..64 {
                 for to in 0..64 {
                     self.history[color][from][to] /= 2;
+                    self.history_compact[color][from][to] /= 2;
                 }
             }
         }
+    }
+
+    // =========================================================================
+    // CompactMove support methods
+    // =========================================================================
+
+    /// Store a compact killer move at the given ply
+    #[inline]
+    pub fn store_killer_compact(&mut self, ply: usize, mv: CompactMove) {
+        if ply >= MAX_PLY {
+            return;
+        }
+        // Don't store if it's already the first killer
+        if self.killer_moves_compact[ply][0] == Some(mv) {
+            return;
+        }
+        // Shift first to second, store new as first
+        self.killer_moves_compact[ply][1] = self.killer_moves_compact[ply][0];
+        self.killer_moves_compact[ply][0] = Some(mv);
+    }
+
+    /// Get compact killer moves for a given ply
+    #[inline]
+    pub fn get_killers_compact(&self, ply: usize) -> [Option<CompactMove>; 2] {
+        if ply >= MAX_PLY {
+            return [None, None];
+        }
+        self.killer_moves_compact[ply]
+    }
+
+    /// Add history bonus for a compact move that caused a beta cutoff
+    #[inline]
+    pub fn add_history_bonus_compact(&mut self, color: Color, mv: CompactMove, depth: u8) {
+        let color_idx = color as usize;
+        let from_sq = mv.from_sq() as usize;
+        let to_sq = mv.to_sq() as usize;
+        let bonus = (depth as i32) * (depth as i32);
+
+        // Update both history tables
+        let new_value = self.history[color_idx][from_sq][to_sq].saturating_add(bonus);
+        self.history[color_idx][from_sq][to_sq] = new_value.min(10000);
+
+        let bonus_i16 = (depth as i16) * (depth as i16);
+        let new_compact = self.history_compact[color_idx][from_sq][to_sq].saturating_add(bonus_i16);
+        self.history_compact[color_idx][from_sq][to_sq] = new_compact.min(10000);
+    }
+
+    /// Get compact history table for a color
+    #[inline]
+    pub fn get_history_compact(&self, color: Color) -> &[[i16; 64]; 64] {
+        &self.history_compact[color as usize]
     }
 }
 
@@ -379,7 +440,7 @@ pub struct SearchResult {
 }
 
 impl SearchResult {
-    #[cfg(debug_assertions)]
+    #[allow(dead_code)]
     pub fn print(&self) {
         println!(
             "Search result: [{}, nodes: {} tot, {} quies] {}: {}",
@@ -542,110 +603,6 @@ fn aspiration_search(
             return negamax_with_tt_mut(depth, board, MIN_SCORE, MAX_SCORE, tt, search_state, 0);
         }
     }
-}
-
-/// Iterative deepening with time limit (in milliseconds) and aspiration windows
-/// Returns the best result found within the time limit
-pub fn iterative_deepening_timed(
-    max_depth: u8,
-    board: &mut Board,
-    tt: &mut TranspositionTable,
-    max_time_ms: u64,
-) -> Result<SearchResult, Vec<Move>> {
-    let (soft, hard) = (max_time_ms, max_time_ms * 2);
-    let control = SearchControl::new(soft, hard);
-    iterative_deepening_with_control(max_depth, board, tt, &control)
-}
-
-/// Iterative deepening with full time control
-/// Uses aspiration windows, depth time prediction, and can abort mid-search
-pub fn iterative_deepening_with_control(
-    max_depth: u8,
-    board: &mut Board,
-    tt: &mut TranspositionTable,
-    control: &SearchControl,
-) -> Result<SearchResult, Vec<Move>> {
-    let mut best_result: Option<SearchResult> = None;
-    let mut total_nodes = 0;
-    let mut total_quiescent_nodes = 0;
-
-    let mut search_state = SearchState::new();
-    let mut prev_score = 0i32;
-    let mut depth_times: Vec<u64> = Vec::with_capacity(max_depth as usize);
-
-    const INITIAL_WINDOW: i32 = 25;
-
-    for depth in 1..=max_depth {
-        // Check soft limit before starting next depth
-        if control.exceeded_soft_limit() {
-            break;
-        }
-
-
-        // Age history at the start of each new depth iteration
-        search_state.age_history();
-
-        // Use aspiration windows after depth 1
-        let result = if depth > 1 {
-            aspiration_search(depth, board, tt, &mut search_state, prev_score, INITIAL_WINDOW)?
-        } else {
-            negamax_with_tt_mut(depth, board, MIN_SCORE, MAX_SCORE, tt, &mut search_state, 0)?
-        };
-
-        total_nodes += result.nodes_searched;
-        total_quiescent_nodes += result.quiescent_nodes_searched;
-        prev_score = result.best_score;
-
-        // Predict if we have time for this depth (each depth takes ~3-4x longer)
-        if depth > 2 && !depth_times.is_empty() {
-            let last_time = *depth_times.last().unwrap();
-            let predicted_time = last_time * 4;
-            let elapsed = control.elapsed_ms();
-            if elapsed + predicted_time > control.soft_limit_ms {
-                // Won't finish in time, stop here
-                break;
-            }
-        }
-
-        let depth_start = Instant::now();
-
-        // Use aspiration windows after depth 1
-        let result = if depth > 1 {
-            aspiration_search_with_control(depth, board, tt, prev_score, control)
-        } else {
-            negamax_with_control(depth, board, MIN_SCORE, MAX_SCORE, tt, control)
-        };
-
-        let depth_time = depth_start.elapsed().as_millis() as u64;
-        depth_times.push(depth_time);
-
-        match result {
-            Ok(search_result) => {
-                total_nodes += search_result.nodes_searched;
-                total_quiescent_nodes += search_result.quiescent_nodes_searched;
-                prev_score = search_result.best_score;
-
-                best_result = Some(SearchResult {
-                    best_move: search_result.best_move,
-                    best_score: search_result.best_score,
-                    nodes_searched: total_nodes,
-                    quiescent_nodes_searched: total_quiescent_nodes,
-                });
-            }
-            Err(SearchAborted) => {
-                // Search was aborted mid-depth, use best result from previous depth
-                break;
-            }
-        }
-    }
-
-    Ok(best_result.unwrap_or(SearchResult {
-        best_move: None,
-        best_score: 0,
-        nodes_searched: total_nodes,
-        quiescent_nodes_searched: total_quiescent_nodes,
-        
-    }))
 }
 
 /// Aspiration window search with time control
@@ -1560,6 +1517,628 @@ fn negamax_captures_only_fast_mut_with_depth(board: &mut Board, alpha: i32, beta
 //     *legal_moves.choose(&mut rng).expect("No moves!")
 // }
 
+// =============================================================================
+// MovePicker-based search (new high-performance implementation)
+// =============================================================================
+
+/// High-performance negamax using MovePicker for staged move generation.
+/// This avoids heap allocations during move generation and uses staged
+/// generation to potentially cut off before generating all moves.
+pub fn negamax_movepicker(
+    max_depth: u8,
+    board: &mut Board,
+    mut alpha: i32,
+    beta: i32,
+    tt: &mut TranspositionTable,
+    search_state: &mut SearchState,
+    ply: usize,
+) -> (i32, Option<CompactMove>, i32, i32) {
+    // Returns: (score, best_move, nodes_searched, quiescent_nodes)
+
+    // Probe transposition table
+    let tt_move = tt.get_best_move(board.zobrist_hash).map(|m| CompactMove::from_move(&m));
+    if let Some((score, _)) = tt.probe(board.zobrist_hash, max_depth, alpha, beta) {
+        return (score, tt_move, 0, 0);
+    }
+
+    if max_depth == 0 {
+        // Quiescence search at leaf
+        let (score, qnodes) = quiescence_movepicker(board, alpha, beta, MAX_QUIESCENCE_DEPTH);
+        return (score, None, 0, qnodes);
+    }
+
+    // Null move pruning
+    const NULL_MOVE_REDUCTION: u8 = 2;
+    let active_color = board.get_active_color();
+    if max_depth >= 3 && !board.is_in_check(active_color) && beta < MAX_SCORE - 1000 {
+        let undo = board.make_null_move();
+        let (null_score, _, null_nodes, null_qnodes) = negamax_movepicker(
+            max_depth - 1 - NULL_MOVE_REDUCTION,
+            board,
+            -beta,
+            -beta + 1,
+            tt,
+            search_state,
+            ply + 1,
+        );
+        board.unmake_null_move(&undo);
+
+        let null_score = -null_score;
+        if null_score >= beta {
+            return (beta, None, null_nodes, null_qnodes);
+        }
+    }
+
+    // Create MovePicker - this is on the stack, no heap allocation!
+    let killers = search_state.get_killers_compact(ply);
+
+    // Get a raw pointer to history to avoid 8KB copy per recursive call.
+    // SAFETY: SearchState outlives this function, we only read through this pointer,
+    // and history writes (on beta cutoff) happen after we're done picking moves.
+    // Recursive calls access the opponent's history table (different color index).
+    let history_ptr = search_state.get_history_compact(active_color) as *const [[i16; 64]; 64];
+    let history: &[[i16; 64]; 64] = unsafe { &*history_ptr };
+
+    let mut picker = MovePicker::new(tt_move, killers, active_color);
+
+    let mut best_move: Option<CompactMove> = None;
+    let mut best_score = MIN_SCORE;
+    let mut total_nodes = 0;
+    let mut total_qnodes = 0;
+    let mut move_count = 0;
+
+    let in_check = board.is_in_check(active_color);
+
+    // Store initial board state for debugging
+    #[cfg(debug_assertions)]
+    let initial_fen = board.to_fen();
+
+    // Iterate through moves in order of likelihood to cause cutoff
+    while let Some(mv) = picker.next_move(board, &history) {
+        #[cfg(debug_assertions)]
+        let fen_before_legal_check = board.to_fen();
+
+        // Legality check
+        if !board.is_legal_compact(&mv) {
+            #[cfg(debug_assertions)]
+            {
+                let fen_after_legal_check = board.to_fen();
+                if fen_before_legal_check != fen_after_legal_check {
+                    panic!("is_legal_compact corrupted board for illegal move {:?}!\n  Before: {}\n  After: {}",
+                           mv, fen_before_legal_check, fen_after_legal_check);
+                }
+            }
+            continue;
+        }
+
+        #[cfg(debug_assertions)]
+        {
+            let fen_after_legal_check = board.to_fen();
+            if fen_before_legal_check != fen_after_legal_check {
+                panic!("is_legal_compact corrupted board for legal move {:?}!\n  Before: {}\n  After: {}",
+                       mv, fen_before_legal_check, fen_after_legal_check);
+            }
+        }
+
+        move_count += 1;
+
+        // Make move
+        let undo = board.make_compact_move(&mv);
+
+        // Check extension
+        let gives_check = board.is_in_check(board.get_active_color());
+        let extension: u8 = if gives_check { 1 } else { 0 };
+        let new_depth = max_depth.saturating_sub(1).saturating_add(extension);
+
+        // LMR for later quiet moves
+        let lmr_applies = move_count > 4
+            && max_depth >= 3
+            && !in_check
+            && !gives_check
+            && !mv.is_capture();
+
+        let search_depth = if lmr_applies {
+            new_depth.saturating_sub(1)
+        } else {
+            new_depth
+        };
+
+        // PVS: null window for non-first moves
+        let (mut score, _, nodes, qnodes) = if move_count == 1 {
+            negamax_movepicker(new_depth, board, -beta, -alpha, tt, search_state, ply + 1)
+        } else {
+            // Null window search
+            let (null_score, _, null_nodes, null_qnodes) = negamax_movepicker(
+                search_depth,
+                board,
+                -alpha - 1,
+                -alpha,
+                tt,
+                search_state,
+                ply + 1,
+            );
+            total_nodes += null_nodes;
+            total_qnodes += null_qnodes;
+
+            let null_score = -null_score;
+            if null_score > alpha && null_score < beta {
+                // Re-search with full window
+                negamax_movepicker(new_depth, board, -beta, -alpha, tt, search_state, ply + 1)
+            } else {
+                (-null_score, None, 0, 0)
+            }
+        };
+
+        board.unmake_move(&undo);
+
+        score = -score;
+        total_nodes += nodes + 1;
+        total_qnodes += qnodes;
+
+        if score > best_score {
+            best_score = score;
+            best_move = Some(mv);
+
+            if score > alpha {
+                alpha = score;
+
+                if score >= beta {
+                    // Beta cutoff - update killers and history for quiet moves
+                    if !mv.is_capture() {
+                        search_state.store_killer_compact(ply, mv);
+                        search_state.add_history_bonus_compact(active_color, mv, max_depth);
+                    }
+
+                    // Store in TT
+                    tt.store(
+                        board.zobrist_hash,
+                        max_depth,
+                        score,
+                        TTFlag::LowerBound,
+                        best_move.map(|m| m.to_move(board)),
+                    );
+
+                    return (beta, best_move, total_nodes, total_qnodes);
+                }
+            }
+        }
+    }
+
+    // Check for checkmate/stalemate
+    if move_count == 0 {
+        if in_check {
+            // Checkmate - prefer shorter mates
+            return (MIN_SCORE + ply as i32, None, total_nodes, total_qnodes);
+        } else {
+            // Stalemate
+            return (0, None, total_nodes, total_qnodes);
+        }
+    }
+
+    // Store in TT
+    let flag = if best_score > alpha {
+        TTFlag::Exact
+    } else {
+        TTFlag::UpperBound
+    };
+    tt.store(
+        board.zobrist_hash,
+        max_depth,
+        best_score,
+        flag,
+        best_move.map(|m| m.to_move(board)),
+    );
+
+    (best_score, best_move, total_nodes, total_qnodes)
+}
+
+/// Quiescence search using MovePicker (captures only).
+fn quiescence_movepicker(
+    board: &mut Board,
+    mut alpha: i32,
+    beta: i32,
+    depth_remaining: u8,
+) -> (i32, i32) {
+    // Returns: (score, nodes_searched)
+
+    let eval = evaluate_board(board);
+
+    // Stand-pat
+    if eval >= beta {
+        return (beta, 1);
+    }
+    if depth_remaining == 0 {
+        return (eval, 1);
+    }
+
+    alpha = alpha.max(eval);
+    let color = board.get_active_color();
+
+    // Create captures-only MovePicker
+    let history = [[0i16; 64]; 64]; // Not used for captures
+    let mut picker = MovePicker::new_captures_only(color);
+
+    let mut nodes = 1;
+
+    while let Some(mv) = picker.next_move(board, &history) {
+        if !board.is_legal_compact(&mv) {
+            continue;
+        }
+
+        let undo = board.make_compact_move(&mv);
+        let (score, child_nodes) = quiescence_movepicker(board, -beta, -alpha, depth_remaining - 1);
+        board.unmake_move(&undo);
+
+        let score = -score;
+        nodes += child_nodes;
+
+        if score >= beta {
+            return (beta, nodes);
+        }
+        alpha = alpha.max(score);
+    }
+
+    (alpha, nodes)
+}
+
+/// Iterative deepening search using MovePicker.
+/// Returns the best move found at the deepest completed depth.
+pub fn iterative_deepening_movepicker(
+    board: &mut Board,
+    max_depth: u8,
+    tt: &mut TranspositionTable,
+) -> SearchResult {
+    let mut search_state = SearchState::new();
+    let mut best_move = None;
+    let mut best_score = MIN_SCORE;
+    let mut total_nodes = 0;
+    let mut total_qnodes = 0;
+
+    for depth in 1..=max_depth {
+        search_state.age_history();
+
+        let (score, mv, nodes, qnodes) = negamax_movepicker(
+            depth,
+            board,
+            MIN_SCORE,
+            MAX_SCORE,
+            tt,
+            &mut search_state,
+            0,
+        );
+
+        total_nodes += nodes;
+        total_qnodes += qnodes;
+
+        if let Some(m) = mv {
+            best_move = Some(m.to_move(board));
+            best_score = score;
+        }
+    }
+
+    SearchResult {
+        best_move,
+        best_score,
+        nodes_searched: total_nodes,
+        quiescent_nodes_searched: total_qnodes,
+    }
+}
+
+// =============================================================================
+// MovePicker search with time control (for UCI)
+// =============================================================================
+
+/// Iterative deepening search using MovePicker with time control.
+/// Returns the best move found at the deepest completed depth.
+pub fn iterative_deepening_movepicker_with_control(
+    board: &mut Board,
+    max_depth: u8,
+    tt: &mut TranspositionTable,
+    search_state: &mut SearchState,
+    control: &SearchControl,
+) -> Result<SearchResult, SearchAborted> {
+    let mut best_move = None;
+    let mut best_score = MIN_SCORE;
+    let mut total_nodes = 0;
+    let mut total_qnodes = 0;
+    let mut depth_times: Vec<u64> = Vec::with_capacity(max_depth as usize);
+
+    for depth in 1..=max_depth {
+        // Check soft limit before starting next depth
+        if control.exceeded_soft_limit() {
+            break;
+        }
+
+        // Predict if we have time for this depth (each depth takes ~3-4x longer)
+        if depth > 2 && !depth_times.is_empty() {
+            let last_time = *depth_times.last().unwrap();
+            let predicted_time = last_time * 4;
+            let elapsed = control.elapsed_ms();
+            if elapsed + predicted_time > control.soft_limit_ms {
+                break;
+            }
+        }
+
+        let depth_start = std::time::Instant::now();
+
+        search_state.age_history();
+
+        let result = negamax_movepicker_with_control(
+            depth,
+            board,
+            MIN_SCORE,
+            MAX_SCORE,
+            tt,
+            search_state,
+            0,
+            control,
+        );
+
+        let depth_time = depth_start.elapsed().as_millis() as u64;
+        depth_times.push(depth_time);
+
+        match result {
+            Ok((score, mv, nodes, qnodes)) => {
+                total_nodes += nodes;
+                total_qnodes += qnodes;
+
+                if let Some(m) = mv {
+                    best_move = Some(m.to_move(board));
+                    best_score = score;
+                }
+            }
+            Err(SearchAborted) => {
+                // Search was aborted mid-depth, use best result from previous depth
+                break;
+            }
+        }
+    }
+
+    Ok(SearchResult {
+        best_move,
+        best_score,
+        nodes_searched: total_nodes,
+        quiescent_nodes_searched: total_qnodes,
+    })
+}
+
+/// Aspiration window search using MovePicker with time control.
+pub fn aspiration_search_movepicker_with_control(
+    depth: u8,
+    board: &mut Board,
+    tt: &mut TranspositionTable,
+    search_state: &mut SearchState,
+    prev_score: i32,
+    control: &SearchControl,
+) -> Result<(i32, Option<CompactMove>, i32, i32), SearchAborted> {
+    const INITIAL_WINDOW: i32 = 50;
+    let mut delta = INITIAL_WINDOW;
+    let mut alpha = prev_score - delta;
+    let mut beta = prev_score + delta;
+
+    loop {
+        let result = negamax_movepicker_with_control(
+            depth, board, alpha, beta, tt, search_state, 0, control,
+        )?;
+
+        let (score, mv, nodes, qnodes) = result;
+
+        // Check if score is within window
+        if score <= alpha {
+            // Fail low - widen alpha
+            alpha = (alpha - delta).max(MIN_SCORE);
+            delta *= 2;
+        } else if score >= beta {
+            // Fail high - widen beta
+            beta = (beta + delta).min(MAX_SCORE);
+            delta *= 2;
+        } else {
+            // Score is within window
+            return Ok((score, mv, nodes, qnodes));
+        }
+
+        // Prevent infinite loop with very large windows
+        if delta > 1000 {
+            return negamax_movepicker_with_control(
+                depth, board, MIN_SCORE, MAX_SCORE, tt, search_state, 0, control,
+            );
+        }
+    }
+}
+
+/// Negamax with MovePicker and time control.
+fn negamax_movepicker_with_control(
+    max_depth: u8,
+    board: &mut Board,
+    mut alpha: i32,
+    beta: i32,
+    tt: &mut TranspositionTable,
+    search_state: &mut SearchState,
+    ply: usize,
+    control: &SearchControl,
+) -> Result<(i32, Option<CompactMove>, i32, i32), SearchAborted> {
+    // Check if we should abort (periodically)
+    if ply % 1024 == 0 && control.should_stop() {
+        return Err(SearchAborted);
+    }
+
+    // Probe transposition table
+    let tt_move = tt.get_best_move(board.zobrist_hash).map(|m| CompactMove::from_move(&m));
+    if let Some((score, _)) = tt.probe(board.zobrist_hash, max_depth, alpha, beta) {
+        return Ok((score, tt_move, 0, 0));
+    }
+
+    // At depth 0, drop into quiescence search
+    if max_depth == 0 {
+        let (score, nodes) = quiescence_movepicker(board, alpha, beta, 10);
+        return Ok((score, None, 0, nodes));
+    }
+
+    let active_color = board.get_active_color();
+    let in_check = board.is_in_check(active_color);
+
+    // Null move pruning (skip when in check)
+    let mut total_nodes: i32 = 0;
+    let mut total_qnodes: i32 = 0;
+
+    const NULL_MOVE_REDUCTION: u8 = 2;
+    if max_depth >= 3 && !in_check && beta < MAX_SCORE - 1000 {
+        let undo = board.make_null_move();
+        let result = negamax_movepicker_with_control(
+            max_depth.saturating_sub(1 + NULL_MOVE_REDUCTION),
+            board,
+            -beta,
+            -beta + 1,
+            tt,
+            search_state,
+            ply + 1,
+            control,
+        );
+        board.unmake_null_move(&undo);
+
+        if let Ok((null_score, _, null_nodes, null_qnodes)) = result {
+            total_nodes += null_nodes;
+            total_qnodes += null_qnodes;
+            let null_score = -null_score;
+            if null_score >= beta {
+                return Ok((beta, None, total_nodes, total_qnodes));
+            }
+        } else {
+            return Err(SearchAborted);
+        }
+    }
+
+    // Get killers and TT move for move ordering
+    let killers = search_state.get_killers_compact(ply);
+
+    // Get history reference safely
+    let history_ptr = search_state.get_history_compact(active_color) as *const [[i16; 64]; 64];
+    let history: &[[i16; 64]; 64] = unsafe { &*history_ptr };
+
+    let mut picker = MovePicker::new(tt_move, killers, active_color);
+
+    let mut best_score = MIN_SCORE;
+    let mut best_move: Option<CompactMove> = None;
+    let mut move_count = 0;
+
+    while let Some(mv) = picker.next_move(board, history) {
+        if !board.is_legal_compact(&mv) {
+            continue;
+        }
+        move_count += 1;
+
+        let undo = board.make_compact_move(&mv);
+
+        // Late move reductions
+        let new_depth = if move_count > 4 && max_depth >= 3 && !mv.is_capture() && !in_check {
+            max_depth - 2
+        } else {
+            max_depth - 1
+        };
+
+        // PVS: First move gets full window, rest get null window first
+        let (mut score, _, nodes, qnodes) = if move_count == 1 {
+            match negamax_movepicker_with_control(
+                new_depth, board, -beta, -alpha, tt, search_state, ply + 1, control,
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    board.unmake_move(&undo);
+                    return Err(e);
+                }
+            }
+        } else {
+            // Null window search
+            let (null_score, _, null_nodes, null_qnodes) = match negamax_movepicker_with_control(
+                new_depth, board, -alpha - 1, -alpha, tt, search_state, ply + 1, control,
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    board.unmake_move(&undo);
+                    return Err(e);
+                }
+            };
+            total_nodes += null_nodes;
+            total_qnodes += null_qnodes;
+
+            let null_score = -null_score;
+            if null_score > alpha && null_score < beta {
+                // Re-search with full window
+                match negamax_movepicker_with_control(
+                    new_depth, board, -beta, -alpha, tt, search_state, ply + 1, control,
+                ) {
+                    Ok(r) => r,
+                    Err(e) => {
+                        board.unmake_move(&undo);
+                        return Err(e);
+                    }
+                }
+            } else {
+                (-null_score, None, 0, 0)
+            }
+        };
+
+        board.unmake_move(&undo);
+
+        score = -score;
+        total_nodes += nodes + 1;
+        total_qnodes += qnodes;
+
+        if score > best_score {
+            best_score = score;
+            best_move = Some(mv);
+
+            if score > alpha {
+                alpha = score;
+
+                if score >= beta {
+                    // Beta cutoff - update killers and history for quiet moves
+                    if !mv.is_capture() {
+                        search_state.store_killer_compact(ply, mv);
+                        search_state.add_history_bonus_compact(active_color, mv, max_depth);
+                    }
+
+                    // Store in TT
+                    tt.store(
+                        board.zobrist_hash,
+                        max_depth,
+                        score,
+                        TTFlag::LowerBound,
+                        best_move.map(|m| m.to_move(board)),
+                    );
+
+                    return Ok((beta, best_move, total_nodes, total_qnodes));
+                }
+            }
+        }
+    }
+
+    // Check for checkmate/stalemate
+    if move_count == 0 {
+        if in_check {
+            return Ok((MIN_SCORE + ply as i32, None, total_nodes, total_qnodes));
+        } else {
+            return Ok((0, None, total_nodes, total_qnodes));
+        }
+    }
+
+    // Store in TT
+    let flag = if best_score > alpha {
+        TTFlag::Exact
+    } else {
+        TTFlag::UpperBound
+    };
+    tt.store(
+        board.zobrist_hash,
+        max_depth,
+        best_score,
+        flag,
+        best_move.map(|m| m.to_move(board)),
+    );
+
+    Ok((best_score, best_move, total_nodes, total_qnodes))
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -1996,4 +2575,143 @@ mod test {
     //         assert_eq!(minimax_no_pruning(5, &b).unwrap().nodes_searched, 4865609);
     //         assert_eq!(minimax_no_pruning(6, &b).unwrap().nodes_searched, 119060324);
     //     }
+
+    // ==========================================================================
+    // MovePicker-based search tests
+    // ==========================================================================
+
+    #[test]
+    fn test_movepicker_search_preserves_board_state_depth_1() {
+        let mut board = Board::new();
+        let original_fen = board.to_fen();
+        let mut tt = crate::tt::TranspositionTable::new(16);
+
+        let _ = iterative_deepening_movepicker(&mut board, 1, &mut tt);
+
+        let after_fen = board.to_fen();
+        assert_eq!(original_fen, after_fen, "Board state should be preserved after depth 1 search");
+    }
+
+    #[test]
+    fn test_movepicker_search_preserves_board_state_depth_2() {
+        let mut board = Board::new();
+        let original_fen = board.to_fen();
+        let mut tt = crate::tt::TranspositionTable::new(16);
+
+        let _ = iterative_deepening_movepicker(&mut board, 2, &mut tt);
+
+        let after_fen = board.to_fen();
+        assert_eq!(original_fen, after_fen, "Board state should be preserved after depth 2 search");
+    }
+
+    #[test]
+    fn test_movepicker_search_preserves_board_state_depth_3() {
+        let mut board = Board::new();
+        let original_fen = board.to_fen();
+        let mut tt = crate::tt::TranspositionTable::new(16);
+
+        let _ = iterative_deepening_movepicker(&mut board, 3, &mut tt);
+
+        let after_fen = board.to_fen();
+        assert_eq!(original_fen, after_fen, "Board state should be preserved after depth 3 search");
+    }
+
+    #[test]
+    fn test_movepicker_search_preserves_board_state_depth_4() {
+        let mut board = Board::new();
+        let original_fen = board.to_fen();
+        let mut tt = crate::tt::TranspositionTable::new(16);
+
+        let _ = iterative_deepening_movepicker(&mut board, 4, &mut tt);
+
+        let after_fen = board.to_fen();
+        assert_eq!(original_fen, after_fen, "Board state should be preserved after depth 4 search");
+    }
+
+    #[test]
+    fn test_movepicker_search_preserves_board_state_depth_5() {
+        let mut board = Board::new();
+        let original_fen = board.to_fen();
+        let mut tt = crate::tt::TranspositionTable::new(16);
+
+        let _ = iterative_deepening_movepicker(&mut board, 5, &mut tt);
+
+        let after_fen = board.to_fen();
+        assert_eq!(original_fen, after_fen, "Board state should be preserved after depth 5 search");
+    }
+
+    #[test]
+    fn test_movepicker_search_finds_move_starting_position() {
+        let mut board = Board::new();
+        let mut tt = crate::tt::TranspositionTable::new(16);
+
+        let result = iterative_deepening_movepicker(&mut board, 4, &mut tt);
+
+        assert!(result.best_move.is_some(), "Should find a move in starting position");
+    }
+
+    #[test]
+    fn test_movepicker_search_different_positions() {
+        let positions = [
+            "r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4",
+            "r2qkb1r/ppp2ppp/2n1bn2/3pp3/2B1P3/2NP1N2/PPP2PPP/R1BQK2R w KQkq - 0 6",
+            "r1bq1rk1/ppp2ppp/2n1pn2/3p4/1bPP4/2NBPN2/PP3PPP/R1BQK2R w KQ - 0 7",
+        ];
+
+        for fen in positions {
+            let mut board = Board::from_fen(fen);
+            let original_fen = board.to_fen();
+            let mut tt = crate::tt::TranspositionTable::new(16);
+
+            let result = iterative_deepening_movepicker(&mut board, 4, &mut tt);
+
+            let after_fen = board.to_fen();
+            assert_eq!(original_fen, after_fen, "Board state should be preserved for position: {}", fen);
+            assert!(result.best_move.is_some(), "Should find a move for position: {}", fen);
+        }
+    }
+
+    #[test]
+    fn test_negamax_movepicker_preserves_board_state() {
+        let mut board = Board::new();
+        let original_fen = board.to_fen();
+        let mut tt = crate::tt::TranspositionTable::new(16);
+        let mut search_state = SearchState::new();
+
+        for depth in 1..=4 {
+            let mut test_board = Board::new();
+            let before = test_board.to_fen();
+
+            let _ = negamax_movepicker(
+                depth,
+                &mut test_board,
+                MIN_SCORE,
+                MAX_SCORE,
+                &mut tt,
+                &mut search_state,
+                0,
+            );
+
+            let after = test_board.to_fen();
+            assert_eq!(before, after, "Board state should be preserved at depth {}", depth);
+        }
+    }
+
+    #[test]
+    fn test_quiescence_movepicker_preserves_board_state() {
+        let positions = [
+            "r1bqkb1r/pppp1ppp/2n2n2/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3",
+            "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4",
+        ];
+
+        for fen in positions {
+            let mut board = Board::from_fen(fen);
+            let original_fen = board.to_fen();
+
+            let _ = quiescence_movepicker(&mut board, MIN_SCORE, MAX_SCORE, 10);
+
+            let after_fen = board.to_fen();
+            assert_eq!(original_fen, after_fen, "Quiescence should preserve board for: {}", fen);
+        }
+    }
 }

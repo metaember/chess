@@ -84,11 +84,17 @@ export function GameControls({
                 <DifficultyOption value="1" name="Beginner" desc="Depth 1 · Instant" />
                 <DifficultyOption value="2" name="Easy" desc="Depth 2 · Instant" />
                 <DifficultyOption value="3" name="Medium" desc="Depth 3 · Instant" />
-                <DifficultyOption value="4" name="Hard" desc="Depth 4 · ~0.1s" />
-                <DifficultyOption value="5" name="Expert" desc="Depth 5 · ~1-2s" />
-                <DifficultyOption value="6" name="Master" desc="Depth 6 · ~30s" />
-                <DifficultyOption value="7" name="Grandmaster" desc="Depth 7 · ~5min" />
-                <DifficultyOption value="8" name="Maximum" desc="Depth 8 · Very slow" />
+                <DifficultyOption value="4" name="Hard" desc="Depth 4 · Instant" />
+                <DifficultyOption value="5" name="Expert" desc="Depth 5 · ~2ms" />
+                <DifficultyOption value="6" name="Advanced" desc="Depth 6 · ~8ms" />
+                <DifficultyOption value="7" name="Master" desc="Depth 7 · ~20ms" />
+                <DifficultyOption value="8" name="Strong" desc="Depth 8 · ~60ms" />
+                <DifficultyOption value="9" name="Expert+" desc="Depth 9 · ~200ms" />
+                <DifficultyOption value="10" name="Grandmaster" desc="Depth 10 · ~500ms" />
+                <DifficultyOption value="11" name="Super GM" desc="Depth 11 · ~1s" />
+                <DifficultyOption value="12" name="Maximum" desc="Depth 12 · ~5s" />
+                <DifficultyOption value="13" name="Maximumer" desc="Depth 13 · ~15s" />
+                <DifficultyOption value="14" name="Maximumest" desc="Depth 14 · ~45s" />
               </SelectContent>
             </Select>
           </div>

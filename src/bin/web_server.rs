@@ -1,3 +1,7 @@
+//! Web server for playing chess against the engine
+//!
+//! Uses the unified ChessEngine for consistent behavior with UCI.
+
 use axum::{
     extract::State,
     http::StatusCode,
@@ -6,19 +10,19 @@ use axum::{
 };
 use rand::Rng;
 use rust_chess::board::Board;
-use rust_chess::search::minimax;
+use rust_chess::engine::{ChessEngine, SearchOptions};
 use rust_chess::types::{Color, MoveFlag, PieceType, Position, Status};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, SystemTime};
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 
 const MAX_GAMES: usize = 1000;
 const GAME_TTL: Duration = Duration::from_secs(48 * 60 * 60); // 48 hours
-const MAX_DEPTH: u8 = 8;
-const DEFAULT_DEPTH: u8 = 5; // Expert difficulty
+const MAX_DEPTH: u8 = 14;
+const DEFAULT_DEPTH: u8 = 8;
 
 // Individual game state
 struct GameState {
@@ -33,6 +37,7 @@ struct GameState {
 #[derive(Clone)]
 struct AppState {
     games: Arc<RwLock<HashMap<String, GameState>>>,
+    engine: Arc<RwLock<ChessEngine>>,
 }
 
 #[derive(Serialize)]
@@ -90,10 +95,9 @@ struct EngineMoveInfo {
 #[derive(Serialize)]
 struct EngineStats {
     time_ms: u64,
-    nodes_searched: i32,
-    quiescent_nodes: i32,
-    nodes_per_second: u64,
+    nodes_searched: u64,
     depth: u8,
+    from_book: bool,
 }
 
 fn generate_game_id() -> String {
@@ -208,10 +212,13 @@ async fn new_game(
 
     // If player is black, engine makes the first move
     if player_color == Color::Black {
-        let result = minimax(depth, &board).unwrap();
-        eval_score = Some(result.best_score);
-        let engine_move = result.best_move.unwrap();
-        board = board.execute_move(&engine_move);
+        let mut engine = state.engine.write().unwrap();
+        let options = SearchOptions::with_depth(depth);
+
+        if let Some(result) = engine.pick_move(&mut board, &options) {
+            eval_score = Some(result.score);
+            board = board.execute_move(&result.best_move);
+        }
     }
 
     let game_state = GameState {
@@ -362,47 +369,25 @@ async fn make_move(
         }));
     }
 
-    // Engine's turn
-    let start_time = Instant::now();
-    let engine_result = minimax(game.depth, &game.board);
-    let elapsed = start_time.elapsed();
-    let time_ms = elapsed.as_millis() as u64;
+    // Engine's turn - use unified ChessEngine
+    let options = SearchOptions::with_depth(game.depth);
+    let engine_result = {
+        let mut engine = state.engine.write().unwrap();
+        engine.pick_move(&mut game.board, &options)
+    };
 
     let (engine_move, eval_score, engine_stats) = match engine_result {
-        Ok(result) => {
-            let score = result.best_score;
-            let total_nodes = result.nodes_searched + result.quiescent_nodes_searched;
-            let nodes_per_second = if time_ms > 0 {
-                (total_nodes as u64 * 1000) / time_ms
-            } else {
-                total_nodes as u64 * 1000
-            };
-
+        Some(result) => {
             let stats = EngineStats {
-                time_ms,
+                time_ms: result.time_ms,
                 nodes_searched: result.nodes_searched,
-                quiescent_nodes: result.quiescent_nodes_searched,
-                nodes_per_second,
-                depth: game.depth,
+                depth: result.depth_reached,
+                from_book: result.from_book,
             };
-
-            match result.best_move {
-                Some(m) => (m, Some(score), Some(stats)),
-                None => {
-                    game.game_over = Some("Engine has no moves".to_string());
-                    return Ok(Json(MakeMoveResponse {
-                        success: true,
-                        message: "Engine has no moves".to_string(),
-                        board: get_board_response(&req.game_id, &game.board, &game.game_over, None),
-                        engine_move: None,
-                        player_move_algebraic: Some(player_move_algebraic),
-                        eval_score: None,
-                        engine_stats: Some(stats),
-                    }));
-                }
-            }
+            (result.best_move, Some(result.score), Some(stats))
         }
-        Err(_) => {
+        None => {
+            // Check if game is over
             if let Some(status) = check_game_status(&game.board) {
                 game.game_over = Some(status.clone());
                 return Ok(Json(MakeMoveResponse {
@@ -415,9 +400,10 @@ async fn make_move(
                     engine_stats: None,
                 }));
             }
+            game.game_over = Some("Engine has no moves".to_string());
             return Ok(Json(MakeMoveResponse {
                 success: true,
-                message: "Game over".to_string(),
+                message: "Engine has no moves".to_string(),
                 board: get_board_response(&req.game_id, &game.board, &game.game_over, None),
                 engine_move: None,
                 player_move_algebraic: Some(player_move_algebraic),
@@ -453,8 +439,13 @@ async fn make_move(
 
 #[tokio::main]
 async fn main() {
+    println!("Initializing chess engine...");
+    let engine = ChessEngine::new();
+    println!("Chess engine ready (opening book loaded).");
+
     let state = AppState {
         games: Arc::new(RwLock::new(HashMap::new())),
+        engine: Arc::new(RwLock::new(engine)),
     };
 
     let cors = CorsLayer::new();
