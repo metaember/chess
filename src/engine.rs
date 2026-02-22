@@ -462,3 +462,46 @@ impl Default for ChessEngine {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn engine_uses_book_for_opening_moves() {
+        let mut engine = ChessEngine::new();
+        let mut board = Board::new();
+        let options = SearchOptions::with_depth(4);
+
+        // Play several moves via pick_move and verify the first ones come from book
+        let mut book_moves = 0;
+        for ply in 0..10 {
+            let result = engine.pick_move(&mut board, &options);
+            let result = match result {
+                Some(r) => r,
+                None => break, // game over
+            };
+
+            if result.from_book {
+                book_moves += 1;
+            }
+
+            let undo = board.make_move(&result.best_move);
+
+            // Verify the move didn't corrupt the board by checking legal moves exist
+            if board.get_legal_moves(&board.get_active_color()).map(|m| m.is_empty()).unwrap_or(true) {
+                // Game might be over (checkmate/stalemate), that's fine
+                if ply < 4 {
+                    panic!("No legal moves after only {ply} plies — book move likely corrupted the board");
+                }
+                break;
+            }
+        }
+
+        // The Cerebellum book should produce book moves for at least the first few plies
+        assert!(
+            book_moves >= 4,
+            "Expected at least 4 book moves in a 10-ply game, got {book_moves}"
+        );
+    }
+}

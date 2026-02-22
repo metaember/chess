@@ -466,46 +466,63 @@ impl Board {
         self.active_color
     }
 
-    /// Compute Polyglot-compatible zobrist hash for opening book lookups
+    /// Compute Polyglot-compatible zobrist hash for opening book lookups.
+    /// Uses the standard Polyglot random numbers from polyglot_keys.rs.
     pub fn polyglot_hash(&self) -> u64 {
-        use crate::zobrist::POLYGLOT_KEYS;
+        use crate::polyglot_keys::POLYGLOT_RANDOM64;
         let mut hash = 0u64;
 
-        // Add piece positions
-        for rank in 1..=8 {
-            for file in 1..=8 {
+        // Polyglot kind_of_piece: BlackPawn=0, WhitePawn=1, BlackKnight=2, WhiteKnight=3,
+        // BlackBishop=4, WhiteBishop=5, BlackRook=6, WhiteRook=7,
+        // BlackQueen=8, WhiteQueen=9, BlackKing=10, WhiteKing=11
+        // Index = kind_of_piece * 64 + row * 8 + file
+        fn polyglot_kind(pt: PieceType, color: Color) -> usize {
+            let base = match pt {
+                PieceType::Pawn => 0,
+                PieceType::Knight => 2,
+                PieceType::Bishop => 4,
+                PieceType::Rook => 6,
+                PieceType::Queen => 8,
+                PieceType::King => 10,
+            };
+            base + if color == Color::White { 1 } else { 0 }
+        }
+
+        for rank in 1..=8u8 {
+            for file in 1..=8u8 {
                 if let Some(piece) = self.piece_at(rank, file) {
-                    let color_idx = piece.color as usize;
-                    let piece_idx = piece_type_to_index(piece.piece_type);
-                    let square = ((rank - 1) * 8 + (file - 1)) as usize;
-                    hash ^= POLYGLOT_KEYS.pieces[color_idx][piece_idx][square];
+                    let kind = polyglot_kind(piece.piece_type, piece.color);
+                    let sq = ((rank - 1) * 8 + (file - 1)) as usize;
+                    hash ^= POLYGLOT_RANDOM64[kind * 64 + sq];
                 }
             }
         }
 
-        // Add castling rights
-        if self.castle_kingside_white {
-            hash ^= POLYGLOT_KEYS.castle_kingside_white;
-        }
-        if self.castle_queenside_white {
-            hash ^= POLYGLOT_KEYS.castle_queenside_white;
-        }
-        if self.castle_kingside_black {
-            hash ^= POLYGLOT_KEYS.castle_kingside_black;
-        }
-        if self.castle_queenside_black {
-            hash ^= POLYGLOT_KEYS.castle_queenside_black;
-        }
+        if self.castle_kingside_white  { hash ^= POLYGLOT_RANDOM64[768]; }
+        if self.castle_queenside_white { hash ^= POLYGLOT_RANDOM64[769]; }
+        if self.castle_kingside_black  { hash ^= POLYGLOT_RANDOM64[770]; }
+        if self.castle_queenside_black { hash ^= POLYGLOT_RANDOM64[771]; }
 
-        // Add en passant file (if any)
+        // Polyglot only includes en passant if there's actually an enemy pawn
+        // that could capture (unlike FEN which always sets ep after double push).
         if let Some(ep) = self.en_passant_target {
-            let file_idx = (ep.file - 1) as usize;
-            hash ^= POLYGLOT_KEYS.en_passant[file_idx];
+            let ep_file = ep.file;
+            let (pawn_rank, capturing_color) = if self.active_color == Color::White {
+                (ep.rank - 1, Color::White) // white pawn must be on rank below ep square
+            } else {
+                (ep.rank + 1, Color::Black)
+            };
+            let pawn_bb = self.get_piece_bb(capturing_color, PieceType::Pawn);
+            let can_capture = (ep_file > 1 && pawn_bb & (1u64 << ((pawn_rank - 1) * 8 + (ep_file - 2))) != 0)
+                || (ep_file < 8 && pawn_bb & (1u64 << ((pawn_rank - 1) * 8 + ep_file)) != 0);
+            if can_capture {
+                hash ^= POLYGLOT_RANDOM64[772 + (ep_file - 1) as usize];
+            }
         }
 
-        // Add side to move (XOR if black to move)
-        if self.active_color == Color::Black {
-            hash ^= POLYGLOT_KEYS.side_to_move;
+        // Polyglot XORs turn key when white to move
+        if self.active_color == Color::White {
+            hash ^= POLYGLOT_RANDOM64[780];
         }
 
         hash

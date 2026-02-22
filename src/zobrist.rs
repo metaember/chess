@@ -99,61 +99,6 @@ impl XorShift64 {
 use once_cell::sync::Lazy;
 pub static ZOBRIST_KEYS: Lazy<ZobristKeys> = Lazy::new(|| ZobristKeys::new());
 
-/// Polyglot-compatible Zobrist keys (uses standard Polyglot random numbers)
-/// This allows compatibility with standard Polyglot .bin opening books
-pub static POLYGLOT_KEYS: Lazy<ZobristKeys> = Lazy::new(|| {
-    // Polyglot uses a specific seed: 0
-    let mut rng = PolyglotRng::new();
-
-    let mut pieces = [[[0u64; 64]; 6]; 2];
-    // Polyglot order: piece * 64 * 2 + square * 2 + color
-    // Our order: color * piece * square
-    // Piece order in Polyglot: Pawn=0, Knight=1, Bishop=2, Rook=3, Queen=4, King=5
-    for piece in 0..6 {
-        for square in 0..64 {
-            pieces[0][piece][square] = rng.next(); // White
-            pieces[1][piece][square] = rng.next(); // Black
-        }
-    }
-
-    let mut castle_keys = [0u64; 4];
-    for i in 0..4 {
-        castle_keys[i] = rng.next();
-    }
-
-    let mut en_passant = [0u64; 8];
-    for file in 0..8 {
-        en_passant[file] = rng.next();
-    }
-
-    let side_to_move = rng.next();
-
-    ZobristKeys {
-        pieces,
-        side_to_move,
-        castle_kingside_white: castle_keys[0],
-        castle_queenside_white: castle_keys[1],
-        castle_kingside_black: castle_keys[2],
-        castle_queenside_black: castle_keys[3],
-        en_passant,
-    }
-});
-
-/// Polyglot-specific PRNG (64-bit linear congruential generator)
-struct PolyglotRng {
-    state: u64,
-}
-
-impl PolyglotRng {
-    fn new() -> Self {
-        PolyglotRng { state: 0 }
-    }
-
-    fn next(&mut self) -> u64 {
-        self.state = self.state.wrapping_mul(0x5DEECE66D).wrapping_add(0xB);
-        self.state
-    }
-}
 
 #[cfg(test)]
 mod tests {

@@ -3,6 +3,7 @@ use color_eyre::eyre::Result;
 
 mod types;
 mod zobrist;
+mod polyglot_keys;
 mod tt;
 mod bitboard;
 mod movelist;

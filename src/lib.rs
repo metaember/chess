@@ -1,5 +1,6 @@
 pub mod types;
 pub mod zobrist;
+pub mod polyglot_keys;
 pub mod tt;
 pub mod bitboard;
 pub mod movelist;
