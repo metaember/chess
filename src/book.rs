@@ -6,8 +6,24 @@ use std::fs;
 use std::io::Read;
 
 const NEW_POS_PREFIX: &str = "pos ";
-const BOOK_PATH: &str = "/Users/charlesbine/Documents/prog/rust_chess/book/book.txt";
-const POLYGLOT_BOOK_PATH: &str = "/Users/charlesbine/Documents/prog/rust_chess/book/Cerebellum3Merge.bin";
+
+/// Get the book directory path - checks multiple locations
+fn get_book_dir() -> Option<std::path::PathBuf> {
+    // Try relative path first (for Docker/deployment)
+    let paths = [
+        std::path::PathBuf::from("book"),
+        std::path::PathBuf::from("./book"),
+        // Fallback to absolute path for local development
+        std::path::PathBuf::from("/Users/charlesbine/Documents/prog/rust_chess/book"),
+    ];
+
+    for path in paths {
+        if path.exists() {
+            return Some(path);
+        }
+    }
+    None
+}
 
 #[derive(Debug, Clone)]
 struct PolyglotEntry {
@@ -33,8 +49,14 @@ impl Book {
     fn read_polyglot_book() -> Vec<PolyglotEntry> {
         let mut entries = Vec::new();
 
-        let Ok(mut file) = fs::File::open(POLYGLOT_BOOK_PATH) else {
-            eprintln!("Warning: Could not open Polyglot book at {}", POLYGLOT_BOOK_PATH);
+        let Some(book_dir) = get_book_dir() else {
+            eprintln!("Warning: Could not find book directory");
+            return entries;
+        };
+
+        let polyglot_path = book_dir.join("Cerebellum3Merge.bin");
+        let Ok(mut file) = fs::File::open(&polyglot_path) else {
+            eprintln!("Warning: Could not open Polyglot book at {:?}", polyglot_path);
             return entries;
         };
 
@@ -66,8 +88,20 @@ impl Book {
     fn read_book() -> HashMap<String, HashMap<String, i32>> {
         let mut book: HashMap<String, HashMap<String, i32>> = HashMap::new();
         let mut current_position_map: HashMap<String, i32> = HashMap::new();
-        let contents =
-            fs::read_to_string(BOOK_PATH).expect("Something went wrong reading the file");
+
+        let Some(book_dir) = get_book_dir() else {
+            eprintln!("Warning: Could not find book directory for text book");
+            return book;
+        };
+
+        let book_path = book_dir.join("book.txt");
+        let contents = match fs::read_to_string(&book_path) {
+            Ok(c) => c,
+            Err(_) => {
+                eprintln!("Warning: Could not read text book at {:?}", book_path);
+                return book;
+            }
+        };
         let mut last_fen: Option<String> = None;
 
         for line in contents.lines() {

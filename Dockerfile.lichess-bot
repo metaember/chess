@@ -12,16 +12,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY benches ./benches
-RUN cargo build --release --bin uci
+RUN cargo build --release --bin uci_movepicker
 
 # Runtime stage with Python for lichess-bot
 FROM python:3.11-slim-bookworm
 
 WORKDIR /app
 
-# Copy UCI engine binary
-COPY --from=rust-builder /build/target/release/uci /app/engines/uci
+# Copy UCI engine binary (new MovePicker-based engine)
+COPY --from=rust-builder /build/target/release/uci_movepicker /app/engines/uci
 RUN chmod +x /app/engines/uci
+
+# Copy opening book (Polyglot format)
+COPY book/Cerebellum3Merge.bin /app/book/Cerebellum3Merge.bin
+COPY book/book.txt /app/book/book.txt
 
 # Install Python dependencies
 COPY lichess-bot/requirements.txt ./
