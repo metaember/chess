@@ -37,6 +37,9 @@ COPY lichess-bot/extra_game_handlers.py ./
 COPY lichess-bot/homemade.py ./
 COPY lichess-bot/lib ./lib
 
+# Patch lichess-bot to handle SIGTERM for graceful Docker shutdown
+RUN sed -i 's/^signal.signal(signal.SIGINT, signal_handler)$/signal.signal(signal.SIGINT, signal_handler)\nsignal.signal(signal.SIGTERM, signal_handler)/' lib/lichess_bot.py
+
 # Copy config (token will be injected via LICHESS_BOT_TOKEN env var)
 COPY config.lichess-bot.yml ./config.yml
 

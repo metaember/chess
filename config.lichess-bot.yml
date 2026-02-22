@@ -32,6 +32,7 @@ engine:
 
 abort_time: 30
 move_overhead: 1000
+quit_after_all_games_finish: true
 
 challenge:
   concurrency: 1
