@@ -60,7 +60,17 @@ greeting:
   goodbye: "Good game!"
 
 matchmaking:
-  allow_matchmaking: false
-  challenge_timeout: 10
-  opponent_rating_difference: 300
+  allow_matchmaking: true
+  challenge_timeout: 30
+  opponent_rating_difference: 500
   challenge_mode: "rated"
+  challenge_initial_time:
+    - 180    # 3+0 blitz
+    - 300    # 5+0 blitz
+    - 180    # 3+2 blitz
+  challenge_increment:
+    - 0
+    - 0
+    - 2
+  opponent_allow_tos_violation: false
+  challenge_filter: "none"  # or "coward" to avoid those who decline often
