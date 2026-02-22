@@ -1614,6 +1614,145 @@ impl Board {
         self.en_passant_target = undo.en_passant_target;
         self.zobrist_hash = undo.zobrist_hash;
     }
+
+    // =========================================================================
+    // CompactMove support methods
+    // =========================================================================
+
+    /// Make a compact move, returning undo information.
+    /// This converts to Move internally and calls make_move.
+    /// For optimal performance, this could be optimized to work directly with CompactMove.
+    #[inline]
+    pub fn make_compact_move(&mut self, mv: &CompactMove) -> UndoInfo {
+        let full_move = mv.to_move(self);
+        self.make_move(&full_move)
+    }
+
+    /// Check if a pseudo-legal compact move is legal.
+    /// A move is legal if making it doesn't leave our king in check.
+    #[inline]
+    pub fn is_legal_compact(&mut self, mv: &CompactMove) -> bool {
+        let color = self.active_color;
+
+        // Make the move
+        let undo = self.make_compact_move(mv);
+
+        // Check if king is in check (use cached attack maps after recompute)
+        let king_in_check = self.is_in_check(color);
+
+        // Unmake the move
+        self.unmake_move(&undo);
+
+        // Move is legal if king is NOT in check after the move
+        !king_in_check
+    }
+
+    /// Quick pseudo-legality check for a compact move.
+    /// This verifies basic validity without making the move.
+    /// Used by MovePicker to filter out obviously illegal moves before full legality test.
+    #[inline]
+    pub fn is_pseudo_legal_compact(&self, mv: &CompactMove) -> bool {
+        if *mv == CompactMove::NONE {
+            return false;
+        }
+
+        let from_sq = mv.from_sq();
+        let to_sq = mv.to_sq();
+        let from_pos = CompactMove::sq_to_pos(from_sq);
+
+        // Check that there's a piece at the from square
+        let piece = match self.piece_at_position(&from_pos) {
+            Some(p) => p,
+            None => return false,
+        };
+
+        // Check that the piece belongs to the side to move
+        if piece.color != self.active_color {
+            return false;
+        }
+
+        // Check that the piece type matches
+        if piece.piece_type != mv.piece_type() {
+            return false;
+        }
+
+        // Check destination square validity
+        let to_pos = CompactMove::sq_to_pos(to_sq);
+        let to_piece = self.piece_at_position(&to_pos);
+
+        if mv.is_capture() && !mv.is_en_passant() {
+            // For captures, check that there's an enemy piece at destination
+            match to_piece {
+                Some(captured) => {
+                    if captured.color == self.active_color {
+                        return false; // Can't capture own piece
+                    }
+                }
+                None => return false, // No piece to capture
+            }
+        } else if !mv.is_capture() && !mv.is_castle() {
+            // For quiet moves (non-captures, non-castles), destination must be empty
+            if to_piece.is_some() {
+                return false; // Can't move to occupied square
+            }
+        }
+
+        // For en passant, check that the target matches the board's EP square
+        if mv.is_en_passant() {
+            match self.en_passant_target {
+                Some(ep_target) => {
+                    if CompactMove::pos_to_sq(&ep_target) != to_sq {
+                        return false;
+                    }
+                }
+                None => return false,
+            }
+        }
+
+        // For castling, check that rights are available and squares are clear
+        let move_type = mv.move_type();
+        match move_type {
+            MoveType::CastleKingside => {
+                let (can_castle, rank) = match self.active_color {
+                    Color::White => (self.castle_kingside_white, 1),
+                    Color::Black => (self.castle_kingside_black, 8),
+                };
+                if !can_castle {
+                    return false;
+                }
+                // Check that f and g squares are empty
+                let f_pos = Position { rank, file: 6 };
+                let g_pos = Position { rank, file: 7 };
+                if self.piece_at_position(&f_pos).is_some()
+                    || self.piece_at_position(&g_pos).is_some()
+                {
+                    return false;
+                }
+            }
+            MoveType::CastleQueenside => {
+                let (can_castle, rank) = match self.active_color {
+                    Color::White => (self.castle_queenside_white, 1),
+                    Color::Black => (self.castle_queenside_black, 8),
+                };
+                if !can_castle {
+                    return false;
+                }
+                // Check that b, c, d squares are empty
+                let b_pos = Position { rank, file: 2 };
+                let c_pos = Position { rank, file: 3 };
+                let d_pos = Position { rank, file: 4 };
+                if self.piece_at_position(&b_pos).is_some()
+                    || self.piece_at_position(&c_pos).is_some()
+                    || self.piece_at_position(&d_pos).is_some()
+                {
+                    return false;
+                }
+            }
+            _ => {}
+        }
+
+        true
+    }
 }
 
 #[cfg(test)]

@@ -5,6 +5,7 @@ use crate::bitboard::{
     bishop_attacks, rook_attacks, queen_attacks,
 };
 use crate::board::Board;
+use crate::movelist::MoveList;
 use crate::types::*;
 
 const MAX_MOVES: usize = 218;
@@ -655,6 +656,681 @@ pub fn pawn_step_forward(rank: u8, color: Color) -> u8 {
     match color {
         Color::White => rank + 1,
         Color::Black => rank - 1,
+    }
+}
+
+// =============================================================================
+// CompactMoveGenerator - High-performance move generation into MoveList
+// =============================================================================
+
+/// High-performance move generator that writes CompactMove directly into a MoveList.
+/// This avoids all heap allocations by using stack-allocated storage.
+pub struct CompactMoveGenerator<'a> {
+    board: &'a Board,
+    color: Color,
+}
+
+impl<'a> CompactMoveGenerator<'a> {
+    #[inline(always)]
+    pub fn new(board: &'a Board, color: Color) -> Self {
+        Self { board, color }
+    }
+
+    /// Generate all pseudo-legal moves into the provided MoveList.
+    #[inline]
+    pub fn generate_all(&self, list: &mut MoveList) {
+        let occupied = self.board.get_occupied();
+        let friendly = self.board.get_pieces_bb(self.color);
+        let enemy = self.board.get_pieces_bb(self.color.other_color());
+
+        self.generate_knight_moves(list, friendly, enemy);
+        self.generate_king_moves(list, occupied, friendly, enemy);
+        self.generate_rook_moves(list, occupied, friendly, enemy);
+        self.generate_bishop_moves(list, occupied, friendly, enemy);
+        self.generate_queen_moves(list, occupied, friendly, enemy);
+        self.generate_pawn_moves(list, occupied, enemy);
+    }
+
+    /// Generate only capture moves (for quiescence search).
+    #[inline]
+    pub fn generate_captures(&self, list: &mut MoveList) {
+        let occupied = self.board.get_occupied();
+        let enemy = self.board.get_pieces_bb(self.color.other_color());
+
+        self.generate_knight_captures(list, enemy);
+        self.generate_king_captures(list, enemy);
+        self.generate_rook_captures(list, occupied, enemy);
+        self.generate_bishop_captures(list, occupied, enemy);
+        self.generate_queen_captures(list, occupied, enemy);
+        self.generate_pawn_captures(list, enemy);
+    }
+
+    /// Generate only quiet (non-capture) moves.
+    #[inline]
+    pub fn generate_quiets(&self, list: &mut MoveList) {
+        let occupied = self.board.get_occupied();
+        let friendly = self.board.get_pieces_bb(self.color);
+
+        self.generate_knight_quiets(list, friendly);
+        self.generate_king_quiets(list, occupied, friendly);
+        self.generate_rook_quiets(list, occupied, friendly);
+        self.generate_bishop_quiets(list, occupied, friendly);
+        self.generate_queen_quiets(list, occupied, friendly);
+        self.generate_pawn_quiets(list, occupied);
+    }
+
+    // =========================================================================
+    // Knight moves
+    // =========================================================================
+
+    #[inline]
+    fn generate_knight_moves(&self, list: &mut MoveList, friendly: u64, enemy: u64) {
+        let knights = self.board.get_piece_bb(self.color, PieceType::Knight);
+
+        for from_sq in BitboardIter(knights) {
+            let attacks = ATTACK_TABLES.knight[from_sq as usize];
+            let targets = attacks & !friendly;
+
+            for to_sq in BitboardIter(targets) {
+                let captured = self.captured_piece_type(to_sq, enemy);
+                let move_type = if captured.is_some() {
+                    MoveType::Capture
+                } else {
+                    MoveType::Quiet
+                };
+                list.push(CompactMove::new(
+                    from_sq,
+                    to_sq,
+                    PieceType::Knight,
+                    move_type,
+                    captured,
+                ));
+            }
+        }
+    }
+
+    #[inline]
+    fn generate_knight_captures(&self, list: &mut MoveList, enemy: u64) {
+        let knights = self.board.get_piece_bb(self.color, PieceType::Knight);
+
+        for from_sq in BitboardIter(knights) {
+            let attacks = ATTACK_TABLES.knight[from_sq as usize];
+            let targets = attacks & enemy;
+
+            for to_sq in BitboardIter(targets) {
+                let captured = self.captured_piece_type(to_sq, enemy);
+                list.push(CompactMove::new(
+                    from_sq,
+                    to_sq,
+                    PieceType::Knight,
+                    MoveType::Capture,
+                    captured,
+                ));
+            }
+        }
+    }
+
+    #[inline]
+    fn generate_knight_quiets(&self, list: &mut MoveList, friendly: u64) {
+        let knights = self.board.get_piece_bb(self.color, PieceType::Knight);
+        let enemy = self.board.get_pieces_bb(self.color.other_color());
+
+        for from_sq in BitboardIter(knights) {
+            let attacks = ATTACK_TABLES.knight[from_sq as usize];
+            let targets = attacks & !friendly & !enemy;
+
+            for to_sq in BitboardIter(targets) {
+                list.push(CompactMove::new_quiet(from_sq, to_sq, PieceType::Knight));
+            }
+        }
+    }
+
+    // =========================================================================
+    // King moves
+    // =========================================================================
+
+    #[inline]
+    fn generate_king_moves(&self, list: &mut MoveList, occupied: u64, friendly: u64, enemy: u64) {
+        let king_bb = self.board.get_piece_bb(self.color, PieceType::King);
+        if king_bb == 0 {
+            return;
+        }
+
+        let from_sq = king_bb.trailing_zeros() as u8;
+        let attacks = ATTACK_TABLES.king[from_sq as usize];
+        let targets = attacks & !friendly;
+
+        for to_sq in BitboardIter(targets) {
+            let captured = self.captured_piece_type(to_sq, enemy);
+            let move_type = if captured.is_some() {
+                MoveType::Capture
+            } else {
+                MoveType::Quiet
+            };
+            list.push(CompactMove::new(
+                from_sq,
+                to_sq,
+                PieceType::King,
+                move_type,
+                captured,
+            ));
+        }
+
+        // Generate castling moves
+        self.generate_castling(list, occupied, from_sq);
+    }
+
+    #[inline]
+    fn generate_king_captures(&self, list: &mut MoveList, enemy: u64) {
+        let king_bb = self.board.get_piece_bb(self.color, PieceType::King);
+        if king_bb == 0 {
+            return;
+        }
+
+        let from_sq = king_bb.trailing_zeros() as u8;
+        let attacks = ATTACK_TABLES.king[from_sq as usize];
+        let targets = attacks & enemy;
+
+        for to_sq in BitboardIter(targets) {
+            let captured = self.captured_piece_type(to_sq, enemy);
+            list.push(CompactMove::new(
+                from_sq,
+                to_sq,
+                PieceType::King,
+                MoveType::Capture,
+                captured,
+            ));
+        }
+    }
+
+    #[inline]
+    fn generate_king_quiets(&self, list: &mut MoveList, occupied: u64, friendly: u64) {
+        let king_bb = self.board.get_piece_bb(self.color, PieceType::King);
+        if king_bb == 0 {
+            return;
+        }
+
+        let from_sq = king_bb.trailing_zeros() as u8;
+        let attacks = ATTACK_TABLES.king[from_sq as usize];
+        let enemy = self.board.get_pieces_bb(self.color.other_color());
+        let targets = attacks & !friendly & !enemy;
+
+        for to_sq in BitboardIter(targets) {
+            list.push(CompactMove::new_quiet(from_sq, to_sq, PieceType::King));
+        }
+
+        // Castling is a quiet move
+        self.generate_castling(list, occupied, from_sq);
+    }
+
+    #[inline]
+    fn generate_castling(&self, list: &mut MoveList, occupied: u64, king_sq: u8) {
+        match self.color {
+            Color::White => {
+                // Kingside castling (e1 -> g1)
+                if self.board.castle_kingside_white {
+                    let f1 = sq_to_bb(pos_to_sq(1, 6));
+                    let g1 = sq_to_bb(pos_to_sq(1, 7));
+                    let rook_sq = sq_to_bb(pos_to_sq(1, 8));
+                    let rook_bb = self.board.get_piece_bb(Color::White, PieceType::Rook);
+
+                    if (rook_bb & rook_sq) != 0 && (occupied & (f1 | g1)) == 0 {
+                        let to_sq = pos_to_sq(1, 7);
+                        list.push(CompactMove::new(
+                            king_sq,
+                            to_sq,
+                            PieceType::King,
+                            MoveType::CastleKingside,
+                            None,
+                        ));
+                    }
+                }
+                // Queenside castling (e1 -> c1)
+                if self.board.castle_queenside_white {
+                    let b1 = sq_to_bb(pos_to_sq(1, 2));
+                    let c1 = sq_to_bb(pos_to_sq(1, 3));
+                    let d1 = sq_to_bb(pos_to_sq(1, 4));
+                    let rook_sq = sq_to_bb(pos_to_sq(1, 1));
+                    let rook_bb = self.board.get_piece_bb(Color::White, PieceType::Rook);
+
+                    if (rook_bb & rook_sq) != 0 && (occupied & (b1 | c1 | d1)) == 0 {
+                        let to_sq = pos_to_sq(1, 3);
+                        list.push(CompactMove::new(
+                            king_sq,
+                            to_sq,
+                            PieceType::King,
+                            MoveType::CastleQueenside,
+                            None,
+                        ));
+                    }
+                }
+            }
+            Color::Black => {
+                // Kingside castling (e8 -> g8)
+                if self.board.castle_kingside_black {
+                    let f8 = sq_to_bb(pos_to_sq(8, 6));
+                    let g8 = sq_to_bb(pos_to_sq(8, 7));
+                    let rook_sq = sq_to_bb(pos_to_sq(8, 8));
+                    let rook_bb = self.board.get_piece_bb(Color::Black, PieceType::Rook);
+
+                    if (rook_bb & rook_sq) != 0 && (occupied & (f8 | g8)) == 0 {
+                        let to_sq = pos_to_sq(8, 7);
+                        list.push(CompactMove::new(
+                            king_sq,
+                            to_sq,
+                            PieceType::King,
+                            MoveType::CastleKingside,
+                            None,
+                        ));
+                    }
+                }
+                // Queenside castling (e8 -> c8)
+                if self.board.castle_queenside_black {
+                    let b8 = sq_to_bb(pos_to_sq(8, 2));
+                    let c8 = sq_to_bb(pos_to_sq(8, 3));
+                    let d8 = sq_to_bb(pos_to_sq(8, 4));
+                    let rook_sq = sq_to_bb(pos_to_sq(8, 1));
+                    let rook_bb = self.board.get_piece_bb(Color::Black, PieceType::Rook);
+
+                    if (rook_bb & rook_sq) != 0 && (occupied & (b8 | c8 | d8)) == 0 {
+                        let to_sq = pos_to_sq(8, 3);
+                        list.push(CompactMove::new(
+                            king_sq,
+                            to_sq,
+                            PieceType::King,
+                            MoveType::CastleQueenside,
+                            None,
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Rook moves
+    // =========================================================================
+
+    #[inline]
+    fn generate_rook_moves(&self, list: &mut MoveList, occupied: u64, friendly: u64, enemy: u64) {
+        let rooks = self.board.get_piece_bb(self.color, PieceType::Rook);
+
+        for from_sq in BitboardIter(rooks) {
+            let attacks = rook_attacks(from_sq, occupied);
+            let targets = attacks & !friendly;
+
+            for to_sq in BitboardIter(targets) {
+                let captured = self.captured_piece_type(to_sq, enemy);
+                let move_type = if captured.is_some() {
+                    MoveType::Capture
+                } else {
+                    MoveType::Quiet
+                };
+                list.push(CompactMove::new(
+                    from_sq,
+                    to_sq,
+                    PieceType::Rook,
+                    move_type,
+                    captured,
+                ));
+            }
+        }
+    }
+
+    #[inline]
+    fn generate_rook_captures(&self, list: &mut MoveList, occupied: u64, enemy: u64) {
+        let rooks = self.board.get_piece_bb(self.color, PieceType::Rook);
+
+        for from_sq in BitboardIter(rooks) {
+            let attacks = rook_attacks(from_sq, occupied);
+            let targets = attacks & enemy;
+
+            for to_sq in BitboardIter(targets) {
+                let captured = self.captured_piece_type(to_sq, enemy);
+                list.push(CompactMove::new(
+                    from_sq,
+                    to_sq,
+                    PieceType::Rook,
+                    MoveType::Capture,
+                    captured,
+                ));
+            }
+        }
+    }
+
+    #[inline]
+    fn generate_rook_quiets(&self, list: &mut MoveList, occupied: u64, friendly: u64) {
+        let rooks = self.board.get_piece_bb(self.color, PieceType::Rook);
+        let enemy = self.board.get_pieces_bb(self.color.other_color());
+
+        for from_sq in BitboardIter(rooks) {
+            let attacks = rook_attacks(from_sq, occupied);
+            let targets = attacks & !friendly & !enemy;
+
+            for to_sq in BitboardIter(targets) {
+                list.push(CompactMove::new_quiet(from_sq, to_sq, PieceType::Rook));
+            }
+        }
+    }
+
+    // =========================================================================
+    // Bishop moves
+    // =========================================================================
+
+    #[inline]
+    fn generate_bishop_moves(&self, list: &mut MoveList, occupied: u64, friendly: u64, enemy: u64) {
+        let bishops = self.board.get_piece_bb(self.color, PieceType::Bishop);
+
+        for from_sq in BitboardIter(bishops) {
+            let attacks = bishop_attacks(from_sq, occupied);
+            let targets = attacks & !friendly;
+
+            for to_sq in BitboardIter(targets) {
+                let captured = self.captured_piece_type(to_sq, enemy);
+                let move_type = if captured.is_some() {
+                    MoveType::Capture
+                } else {
+                    MoveType::Quiet
+                };
+                list.push(CompactMove::new(
+                    from_sq,
+                    to_sq,
+                    PieceType::Bishop,
+                    move_type,
+                    captured,
+                ));
+            }
+        }
+    }
+
+    #[inline]
+    fn generate_bishop_captures(&self, list: &mut MoveList, occupied: u64, enemy: u64) {
+        let bishops = self.board.get_piece_bb(self.color, PieceType::Bishop);
+
+        for from_sq in BitboardIter(bishops) {
+            let attacks = bishop_attacks(from_sq, occupied);
+            let targets = attacks & enemy;
+
+            for to_sq in BitboardIter(targets) {
+                let captured = self.captured_piece_type(to_sq, enemy);
+                list.push(CompactMove::new(
+                    from_sq,
+                    to_sq,
+                    PieceType::Bishop,
+                    MoveType::Capture,
+                    captured,
+                ));
+            }
+        }
+    }
+
+    #[inline]
+    fn generate_bishop_quiets(&self, list: &mut MoveList, occupied: u64, friendly: u64) {
+        let bishops = self.board.get_piece_bb(self.color, PieceType::Bishop);
+        let enemy = self.board.get_pieces_bb(self.color.other_color());
+
+        for from_sq in BitboardIter(bishops) {
+            let attacks = bishop_attacks(from_sq, occupied);
+            let targets = attacks & !friendly & !enemy;
+
+            for to_sq in BitboardIter(targets) {
+                list.push(CompactMove::new_quiet(from_sq, to_sq, PieceType::Bishop));
+            }
+        }
+    }
+
+    // =========================================================================
+    // Queen moves
+    // =========================================================================
+
+    #[inline]
+    fn generate_queen_moves(&self, list: &mut MoveList, occupied: u64, friendly: u64, enemy: u64) {
+        let queens = self.board.get_piece_bb(self.color, PieceType::Queen);
+
+        for from_sq in BitboardIter(queens) {
+            let attacks = queen_attacks(from_sq, occupied);
+            let targets = attacks & !friendly;
+
+            for to_sq in BitboardIter(targets) {
+                let captured = self.captured_piece_type(to_sq, enemy);
+                let move_type = if captured.is_some() {
+                    MoveType::Capture
+                } else {
+                    MoveType::Quiet
+                };
+                list.push(CompactMove::new(
+                    from_sq,
+                    to_sq,
+                    PieceType::Queen,
+                    move_type,
+                    captured,
+                ));
+            }
+        }
+    }
+
+    #[inline]
+    fn generate_queen_captures(&self, list: &mut MoveList, occupied: u64, enemy: u64) {
+        let queens = self.board.get_piece_bb(self.color, PieceType::Queen);
+
+        for from_sq in BitboardIter(queens) {
+            let attacks = queen_attacks(from_sq, occupied);
+            let targets = attacks & enemy;
+
+            for to_sq in BitboardIter(targets) {
+                let captured = self.captured_piece_type(to_sq, enemy);
+                list.push(CompactMove::new(
+                    from_sq,
+                    to_sq,
+                    PieceType::Queen,
+                    MoveType::Capture,
+                    captured,
+                ));
+            }
+        }
+    }
+
+    #[inline]
+    fn generate_queen_quiets(&self, list: &mut MoveList, occupied: u64, friendly: u64) {
+        let queens = self.board.get_piece_bb(self.color, PieceType::Queen);
+        let enemy = self.board.get_pieces_bb(self.color.other_color());
+
+        for from_sq in BitboardIter(queens) {
+            let attacks = queen_attacks(from_sq, occupied);
+            let targets = attacks & !friendly & !enemy;
+
+            for to_sq in BitboardIter(targets) {
+                list.push(CompactMove::new_quiet(from_sq, to_sq, PieceType::Queen));
+            }
+        }
+    }
+
+    // =========================================================================
+    // Pawn moves
+    // =========================================================================
+
+    #[inline]
+    fn generate_pawn_moves(&self, list: &mut MoveList, occupied: u64, enemy: u64) {
+        self.generate_pawn_captures(list, enemy);
+        self.generate_pawn_quiets(list, occupied);
+    }
+
+    #[inline]
+    fn generate_pawn_captures(&self, list: &mut MoveList, enemy: u64) {
+        let pawns = self.board.get_piece_bb(self.color, PieceType::Pawn);
+        let color_idx = self.color as usize;
+        let promo_rank = if self.color == Color::White { 7 } else { 0 }; // 0-indexed
+
+        for from_sq in BitboardIter(pawns) {
+            let attacks = ATTACK_TABLES.pawn[color_idx][from_sq as usize];
+            let targets = attacks & enemy;
+
+            for to_sq in BitboardIter(targets) {
+                let captured = self.captured_piece_type(to_sq, enemy);
+                let to_rank = to_sq / 8;
+
+                if to_rank == promo_rank {
+                    // Promotion captures
+                    list.push(CompactMove::new(
+                        from_sq,
+                        to_sq,
+                        PieceType::Pawn,
+                        MoveType::PromoCaptureQueen,
+                        captured,
+                    ));
+                    list.push(CompactMove::new(
+                        from_sq,
+                        to_sq,
+                        PieceType::Pawn,
+                        MoveType::PromoCaptureRook,
+                        captured,
+                    ));
+                    list.push(CompactMove::new(
+                        from_sq,
+                        to_sq,
+                        PieceType::Pawn,
+                        MoveType::PromoCaptureBishop,
+                        captured,
+                    ));
+                    list.push(CompactMove::new(
+                        from_sq,
+                        to_sq,
+                        PieceType::Pawn,
+                        MoveType::PromoCaptureKnight,
+                        captured,
+                    ));
+                } else {
+                    list.push(CompactMove::new(
+                        from_sq,
+                        to_sq,
+                        PieceType::Pawn,
+                        MoveType::Capture,
+                        captured,
+                    ));
+                }
+            }
+
+            // En passant
+            if let Some(ep_target) = self.board.en_passant_target {
+                let ep_sq = CompactMove::pos_to_sq(&ep_target);
+                let ep_bb = sq_to_bb(ep_sq);
+                if (attacks & ep_bb) != 0 {
+                    // Captured pawn is on our rank at the ep file
+                    list.push(CompactMove::new(
+                        from_sq,
+                        ep_sq,
+                        PieceType::Pawn,
+                        MoveType::EnPassantCapture,
+                        Some(PieceType::Pawn),
+                    ));
+                }
+            }
+        }
+    }
+
+    #[inline]
+    fn generate_pawn_quiets(&self, list: &mut MoveList, occupied: u64) {
+        let pawns = self.board.get_piece_bb(self.color, PieceType::Pawn);
+        let empty = !occupied;
+        let (start_rank, promo_rank, push_shift): (u8, u8, i8) = match self.color {
+            Color::White => (1, 7, 8),  // rank 2 (idx 1), rank 8 (idx 7), +8 squares
+            Color::Black => (6, 0, -8), // rank 7 (idx 6), rank 1 (idx 0), -8 squares
+        };
+
+        for from_sq in BitboardIter(pawns) {
+            let from_rank = from_sq / 8;
+
+            // Single push
+            let to_sq = (from_sq as i8 + push_shift) as u8;
+            let to_bb = sq_to_bb(to_sq);
+
+            if (empty & to_bb) != 0 {
+                let to_rank = to_sq / 8;
+                if to_rank == promo_rank {
+                    // Quiet promotions
+                    list.push(CompactMove::new(
+                        from_sq,
+                        to_sq,
+                        PieceType::Pawn,
+                        MoveType::PromoQueen,
+                        None,
+                    ));
+                    list.push(CompactMove::new(
+                        from_sq,
+                        to_sq,
+                        PieceType::Pawn,
+                        MoveType::PromoRook,
+                        None,
+                    ));
+                    list.push(CompactMove::new(
+                        from_sq,
+                        to_sq,
+                        PieceType::Pawn,
+                        MoveType::PromoBishop,
+                        None,
+                    ));
+                    list.push(CompactMove::new(
+                        from_sq,
+                        to_sq,
+                        PieceType::Pawn,
+                        MoveType::PromoKnight,
+                        None,
+                    ));
+                } else {
+                    list.push(CompactMove::new_quiet(from_sq, to_sq, PieceType::Pawn));
+
+                    // Double push from starting rank
+                    if from_rank == start_rank {
+                        let to_sq2 = (to_sq as i8 + push_shift) as u8;
+                        let to_bb2 = sq_to_bb(to_sq2);
+
+                        if (empty & to_bb2) != 0 {
+                            list.push(CompactMove::new(
+                                from_sq,
+                                to_sq2,
+                                PieceType::Pawn,
+                                MoveType::DoublePawnPush,
+                                None,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Helper methods
+    // =========================================================================
+
+    /// Get the piece type at a square if it's an enemy piece.
+    #[inline(always)]
+    fn captured_piece_type(&self, sq: u8, enemy: u64) -> Option<PieceType> {
+        let sq_bb = sq_to_bb(sq);
+        if (enemy & sq_bb) == 0 {
+            return None;
+        }
+
+        let opp = self.color.other_color();
+        if (self.board.get_piece_bb(opp, PieceType::Pawn) & sq_bb) != 0 {
+            return Some(PieceType::Pawn);
+        }
+        if (self.board.get_piece_bb(opp, PieceType::Knight) & sq_bb) != 0 {
+            return Some(PieceType::Knight);
+        }
+        if (self.board.get_piece_bb(opp, PieceType::Bishop) & sq_bb) != 0 {
+            return Some(PieceType::Bishop);
+        }
+        if (self.board.get_piece_bb(opp, PieceType::Rook) & sq_bb) != 0 {
+            return Some(PieceType::Rook);
+        }
+        if (self.board.get_piece_bb(opp, PieceType::Queen) & sq_bb) != 0 {
+            return Some(PieceType::Queen);
+        }
+        if (self.board.get_piece_bb(opp, PieceType::King) & sq_bb) != 0 {
+            return Some(PieceType::King);
+        }
+        None
     }
 }
 

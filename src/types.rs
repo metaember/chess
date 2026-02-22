@@ -585,3 +585,391 @@ pub struct NullMoveUndo {
     /// Previous Zobrist hash
     pub zobrist_hash: u64,
 }
+
+// =============================================================================
+// CompactMove - 4-byte move representation for high-performance search
+// =============================================================================
+
+/// Move type flags for CompactMove encoding
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum MoveType {
+    Quiet = 0,
+    DoublePawnPush = 1,
+    CastleKingside = 2,
+    CastleQueenside = 3,
+    Capture = 4,
+    EnPassantCapture = 5,
+    // 6, 7 reserved
+    PromoQueen = 8,
+    PromoRook = 9,
+    PromoBishop = 10,
+    PromoKnight = 11,
+    PromoCaptureQueen = 12,
+    PromoCaptureRook = 13,
+    PromoCaptureBishop = 14,
+    PromoCaptureKnight = 15,
+}
+
+impl MoveType {
+    #[inline(always)]
+    pub fn is_capture(self) -> bool {
+        matches!(
+            self,
+            MoveType::Capture
+                | MoveType::EnPassantCapture
+                | MoveType::PromoCaptureQueen
+                | MoveType::PromoCaptureRook
+                | MoveType::PromoCaptureBishop
+                | MoveType::PromoCaptureKnight
+        )
+    }
+
+    #[inline(always)]
+    pub fn is_promotion(self) -> bool {
+        (self as u8) >= 8
+    }
+
+    #[inline(always)]
+    pub fn promotion_piece_type(self) -> Option<PieceType> {
+        match self {
+            MoveType::PromoQueen | MoveType::PromoCaptureQueen => Some(PieceType::Queen),
+            MoveType::PromoRook | MoveType::PromoCaptureRook => Some(PieceType::Rook),
+            MoveType::PromoBishop | MoveType::PromoCaptureBishop => Some(PieceType::Bishop),
+            MoveType::PromoKnight | MoveType::PromoCaptureKnight => Some(PieceType::Knight),
+            _ => None,
+        }
+    }
+
+    #[inline(always)]
+    fn from_u8(val: u8) -> Self {
+        match val {
+            0 => MoveType::Quiet,
+            1 => MoveType::DoublePawnPush,
+            2 => MoveType::CastleKingside,
+            3 => MoveType::CastleQueenside,
+            4 => MoveType::Capture,
+            5 => MoveType::EnPassantCapture,
+            8 => MoveType::PromoQueen,
+            9 => MoveType::PromoRook,
+            10 => MoveType::PromoBishop,
+            11 => MoveType::PromoKnight,
+            12 => MoveType::PromoCaptureQueen,
+            13 => MoveType::PromoCaptureRook,
+            14 => MoveType::PromoCaptureBishop,
+            15 => MoveType::PromoCaptureKnight,
+            _ => MoveType::Quiet, // fallback
+        }
+    }
+}
+
+/// Compact 4-byte move representation for high-performance search.
+///
+/// Bit layout (32 bits total):
+/// - bits 0-5:   from square (0-63)
+/// - bits 6-11:  to square (0-63)
+/// - bits 12-15: move type (MoveType enum)
+/// - bits 16-18: moving piece type (0-5)
+/// - bits 19-21: captured piece type (0-5, or 7=none)
+/// - bits 22-31: unused (reserved)
+///
+/// This is designed to fit in a register and avoid heap allocations.
+/// The search copies these by value (4 bytes) instead of passing references.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct CompactMove(u32);
+
+impl CompactMove {
+    /// A null/invalid move (used as sentinel)
+    pub const NONE: Self = Self(0xFFFFFFFF);
+
+    // Bit masks and shifts
+    const FROM_MASK: u32 = 0x3F;         // bits 0-5
+    const TO_SHIFT: u32 = 6;
+    const TO_MASK: u32 = 0x3F << 6;      // bits 6-11
+    const TYPE_SHIFT: u32 = 12;
+    const TYPE_MASK: u32 = 0xF << 12;    // bits 12-15
+    const PIECE_SHIFT: u32 = 16;
+    const PIECE_MASK: u32 = 0x7 << 16;   // bits 16-18
+    const CAPTURED_SHIFT: u32 = 19;
+    const CAPTURED_MASK: u32 = 0x7 << 19; // bits 19-21
+    const NO_CAPTURE: u32 = 7;
+
+    /// Create a new compact move
+    #[inline(always)]
+    pub fn new(
+        from_sq: u8,
+        to_sq: u8,
+        piece_type: PieceType,
+        move_type: MoveType,
+        captured: Option<PieceType>,
+    ) -> Self {
+        let captured_bits = match captured {
+            Some(pt) => pt as u32,
+            None => Self::NO_CAPTURE,
+        };
+        Self(
+            (from_sq as u32 & Self::FROM_MASK)
+                | ((to_sq as u32) << Self::TO_SHIFT)
+                | ((move_type as u32) << Self::TYPE_SHIFT)
+                | ((piece_type as u32) << Self::PIECE_SHIFT)
+                | (captured_bits << Self::CAPTURED_SHIFT),
+        )
+    }
+
+    /// Create a quiet move (no capture, no special flags)
+    #[inline(always)]
+    pub fn new_quiet(from_sq: u8, to_sq: u8, piece_type: PieceType) -> Self {
+        Self::new(from_sq, to_sq, piece_type, MoveType::Quiet, None)
+    }
+
+    /// Create a capture move
+    #[inline(always)]
+    pub fn new_capture(
+        from_sq: u8,
+        to_sq: u8,
+        piece_type: PieceType,
+        captured: PieceType,
+    ) -> Self {
+        Self::new(from_sq, to_sq, piece_type, MoveType::Capture, Some(captured))
+    }
+
+    /// Get the source square (0-63)
+    #[inline(always)]
+    pub fn from_sq(self) -> u8 {
+        (self.0 & Self::FROM_MASK) as u8
+    }
+
+    /// Get the destination square (0-63)
+    #[inline(always)]
+    pub fn to_sq(self) -> u8 {
+        ((self.0 & Self::TO_MASK) >> Self::TO_SHIFT) as u8
+    }
+
+    /// Get the move type
+    #[inline(always)]
+    pub fn move_type(self) -> MoveType {
+        MoveType::from_u8(((self.0 & Self::TYPE_MASK) >> Self::TYPE_SHIFT) as u8)
+    }
+
+    /// Get the moving piece type
+    #[inline(always)]
+    pub fn piece_type(self) -> PieceType {
+        match ((self.0 & Self::PIECE_MASK) >> Self::PIECE_SHIFT) as u8 {
+            0 => PieceType::Pawn,
+            1 => PieceType::Rook,
+            2 => PieceType::Knight,
+            3 => PieceType::Bishop,
+            4 => PieceType::Queen,
+            _ => PieceType::King,
+        }
+    }
+
+    /// Check if this is a capture
+    #[inline(always)]
+    pub fn is_capture(self) -> bool {
+        self.move_type().is_capture()
+    }
+
+    /// Get the captured piece type (if any)
+    #[inline(always)]
+    pub fn captured_type(self) -> Option<PieceType> {
+        let bits = ((self.0 & Self::CAPTURED_MASK) >> Self::CAPTURED_SHIFT) as u8;
+        if bits >= Self::NO_CAPTURE as u8 {
+            None
+        } else {
+            Some(match bits {
+                0 => PieceType::Pawn,
+                1 => PieceType::Rook,
+                2 => PieceType::Knight,
+                3 => PieceType::Bishop,
+                4 => PieceType::Queen,
+                _ => PieceType::King,
+            })
+        }
+    }
+
+    /// Check if this is a promotion
+    #[inline(always)]
+    pub fn is_promotion(self) -> bool {
+        self.move_type().is_promotion()
+    }
+
+    /// Get the promotion piece type (if any)
+    #[inline(always)]
+    pub fn promotion_type(self) -> Option<PieceType> {
+        self.move_type().promotion_piece_type()
+    }
+
+    /// Check if this is a castling move
+    #[inline(always)]
+    pub fn is_castle(self) -> bool {
+        matches!(
+            self.move_type(),
+            MoveType::CastleKingside | MoveType::CastleQueenside
+        )
+    }
+
+    /// Check if this is an en passant capture
+    #[inline(always)]
+    pub fn is_en_passant(self) -> bool {
+        self.move_type() == MoveType::EnPassantCapture
+    }
+
+    /// Convert a Position (rank 1-8, file 1-8) to a square index (0-63)
+    #[inline(always)]
+    pub fn pos_to_sq(pos: &Position) -> u8 {
+        ((pos.rank - 1) * 8 + (pos.file - 1)) as u8
+    }
+
+    /// Convert a square index (0-63) to a Position (rank 1-8, file 1-8)
+    #[inline(always)]
+    pub fn sq_to_pos(sq: u8) -> Position {
+        Position {
+            rank: (sq / 8) + 1,
+            file: (sq % 8) + 1,
+        }
+    }
+
+    /// Convert from the existing Move type (for compatibility)
+    pub fn from_move(mv: &Move) -> Self {
+        let from_sq = Self::pos_to_sq(&mv.from);
+        let to_sq = Self::pos_to_sq(&mv.to);
+        let piece_type = mv.piece.piece_type;
+        let captured = mv.captured.map(|p| p.piece_type);
+
+        let move_type = match mv.move_flag {
+            MoveFlag::Regular => {
+                if captured.is_some() {
+                    MoveType::Capture
+                } else {
+                    MoveType::Quiet
+                }
+            }
+            MoveFlag::CastleKingside => MoveType::CastleKingside,
+            MoveFlag::CastleQueenside => MoveType::CastleQueenside,
+            MoveFlag::DoublePawnPush(_) => MoveType::DoublePawnPush,
+            MoveFlag::EnPassantCapture => MoveType::EnPassantCapture,
+            MoveFlag::Promotion(promo) => {
+                let is_capture = captured.is_some();
+                match (promo, is_capture) {
+                    (PieceType::Queen, false) => MoveType::PromoQueen,
+                    (PieceType::Rook, false) => MoveType::PromoRook,
+                    (PieceType::Bishop, false) => MoveType::PromoBishop,
+                    (PieceType::Knight, false) => MoveType::PromoKnight,
+                    (PieceType::Queen, true) => MoveType::PromoCaptureQueen,
+                    (PieceType::Rook, true) => MoveType::PromoCaptureRook,
+                    (PieceType::Bishop, true) => MoveType::PromoCaptureBishop,
+                    (PieceType::Knight, true) => MoveType::PromoCaptureKnight,
+                    _ => MoveType::PromoQueen, // fallback
+                }
+            }
+        };
+
+        Self::new(from_sq, to_sq, piece_type, move_type, captured)
+    }
+
+    /// Convert to the existing Move type (for UCI output, display, etc.)
+    /// Requires the board to reconstruct full piece information
+    pub fn to_move(self, board: &Board) -> Move {
+        let from_pos = Self::sq_to_pos(self.from_sq());
+        let to_pos = Self::sq_to_pos(self.to_sq());
+
+        let piece = board
+            .piece_at_position(&from_pos)
+            .cloned()
+            .unwrap_or(Piece {
+                color: Color::White,
+                piece_type: self.piece_type(),
+                position: from_pos,
+            });
+
+        let captured = match self.captured_type() {
+            Some(cap_type) => board.piece_at_position(&to_pos).cloned().or_else(|| {
+                // For en passant, the captured piece is not at the destination
+                if self.is_en_passant() {
+                    let cap_pos = Position {
+                        rank: from_pos.rank,
+                        file: to_pos.file,
+                    };
+                    board.piece_at_position(&cap_pos).cloned()
+                } else {
+                    Some(Piece {
+                        color: piece.color.other_color(),
+                        piece_type: cap_type,
+                        position: to_pos,
+                    })
+                }
+            }),
+            None => None,
+        };
+
+        let move_flag = match self.move_type() {
+            MoveType::Quiet => MoveFlag::Regular,
+            MoveType::DoublePawnPush => MoveFlag::DoublePawnPush(Position {
+                rank: match piece.color {
+                    Color::White => 3,
+                    Color::Black => 6,
+                },
+                file: from_pos.file,
+            }),
+            MoveType::CastleKingside => MoveFlag::CastleKingside,
+            MoveType::CastleQueenside => MoveFlag::CastleQueenside,
+            MoveType::Capture => MoveFlag::Regular,
+            MoveType::EnPassantCapture => MoveFlag::EnPassantCapture,
+            MoveType::PromoQueen | MoveType::PromoCaptureQueen => {
+                MoveFlag::Promotion(PieceType::Queen)
+            }
+            MoveType::PromoRook | MoveType::PromoCaptureRook => {
+                MoveFlag::Promotion(PieceType::Rook)
+            }
+            MoveType::PromoBishop | MoveType::PromoCaptureBishop => {
+                MoveFlag::Promotion(PieceType::Bishop)
+            }
+            MoveType::PromoKnight | MoveType::PromoCaptureKnight => {
+                MoveFlag::Promotion(PieceType::Knight)
+            }
+        };
+
+        Move {
+            piece,
+            from: from_pos,
+            to: to_pos,
+            captured,
+            move_flag,
+        }
+    }
+
+    /// Convert to UCI notation (e.g., "e2e4", "e7e8q")
+    pub fn to_uci(self) -> String {
+        let from = Self::sq_to_pos(self.from_sq());
+        let to = Self::sq_to_pos(self.to_sq());
+        let mut s = format!("{}{}", from.to_algebraic(), to.to_algebraic());
+        if let Some(promo) = self.promotion_type() {
+            s.push(match promo {
+                PieceType::Queen => 'q',
+                PieceType::Rook => 'r',
+                PieceType::Bishop => 'b',
+                PieceType::Knight => 'n',
+                _ => 'q',
+            });
+        }
+        s
+    }
+}
+
+impl std::fmt::Debug for CompactMove {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if *self == Self::NONE {
+            write!(f, "CompactMove::NONE")
+        } else {
+            write!(
+                f,
+                "CompactMove({} {:?} {:?}->{})",
+                self.to_uci(),
+                self.piece_type(),
+                self.from_sq(),
+                self.to_sq()
+            )
+        }
+    }
+}
