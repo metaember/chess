@@ -1,11 +1,8 @@
 use crate::board::Board;
 use crate::types::{Move, Position, PieceType};
 use rand::prelude::*;
-use std::collections::HashMap;
 use std::fs;
 use std::io::Read;
-
-const NEW_POS_PREFIX: &str = "pos ";
 
 /// Get the book directory path - checks multiple locations
 fn get_book_dir() -> Option<std::path::PathBuf> {
@@ -17,11 +14,13 @@ fn get_book_dir() -> Option<std::path::PathBuf> {
         std::path::PathBuf::from("/Users/charlesbine/Documents/prog/rust_chess/book"),
     ];
 
-    for path in paths {
+    for path in &paths {
         if path.exists() {
-            return Some(path);
+            eprintln!("Book directory found at {:?}", path);
+            return Some(path.clone());
         }
     }
+    eprintln!("Warning: Could not find book directory (tried: {:?})", paths);
     None
 }
 
@@ -34,15 +33,14 @@ struct PolyglotEntry {
 }
 
 pub struct Book {
-    book: HashMap<String, HashMap<String, i32>>,
     polyglot_entries: Vec<PolyglotEntry>,
 }
 
 impl Book {
     pub fn new() -> Self {
-        let book = Book::read_book();
         let polyglot_entries = Book::read_polyglot_book();
-        Self { book, polyglot_entries }
+        eprintln!("Polyglot book: {} entries loaded", polyglot_entries.len());
+        Self { polyglot_entries }
     }
 
     /// Read Polyglot .bin format opening book
@@ -50,7 +48,6 @@ impl Book {
         let mut entries = Vec::new();
 
         let Some(book_dir) = get_book_dir() else {
-            eprintln!("Warning: Could not find book directory");
             return entries;
         };
 
@@ -80,95 +77,6 @@ impl Book {
         }
 
         entries
-    }
-
-    /// Read the book flat file, returning a hash map of fen string
-    /// encoding the board positiong to a hashmap of position(str) and their
-    /// occurances in the game sample.
-    fn read_book() -> HashMap<String, HashMap<String, i32>> {
-        let mut book: HashMap<String, HashMap<String, i32>> = HashMap::new();
-        let mut current_position_map: HashMap<String, i32> = HashMap::new();
-
-        let Some(book_dir) = get_book_dir() else {
-            eprintln!("Warning: Could not find book directory for text book");
-            return book;
-        };
-
-        let book_path = book_dir.join("book.txt");
-        let contents = match fs::read_to_string(&book_path) {
-            Ok(c) => c,
-            Err(_) => {
-                eprintln!("Warning: Could not read text book at {:?}", book_path);
-                return book;
-            }
-        };
-        let mut last_fen: Option<String> = None;
-
-        for line in contents.lines() {
-            if line.starts_with(NEW_POS_PREFIX) {
-                // maybe insert the previous matches
-                if last_fen.is_some() {
-                    book.insert(last_fen.unwrap(), current_position_map);
-                };
-                // start a new position
-                current_position_map = HashMap::new();
-                last_fen = Some(line.trim_start_matches(NEW_POS_PREFIX).to_string());
-            } else {
-                let mut split = line.split_whitespace();
-                let move_str = split.next().unwrap();
-                let count = split.next().unwrap().parse::<i32>().unwrap();
-                current_position_map.insert(move_str.to_string(), count);
-            }
-        }
-        book
-    }
-
-    /// Given a position, return the best moves from the book.
-    /// if a position is not in the book, return None
-    pub fn get_book_moves(&self, current_fen: String) -> Option<&HashMap<String, i32>> {
-        self.book.get(&current_fen)
-    }
-
-    pub fn get_uniformly_selected_move(&self, current_fen: String) -> Option<String> {
-        let book_moves = self.get_book_moves(current_fen);
-        if book_moves.is_none() {
-            return None;
-        }
-        let book_moves = book_moves.unwrap();
-        let total_moves = book_moves.values().len();
-
-        let mut rng = rand::thread_rng();
-        let mut cumulative_move_count = 0;
-        let random_number = rng.gen_range(0..total_moves);
-
-        for (move_str, _) in book_moves {
-            cumulative_move_count += 1;
-            if random_number < cumulative_move_count {
-                return Some(move_str.clone());
-            }
-        }
-        panic!("Should not get here");
-    }
-
-    pub fn get_weighted_selected_move(&self, current_fen: String) -> Option<String> {
-        let book_moves = self.get_book_moves(current_fen);
-        if book_moves.is_none() {
-            return None;
-        }
-        let book_moves = book_moves.unwrap();
-        let total_moves = book_moves.values().sum::<i32>();
-
-        let mut rng = rand::thread_rng();
-        let mut cumulative_move_count = 0;
-        let random_number = rng.gen_range(0..total_moves);
-
-        for (move_str, count) in book_moves {
-            cumulative_move_count += *count;
-            if random_number < cumulative_move_count {
-                return Some(move_str.clone());
-            }
-        }
-        panic!("Should not get here");
     }
 
     /// Decode Polyglot move encoding to algebraic positions
@@ -220,58 +128,52 @@ impl Book {
         moves
     }
 
-    pub fn suggest_move(&self, board: &Board, weighted: bool) -> Option<Move> {
-        // Try Polyglot book first (stronger) - use Polyglot-compatible hash
+    pub fn suggest_move(&self, board: &Board, _weighted: bool) -> Option<Move> {
         let polyglot_hash = board.polyglot_hash();
         let polyglot_moves = self.get_polyglot_moves(polyglot_hash);
 
-        if !polyglot_moves.is_empty() {
-            // Weighted random selection
-            let total_weight: u32 = polyglot_moves.iter().map(|(_, w)| *w as u32).sum();
-
-            if total_weight > 0 {
-                let mut rng = rand::thread_rng();
-                let mut random = rng.gen_range(0..total_weight);
-
-                for (encoded_move, weight) in polyglot_moves {
-                    if random < weight as u32 {
-                        let (from, to, promotion) = self.decode_polyglot_move(encoded_move);
-
-                        // Find matching legal move
-                        let legal_moves = board.get_legal_moves(&board.get_active_color()).ok()?;
-                        for mv in legal_moves {
-                            if mv.from == from && mv.to == to {
-                                // Check promotion matches if applicable
-                                if let Some(promo_type) = promotion {
-                                    if let crate::types::MoveFlag::Promotion(pt) = mv.move_flag {
-                                        if pt == promo_type {
-                                            return Some(mv);
-                                        }
-                                    }
-                                } else if !matches!(mv.move_flag, crate::types::MoveFlag::Promotion(_)) {
-                                    return Some(mv);
-                                }
-                            }
-                        }
-                    }
-                    random -= weight as u32;
-                }
-            }
+        if polyglot_moves.is_empty() {
+            return None;
         }
 
-        // Fallback to old text-based book
-        let move_str = if weighted {
-            self.get_weighted_selected_move(board.to_fen_no_moves().to_string())
-        } else {
-            self.get_uniformly_selected_move(board.to_fen_no_moves().to_string())
-        }?;
+        // Weighted random selection
+        let total_weight: u32 = polyglot_moves.iter().map(|(_, w)| *w as u32).sum();
 
-        let m = Move::from_algebraic(
-            board,
-            move_str.get(0..2).unwrap(),
-            move_str.get(2..4).unwrap(),
-        );
-        Some(m)
+        if total_weight == 0 {
+            return None;
+        }
+
+        let mut rng = rand::thread_rng();
+        let mut random = rng.gen_range(0..total_weight);
+
+        let legal_moves = board.get_legal_moves(&board.get_active_color()).ok()?;
+
+        for (encoded_move, weight) in polyglot_moves {
+            if random < weight as u32 {
+                let (from, to, promotion) = self.decode_polyglot_move(encoded_move);
+
+                // Find matching legal move
+                for mv in &legal_moves {
+                    if mv.from == from && mv.to == to {
+                        // Check promotion matches if applicable
+                        if let Some(promo_type) = promotion {
+                            if let crate::types::MoveFlag::Promotion(pt) = mv.move_flag {
+                                if pt == promo_type {
+                                    return Some(*mv);
+                                }
+                            }
+                        } else if !matches!(mv.move_flag, crate::types::MoveFlag::Promotion(_)) {
+                            return Some(*mv);
+                        }
+                    }
+                }
+                // Selected this entry but couldn't match a legal move - give up
+                return None;
+            }
+            random -= weight as u32;
+        }
+
+        None
     }
 }
 
@@ -279,10 +181,9 @@ impl Book {
 mod tests {
     use super::Book;
     use crate::board::Board;
-    use crate::types::{Move, MoveFlag, PieceType, Position};
+    use crate::types::{PieceType, Position};
     use pretty_assertions::assert_eq;
     use std::collections::HashSet;
-    use std::time::Instant;
 
     // Well-known Polyglot Zobrist hashes (from the specification)
     const STARTING_POSITION_HASH: u64 = 0x463b96181691fc9c;
@@ -450,34 +351,5 @@ mod tests {
             !moves.is_empty(),
             "Polyglot book should have moves in the Ruy Lopez after 5.O-O (hash=0x{hash:016X})"
         );
-    }
-
-    #[test]
-    fn load_text_book() {
-        let now = Instant::now();
-        let book = Book::new();
-        let elapsed = now.elapsed().as_secs_f32();
-        println!("Loaded book in {:.6}s", elapsed);
-        println!("Text book has {} positions", book.book.len());
-
-        for (pos_fen, moves) in &book.book {
-            let b = Board::from_fen_no_moves(pos_fen.as_str());
-            assert_eq!(b.to_fen_no_moves(), *pos_fen);
-
-            for (move_str, count) in moves {
-                let m = Move::from_algebraic(
-                    &b,
-                    move_str.get(0..2).unwrap(),
-                    move_str.get(2..4).unwrap(),
-                );
-                if move_str == "e1g1" || move_str == "e8g8" {
-                    assert_eq!(m.move_flag, MoveFlag::CastleKingside);
-                } else if move_str == "e1c1" || move_str == "e8c8" {
-                    assert_eq!(m.move_flag, MoveFlag::CastleQueenside);
-                }
-                b.execute_move(&m);
-                assert!(*count >= 0);
-            }
-        }
     }
 }

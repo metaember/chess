@@ -22,10 +22,7 @@ engine:
   online_moves:
     max_out_of_book_moves: 10
     lichess_opening_explorer:
-      enabled: true
-      min_time: 20
-      source: "masters"
-      min_games: 10
+      enabled: false
     online_egtb:
       enabled: true
       min_time: 20
