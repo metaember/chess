@@ -43,5 +43,8 @@ RUN sed -i 's/^signal.signal(signal.SIGINT, signal_handler)$/signal.signal(signa
 # Copy config (token will be injected via LICHESS_BOT_TOKEN env var)
 COPY config.lichess-bot.yml ./config.yml
 
+# Copy entrypoint wrapper for smart graceful shutdown
+COPY entrypoint.lichess-bot.py ./entrypoint.py
+
 # LICHESS_BOT_TOKEN env var overrides the token in config.yml
-CMD ["python", "lichess-bot.py", "-v"]
+CMD ["python", "entrypoint.py"]

@@ -15,7 +15,7 @@ services:
       dockerfile: Dockerfile.lichess-bot
     container_name: lichess-bot
     restart: unless-stopped
-    stop_grace_period: 30m
+    stop_grace_period: 2h
     env_file:
       - .env
     environment:
