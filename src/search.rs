@@ -576,11 +576,11 @@ pub fn negamax_with_control(
     // Probe transposition table
     if let Some((score, best_move)) = tt.probe(board.zobrist_hash, max_depth, alpha, beta) {
         return Ok(SearchResult {
-            best_move,
+            best_move: best_move.map(|m| m.to_move(board)),
             best_score: score,
             nodes_searched: 0,
             quiescent_nodes_searched: 0,
-            
+
         });
     }
 
@@ -648,7 +648,7 @@ pub fn negamax_with_control(
         let mut moves_and_scores: Vec<_> = legal_moves
             .iter()
             .map(|m| {
-                let score = if Some(*m) == tt_best_move {
+                let score = if tt_best_move.map(|tm| tm == CompactMove::from_move(m)).unwrap_or(false) {
                     1_000_000
                 } else {
                     guess_move_value(board, m)
@@ -736,14 +736,14 @@ pub fn negamax_with_control(
                         max_depth,
                         evaluation,
                         TTFlag::LowerBound,
-                        Some(*m),
+                        Some(CompactMove::from_move(m)),
                     );
                     return Ok(SearchResult {
                         best_move: Some(*m),
                         best_score: beta,
                         nodes_searched: total_nodes_searched,
                         quiescent_nodes_searched: total_quiescent_nodes_searched,
-                        
+
                     });
                 }
                 alpha = alpha.max(evaluation);
@@ -765,7 +765,7 @@ pub fn negamax_with_control(
         max_depth,
         current_best_score,
         flag,
-        Some(current_best_move),
+        Some(CompactMove::from_move(&current_best_move)),
     );
 
 
@@ -794,11 +794,11 @@ fn negamax_with_tt_mut(
     // Probe transposition table
     if let Some((score, best_move)) = tt.probe(board.zobrist_hash, max_depth, alpha, beta) {
         return Ok(SearchResult {
-            best_move,
+            best_move: best_move.map(|m| m.to_move(board)),
             best_score: score,
             nodes_searched: 0,
             quiescent_nodes_searched: 0,
-            
+
         });
     }
 
@@ -875,7 +875,7 @@ fn negamax_with_tt_mut(
         let mut moves_and_scores: Vec<_> = legal_moves
             .iter()
             .map(|m| {
-                let score = if Some(*m) == tt_best_move {
+                let score = if tt_best_move.map(|tm| tm == CompactMove::from_move(m)).unwrap_or(false) {
                     1_000_000 // TT move gets highest priority
                 } else if m.captured.is_some() {
                     // Captures: MVV-LVA scoring + high base
@@ -1015,7 +1015,7 @@ fn negamax_with_tt_mut(
                         max_depth,
                         evaluation,
                         TTFlag::LowerBound,
-                        Some(*m),
+                        Some(CompactMove::from_move(m)),
                     );
 
                     // Update killer moves and history for quiet moves (non-captures)
@@ -1029,7 +1029,7 @@ fn negamax_with_tt_mut(
                         best_score: beta,
                         nodes_searched: total_nodes_searched,
                         quiescent_nodes_searched: total_quiescent_nodes_searched,
-                        
+
                     });
                 }
                 alpha = alpha.max(evaluation);
@@ -1056,7 +1056,7 @@ fn negamax_with_tt_mut(
         max_depth,
         current_best_score,
         flag,
-        Some(current_best_move),
+        Some(CompactMove::from_move(&current_best_move)),
     );
 
 
@@ -1449,7 +1449,7 @@ pub fn negamax_movepicker(
     // Returns: (score, best_move, nodes_searched, quiescent_nodes)
 
     // Probe transposition table
-    let tt_move = tt.get_best_move(board.zobrist_hash).map(|m| CompactMove::from_move(&m));
+    let tt_move = tt.get_best_move(board.zobrist_hash);
     // Never return TT cutoffs at root (ply 0) — we must always search to get a validated move.
     if ply > 0 {
         if let Some((score, _)) = tt.probe(board.zobrist_hash, max_depth, alpha, beta) {
@@ -1611,7 +1611,7 @@ pub fn negamax_movepicker(
                         max_depth,
                         score,
                         TTFlag::LowerBound,
-                        best_move.map(|m| m.to_move(board)),
+                        best_move,
                     );
 
                     return (beta, best_move, total_nodes, total_qnodes);
@@ -1642,7 +1642,7 @@ pub fn negamax_movepicker(
         max_depth,
         best_score,
         flag,
-        best_move.map(|m| m.to_move(board)),
+        best_move,
     );
 
     (best_score, best_move, total_nodes, total_qnodes)
@@ -1879,7 +1879,7 @@ fn negamax_movepicker_with_control(
     }
 
     // Probe transposition table
-    let tt_move = tt.get_best_move(board.zobrist_hash).map(|m| CompactMove::from_move(&m));
+    let tt_move = tt.get_best_move(board.zobrist_hash);
     // Never return TT cutoffs at root (ply 0) — we must always search to get a validated move.
     if ply > 0 {
         if let Some((score, _)) = tt.probe(board.zobrist_hash, max_depth, alpha, beta) {
@@ -2023,7 +2023,7 @@ fn negamax_movepicker_with_control(
                         max_depth,
                         score,
                         TTFlag::LowerBound,
-                        best_move.map(|m| m.to_move(board)),
+                        best_move,
                     );
 
                     return Ok((beta, best_move, total_nodes, total_qnodes));
@@ -2052,7 +2052,7 @@ fn negamax_movepicker_with_control(
         max_depth,
         best_score,
         flag,
-        best_move.map(|m| m.to_move(board)),
+        best_move,
     );
 
     Ok((best_score, best_move, total_nodes, total_qnodes))

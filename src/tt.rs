@@ -1,4 +1,4 @@
-use crate::types::Move;
+use crate::types::CompactMove;
 
 /// Transposition table entry flags
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,7 +23,7 @@ pub struct TTEntry {
     /// Type of node/bound
     pub flag: TTFlag,
     /// Best move found (for move ordering)
-    pub best_move: Option<Move>,
+    pub best_move: Option<CompactMove>,
 }
 
 impl TTEntry {
@@ -85,7 +85,7 @@ impl TranspositionTable {
         depth: u8,
         alpha: i32,
         beta: i32,
-    ) -> Option<(i32, Option<Move>)> {
+    ) -> Option<(i32, Option<CompactMove>)> {
         let idx = self.index(hash);
         let entry = &self.entries[idx];
 
@@ -122,7 +122,7 @@ impl TranspositionTable {
     }
 
     /// Get the best move from a previous search (for move ordering)
-    pub fn get_best_move(&self, hash: u64) -> Option<Move> {
+    pub fn get_best_move(&self, hash: u64) -> Option<CompactMove> {
         let idx = self.index(hash);
         let entry = &self.entries[idx];
 
@@ -140,7 +140,7 @@ impl TranspositionTable {
         depth: u8,
         score: i32,
         flag: TTFlag,
-        best_move: Option<Move>,
+        best_move: Option<CompactMove>,
     ) {
         let idx = self.index(hash);
         let existing = &self.entries[idx];
@@ -196,20 +196,11 @@ impl TranspositionTable {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Color, Piece, PieceType, Position, MoveFlag};
+    use crate::types::{CompactMove, PieceType, MoveType};
 
-    fn make_test_move() -> Move {
-        Move {
-            piece: Piece {
-                color: Color::White,
-                piece_type: PieceType::Pawn,
-                position: Position { rank: 2, file: 5 },
-            },
-            from: Position { rank: 2, file: 5 },
-            to: Position { rank: 4, file: 5 },
-            captured: None,
-            move_flag: MoveFlag::DoublePawnPush(Position { rank: 3, file: 5 }),
-        }
+    fn make_test_move() -> CompactMove {
+        // e2e4 pawn double push
+        CompactMove::new(12, 28, PieceType::Pawn, MoveType::DoublePawnPush, None)
     }
 
     #[test]
@@ -280,4 +271,5 @@ mod tests {
         tt.clear();
         assert!(tt.probe(hash, 4, -1000, 1000).is_none());
     }
+
 }
