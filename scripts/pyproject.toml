@@ -1,0 +1,11 @@
+[project]
+name = "chess-analysis"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "chess>=1.10",
+    "requests>=2.31",
+]
+
+[tool.uv]
+dev-dependencies = []
