@@ -1445,14 +1445,28 @@ pub fn negamax_movepicker(
     tt: &mut TranspositionTable,
     search_state: &mut SearchState,
     ply: usize,
+    position_history: &mut Vec<u64>,
 ) -> (i32, Option<CompactMove>, i32, i32) {
     // Returns: (score, best_move, nodes_searched, quiescent_nodes)
+
+    // Repetition detection: check if this position already appeared in
+    // the game history or along the current search path
+    if ply > 0 {
+        let current_hash = board.zobrist_hash;
+        if position_history.iter().any(|&h| h == current_hash) {
+            return (0, None, 0, 0);
+        }
+    }
+
+    // Push current position onto the path for descendant repetition checks
+    position_history.push(board.zobrist_hash);
 
     // Probe transposition table
     let tt_move = tt.get_best_move(board.zobrist_hash);
     // Never return TT cutoffs at root (ply 0) — we must always search to get a validated move.
     if ply > 0 {
         if let Some((score, _)) = tt.probe(board.zobrist_hash, max_depth, alpha, beta) {
+            position_history.pop();
             return (score, tt_move, 0, 0);
         }
     }
@@ -1460,6 +1474,7 @@ pub fn negamax_movepicker(
     if max_depth == 0 {
         // Quiescence search at leaf
         let (score, qnodes) = quiescence_movepicker(board, alpha, beta, MAX_QUIESCENCE_DEPTH);
+        position_history.pop();
         return (score, None, 0, qnodes);
     }
 
@@ -1476,11 +1491,13 @@ pub fn negamax_movepicker(
             tt,
             search_state,
             ply + 1,
+            position_history,
         );
         board.unmake_null_move(&undo);
 
         let null_score = -null_score;
         if null_score >= beta {
+            position_history.pop();
             return (beta, None, null_nodes, null_qnodes);
         }
     }
@@ -1561,7 +1578,7 @@ pub fn negamax_movepicker(
 
         // PVS: null window for non-first moves
         let (mut score, _, nodes, qnodes) = if move_count == 1 {
-            negamax_movepicker(new_depth, board, -beta, -alpha, tt, search_state, ply + 1)
+            negamax_movepicker(new_depth, board, -beta, -alpha, tt, search_state, ply + 1, position_history)
         } else {
             // Null window search
             let (null_score, _, null_nodes, null_qnodes) = negamax_movepicker(
@@ -1572,6 +1589,7 @@ pub fn negamax_movepicker(
                 tt,
                 search_state,
                 ply + 1,
+                position_history,
             );
             total_nodes += null_nodes;
             total_qnodes += null_qnodes;
@@ -1579,7 +1597,7 @@ pub fn negamax_movepicker(
             let null_score = -null_score;
             if null_score > alpha && null_score < beta {
                 // Re-search with full window
-                negamax_movepicker(new_depth, board, -beta, -alpha, tt, search_state, ply + 1)
+                negamax_movepicker(new_depth, board, -beta, -alpha, tt, search_state, ply + 1, position_history)
             } else {
                 (-null_score, None, 0, 0)
             }
@@ -1614,6 +1632,7 @@ pub fn negamax_movepicker(
                         best_move,
                     );
 
+                    position_history.pop();
                     return (beta, best_move, total_nodes, total_qnodes);
                 }
             }
@@ -1624,9 +1643,11 @@ pub fn negamax_movepicker(
     if move_count == 0 {
         if in_check {
             // Checkmate - prefer shorter mates
+            position_history.pop();
             return (MIN_SCORE + ply as i32, None, total_nodes, total_qnodes);
         } else {
             // Stalemate
+            position_history.pop();
             return (0, None, total_nodes, total_qnodes);
         }
     }
@@ -1645,6 +1666,7 @@ pub fn negamax_movepicker(
         best_move,
     );
 
+    position_history.pop();
     (best_score, best_move, total_nodes, total_qnodes)
 }
 
@@ -1705,6 +1727,7 @@ pub fn iterative_deepening_movepicker(
     tt: &mut TranspositionTable,
 ) -> SearchResult {
     let mut search_state = SearchState::new();
+    let mut position_history = Vec::new();
     let mut best_move = None;
     let mut best_score = MIN_SCORE;
     let mut total_nodes = 0;
@@ -1721,6 +1744,7 @@ pub fn iterative_deepening_movepicker(
             tt,
             &mut search_state,
             0,
+            &mut position_history,
         );
 
         total_nodes += nodes;
@@ -1752,6 +1776,7 @@ pub fn iterative_deepening_movepicker_with_control(
     tt: &mut TranspositionTable,
     search_state: &mut SearchState,
     control: &SearchControl,
+    position_history: &mut Vec<u64>,
 ) -> Result<SearchResult, SearchAborted> {
     let mut best_move = None;
     let mut best_score = MIN_SCORE;
@@ -1788,6 +1813,7 @@ pub fn iterative_deepening_movepicker_with_control(
             search_state,
             0,
             control,
+            position_history,
         );
 
         let depth_time = depth_start.elapsed().as_millis() as u64;
@@ -1826,6 +1852,7 @@ pub fn aspiration_search_movepicker_with_control(
     search_state: &mut SearchState,
     prev_score: i32,
     control: &SearchControl,
+    position_history: &mut Vec<u64>,
 ) -> Result<(i32, Option<CompactMove>, i32, i32), SearchAborted> {
     const INITIAL_WINDOW: i32 = 50;
     let mut delta = INITIAL_WINDOW;
@@ -1835,6 +1862,7 @@ pub fn aspiration_search_movepicker_with_control(
     loop {
         let result = negamax_movepicker_with_control(
             depth, board, alpha, beta, tt, search_state, 0, control,
+            position_history,
         )?;
 
         let (score, mv, nodes, qnodes) = result;
@@ -1857,6 +1885,7 @@ pub fn aspiration_search_movepicker_with_control(
         if delta > 1000 {
             return negamax_movepicker_with_control(
                 depth, board, MIN_SCORE, MAX_SCORE, tt, search_state, 0, control,
+                position_history,
             );
         }
     }
@@ -1872,17 +1901,31 @@ fn negamax_movepicker_with_control(
     search_state: &mut SearchState,
     ply: usize,
     control: &SearchControl,
+    position_history: &mut Vec<u64>,
 ) -> Result<(i32, Option<CompactMove>, i32, i32), SearchAborted> {
     // Check if we should abort (periodically)
     if ply % 1024 == 0 && control.should_stop() {
         return Err(SearchAborted);
     }
 
+    // Repetition detection: check if this position already appeared in
+    // the game history or along the current search path
+    if ply > 0 {
+        let current_hash = board.zobrist_hash;
+        if position_history.iter().any(|&h| h == current_hash) {
+            return Ok((0, None, 0, 0));
+        }
+    }
+
+    // Push current position onto the path for descendant repetition checks
+    position_history.push(board.zobrist_hash);
+
     // Probe transposition table
     let tt_move = tt.get_best_move(board.zobrist_hash);
     // Never return TT cutoffs at root (ply 0) — we must always search to get a validated move.
     if ply > 0 {
         if let Some((score, _)) = tt.probe(board.zobrist_hash, max_depth, alpha, beta) {
+            position_history.pop();
             return Ok((score, tt_move, 0, 0));
         }
     }
@@ -1890,6 +1933,7 @@ fn negamax_movepicker_with_control(
     // At depth 0, drop into quiescence search
     if max_depth == 0 {
         let (score, nodes) = quiescence_movepicker(board, alpha, beta, 10);
+        position_history.pop();
         return Ok((score, None, 0, nodes));
     }
 
@@ -1912,6 +1956,7 @@ fn negamax_movepicker_with_control(
             search_state,
             ply + 1,
             control,
+            position_history,
         );
         board.unmake_null_move(&undo);
 
@@ -1920,9 +1965,11 @@ fn negamax_movepicker_with_control(
             total_qnodes += null_qnodes;
             let null_score = -null_score;
             if null_score >= beta {
+                position_history.pop();
                 return Ok((beta, None, total_nodes, total_qnodes));
             }
         } else {
+            position_history.pop();
             return Err(SearchAborted);
         }
     }
@@ -1959,10 +2006,12 @@ fn negamax_movepicker_with_control(
         let (mut score, _, nodes, qnodes) = if move_count == 1 {
             match negamax_movepicker_with_control(
                 new_depth, board, -beta, -alpha, tt, search_state, ply + 1, control,
+                position_history,
             ) {
                 Ok(r) => r,
                 Err(e) => {
                     board.unmake_move(&undo);
+                    position_history.pop();
                     return Err(e);
                 }
             }
@@ -1970,10 +2019,12 @@ fn negamax_movepicker_with_control(
             // Null window search
             let (null_score, _, null_nodes, null_qnodes) = match negamax_movepicker_with_control(
                 new_depth, board, -alpha - 1, -alpha, tt, search_state, ply + 1, control,
+                position_history,
             ) {
                 Ok(r) => r,
                 Err(e) => {
                     board.unmake_move(&undo);
+                    position_history.pop();
                     return Err(e);
                 }
             };
@@ -1985,10 +2036,12 @@ fn negamax_movepicker_with_control(
                 // Re-search with full window
                 match negamax_movepicker_with_control(
                     new_depth, board, -beta, -alpha, tt, search_state, ply + 1, control,
+                    position_history,
                 ) {
                     Ok(r) => r,
                     Err(e) => {
                         board.unmake_move(&undo);
+                        position_history.pop();
                         return Err(e);
                     }
                 }
@@ -2026,6 +2079,7 @@ fn negamax_movepicker_with_control(
                         best_move,
                     );
 
+                    position_history.pop();
                     return Ok((beta, best_move, total_nodes, total_qnodes));
                 }
             }
@@ -2035,8 +2089,10 @@ fn negamax_movepicker_with_control(
     // Check for checkmate/stalemate
     if move_count == 0 {
         if in_check {
+            position_history.pop();
             return Ok((MIN_SCORE + ply as i32, None, total_nodes, total_qnodes));
         } else {
+            position_history.pop();
             return Ok((0, None, total_nodes, total_qnodes));
         }
     }
@@ -2055,6 +2111,7 @@ fn negamax_movepicker_with_control(
         best_move,
     );
 
+    position_history.pop();
     Ok((best_score, best_move, total_nodes, total_qnodes))
 }
 
@@ -2609,10 +2666,151 @@ mod test {
                 &mut tt,
                 &mut search_state,
                 0,
+                &mut Vec::new(),
             );
 
             let after = test_board.to_fen();
             assert_eq!(before, after, "Board state should be preserved at depth {}", depth);
+        }
+    }
+
+    #[test]
+    fn repetition_detection_avoids_threefold_game1() {
+        // Game 1 (6N3BgiGZ): bot played g2g3 repeatedly leading to threefold
+        // After 108 moves, position after g3g2 (move 108) already appeared twice before
+        // Engine must NOT play g2g3 again (or if it does, score should be 0 = draw)
+        let moves_str = "e2e4 e7e5 g1f3 g8f6 f3e5 d8e7 d2d4 d7d6 e5f3 f6e4 f1e2 c7c5 b1c3 c5d4 c3d5 e7d8 e1g1 b8c6 f3d4 c8e6 e2c4 c6d4 d1d4 e4f6 f1e1 f8e7 d5f6 e7f6 d4e4 f6e5 c4e6 f7e6 f2f4 e5f6 e4b7 e8g8 e1e6 f6d4 g1f1 d8h4 e6e2 g8h8 g2g3 h4h5 c2c3 d4f6 c1e3 a8d8 b7a7 h5f3 e3f2 h8g8 a7e3 f3h1 f2g1 h1b7 a1d1 g8h8 e3d3 h7h6 d3d5 b7a6 g1e3 f8g8 d1d2 g8e8 f1f2 h8h7 e3d4 e8e2 d2e2 f6d4 c3d4 a6d3 h2h4 d3d1 h4h5 h7h8 f4f5 d8f8 d5e4 d1c1 d4d5 c1g5 g3g4 g5h4 f2g2 f8c8 b2b4 c8f8 b4b5 f8b8 a2a4 h4g5 e4b4 g5d8 e2e6 b8c8 e6d6 c8c2 g2g3 c2c3 g3g2 c3c2 g2g3 c2c3 g3g2 c3c2";
+        let moves: Vec<&str> = moves_str.split_whitespace().collect();
+
+        let mut board = Board::new();
+        let mut position_history: Vec<u64> = vec![board.zobrist_hash];
+
+        for (i, move_str) in moves.iter().enumerate() {
+            let legal_moves = board.get_legal_moves(&board.get_active_color()).unwrap();
+            let from_file = move_str.chars().nth(0).unwrap() as u8 - b'a' + 1;
+            let from_rank = move_str.chars().nth(1).unwrap().to_digit(10).unwrap() as u8;
+            let to_file = move_str.chars().nth(2).unwrap() as u8 - b'a' + 1;
+            let to_rank = move_str.chars().nth(3).unwrap().to_digit(10).unwrap() as u8;
+            let from = crate::types::Position { rank: from_rank, file: from_file };
+            let to = crate::types::Position { rank: to_rank, file: to_file };
+            let mv = legal_moves.iter()
+                .find(|m| m.from == from && m.to == to && !matches!(m.move_flag, crate::types::MoveFlag::Promotion(_)))
+                .unwrap_or_else(|| panic!("No legal move for {} at move {}", move_str, i + 1));
+            board = board.execute_move(mv);
+            position_history.push(board.zobrist_hash);
+        }
+
+        // Current position: White to move after 108 moves (last was c3c2 by Black)
+        // The position after g3g2 (move 108, hash at index 108) matches hashes at [100, 104]
+        // So if White plays g2g3 again, the resulting position will match hashes at [102, 106]
+        // The engine should detect this repetition and avoid g2g3
+
+        let mut tt = crate::tt::TranspositionTable::new(16);
+        let mut search_state = SearchState::new();
+        let control = std::sync::Arc::new(SearchControl::new(30_000, 30_000));
+
+        // Search at depth 8 (same as production)
+        let result = aspiration_search_movepicker_with_control(
+            8, &mut board, &mut tt, &mut search_state, 0, &control,
+            &mut position_history,
+        );
+
+        match result {
+            Ok((_score, mv, _, _)) => {
+                let mv_uci = mv.as_ref().map(|m| m.to_uci()).unwrap_or("none".to_string());
+
+                // The engine must not play g2g3 (the repeating move)
+                assert_ne!(mv_uci, "g2g3", "Engine must not play the repeating move g2g3");
+            }
+            Err(_) => panic!("Search was aborted"),
+        }
+    }
+
+    #[test]
+    fn repetition_detection_avoids_threefold_game2() {
+        // Game 2 (OFj0tHpW): bot (White) kept playing c3b3/b3c3 rook shuffle
+        // Test at move 37 (index 72): White should not play c3b3
+        let moves_str = "d2d4 e7e6 e2e4 d7d5 b1c3 f8b4 e4e5 c7c5 a2a3 b4c3 b2c3 g8e7 d1g4 e7f5 f1d3 h7h5 g4f4 d8c7 c1d2 g7g6 g1f3 b8c6 d4c5 c8d7 e1g1 e8c8 c3c4 d5c4 f4c4 c6e5 f3e5 c7e5 d2c3 e5d5 c3h8 d8h8 c4c3 h8g8 a1e1 d7c6 d3e4 d5d4 c3d4 f5d4 e4c6 d4c6 e1e3 g8d8 f1b1 d8d5 e3c3 c8c7 f2f4 c6d4 c3c4 d4e2 g1f2 e2d4 b1b2 d4c6 f2e3 c6a5 c4c3 a5c6 b2b5 a7a6 b5b2 d5d1 c3b3 c6a5 b3c3 a5c6";
+        let moves: Vec<&str> = moves_str.split_whitespace().collect();
+
+        let mut board = Board::new();
+        let mut position_history: Vec<u64> = vec![board.zobrist_hash];
+
+        for (i, move_str) in moves.iter().enumerate() {
+            let legal_moves = board.get_legal_moves(&board.get_active_color()).unwrap();
+            let from_file = move_str.chars().nth(0).unwrap() as u8 - b'a' + 1;
+            let from_rank = move_str.chars().nth(1).unwrap().to_digit(10).unwrap() as u8;
+            let to_file = move_str.chars().nth(2).unwrap() as u8 - b'a' + 1;
+            let to_rank = move_str.chars().nth(3).unwrap().to_digit(10).unwrap() as u8;
+            let from = crate::types::Position { rank: from_rank, file: from_file };
+            let to = crate::types::Position { rank: to_rank, file: to_file };
+            let mv = legal_moves.iter()
+                .find(|m| m.from == from && m.to == to && !matches!(m.move_flag, crate::types::MoveFlag::Promotion(_)))
+                .unwrap_or_else(|| panic!("No legal move for {} at move {}", move_str, i + 1));
+            board = board.execute_move(mv);
+            position_history.push(board.zobrist_hash);
+        }
+
+        // White to move — should NOT play c3b3 (the repeating move)
+        let mut tt = crate::tt::TranspositionTable::new(16);
+        let mut search_state = SearchState::new();
+        let control = std::sync::Arc::new(SearchControl::new(30_000, 30_000));
+
+        let result = aspiration_search_movepicker_with_control(
+            8, &mut board, &mut tt, &mut search_state, 0, &control,
+            &mut position_history,
+        );
+
+        match result {
+            Ok((_score, mv, _, _)) => {
+                let mv_uci = mv.as_ref().map(|m| m.to_uci()).unwrap_or("none".to_string());
+                assert_ne!(mv_uci, "c3b3", "Engine must not play the repeating rook move c3b3");
+            }
+            Err(_) => panic!("Search was aborted"),
+        }
+    }
+
+    #[test]
+    fn repetition_detection_avoids_threefold_game3() {
+        // Game 3 (LknqEJkx): bot (Black) kept playing d2d4/d4d2 rook shuffle
+        // Test after White plays e2f4 (index 88): Black should not play d2d4
+        let moves_str = "d2d4 g8f6 b1c3 d7d5 c1f4 a7a6 e2e3 e7e6 f1d3 b8d7 e1d2 f8b4 a2a3 b4c3 b2c3 c7c5 g2g4 c5c4 g4g5 c4d3 g5f6 d3c2 d1c2 d7f6 g1f3 f6h5 h1g1 h5f4 e3f4 e8g8 d2e3 b7b5 a3a4 b5a4 c2a4 c8b7 a1b1 a8a7 a4a3 b7c8 b1b8 a7c7 g1b1 d8f6 a3a5 c7e7 a5c5 e7e8 b1b2 f6f5 f3d2 f5h3 f2f3 h3h2 d2e4 h2g1 e4f2 g7g5 f4g5 g1g5 e3e2 e6e5 e2f1 g5c1 f1g2 e5d4 c3d4 c8h3 f2h3 c1c5 d4c5 e8b8 b2a2 f8c8 a2a6 c8c5 a6a4 b8b2 g2g3 b2d2 a4a6 g8g7 a6a1 c5c4 h3f4 d2d4 f4e2 d4d2 e2f4 d2d4 f4e2 d4d2 e2f4";
+        let moves: Vec<&str> = moves_str.split_whitespace().collect();
+
+        let mut board = Board::new();
+        let mut position_history: Vec<u64> = vec![board.zobrist_hash];
+
+        for (i, move_str) in moves.iter().enumerate() {
+            let legal_moves = board.get_legal_moves(&board.get_active_color()).unwrap();
+            let from_file = move_str.chars().nth(0).unwrap() as u8 - b'a' + 1;
+            let from_rank = move_str.chars().nth(1).unwrap().to_digit(10).unwrap() as u8;
+            let to_file = move_str.chars().nth(2).unwrap() as u8 - b'a' + 1;
+            let to_rank = move_str.chars().nth(3).unwrap().to_digit(10).unwrap() as u8;
+            let from = crate::types::Position { rank: from_rank, file: from_file };
+            let to = crate::types::Position { rank: to_rank, file: to_file };
+            let mv = legal_moves.iter()
+                .find(|m| m.from == from && m.to == to && !matches!(m.move_flag, crate::types::MoveFlag::Promotion(_)))
+                .unwrap_or_else(|| panic!("No legal move for {} at move {}", move_str, i + 1));
+            board = board.execute_move(mv);
+            position_history.push(board.zobrist_hash);
+        }
+
+        // Black to move — should NOT play d2d4 (the repeating move)
+        let mut tt = crate::tt::TranspositionTable::new(16);
+        let mut search_state = SearchState::new();
+        let control = std::sync::Arc::new(SearchControl::new(30_000, 30_000));
+
+        let result = aspiration_search_movepicker_with_control(
+            8, &mut board, &mut tt, &mut search_state, 0, &control,
+            &mut position_history,
+        );
+
+        match result {
+            Ok((_score, mv, _, _)) => {
+                let mv_uci = mv.as_ref().map(|m| m.to_uci()).unwrap_or("none".to_string());
+                assert_ne!(mv_uci, "d2d4", "Engine must not play the repeating rook move d2d4");
+            }
+            Err(_) => panic!("Search was aborted"),
         }
     }
 

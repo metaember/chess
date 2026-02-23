@@ -171,7 +171,7 @@ impl ChessEngine {
     /// Pick the best move for the current position
     ///
     /// Tries opening book first, then falls back to search.
-    pub fn pick_move(&mut self, board: &mut Board, options: &SearchOptions) -> Option<EngineResult> {
+    pub fn pick_move(&mut self, board: &mut Board, options: &SearchOptions, position_history: &mut Vec<u64>) -> Option<EngineResult> {
         // Try opening book first
         if let Some(book_move) = self.book.suggest_move(board, true) {
             return Some(EngineResult {
@@ -185,11 +185,11 @@ impl ChessEngine {
         }
 
         // Fall back to search
-        self.search(board, options)
+        self.search(board, options, position_history)
     }
 
     /// Search for the best move (bypasses opening book)
-    pub fn search(&mut self, board: &mut Board, options: &SearchOptions) -> Option<EngineResult> {
+    pub fn search(&mut self, board: &mut Board, options: &SearchOptions, position_history: &mut Vec<u64>) -> Option<EngineResult> {
         let start = Instant::now();
 
         // Simple depth-only search
@@ -268,6 +268,7 @@ impl ChessEngine {
                     &mut self.search_state,
                     prev_score,
                     &control,
+                    position_history,
                 )
             } else {
                 iterative_deepening_movepicker_with_control(
@@ -276,6 +277,7 @@ impl ChessEngine {
                     &mut self.tt,
                     &mut self.search_state,
                     &control,
+                    position_history,
                 )
                 .map(|r| {
                     let compact_move = r.best_move.as_ref().map(|m| CompactMove::from_move(m));
@@ -330,6 +332,7 @@ impl ChessEngine {
         board: &mut Board,
         options: &SearchOptions,
         info_callback: F,
+        position_history: &mut Vec<u64>,
     ) -> Option<EngineResult>
     where
         F: Fn(SearchInfo),
@@ -382,6 +385,7 @@ impl ChessEngine {
                     &mut self.search_state,
                     prev_score,
                     &control,
+                    position_history,
                 )
             } else {
                 iterative_deepening_movepicker_with_control(
@@ -390,6 +394,7 @@ impl ChessEngine {
                     &mut self.tt,
                     &mut self.search_state,
                     &control,
+                    position_history,
                 )
                 .map(|r| {
                     let compact_move = r.best_move.as_ref().map(|m| CompactMove::from_move(m));
@@ -476,7 +481,7 @@ mod tests {
         // Play several moves via pick_move and verify the first ones come from book
         let mut book_moves = 0;
         for ply in 0..10 {
-            let result = engine.pick_move(&mut board, &options);
+            let result = engine.pick_move(&mut board, &options, &mut Vec::new());
             let result = match result {
                 Some(r) => r,
                 None => break, // game over

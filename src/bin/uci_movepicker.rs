@@ -48,6 +48,7 @@ enum SearchThreadResult {
 struct SharedState {
     board: Arc<Mutex<Board>>,
     engine: Arc<Mutex<ChessEngine>>,
+    position_history: Arc<Mutex<Vec<u64>>>,
 }
 
 impl SharedState {
@@ -59,6 +60,7 @@ impl SharedState {
         Self {
             board: Arc::new(Mutex::new(Board::new())),
             engine: Arc::new(Mutex::new(engine)),
+            position_history: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -66,6 +68,7 @@ impl SharedState {
         Self {
             board: Arc::clone(&self.board),
             engine: Arc::clone(&self.engine),
+            position_history: Arc::clone(&self.position_history),
         }
     }
 }
@@ -120,7 +123,8 @@ fn main() {
 
                 "position" => {
                     let mut board = state.board.lock().unwrap();
-                    parse_position(&tokens, &mut board);
+                    let mut history = state.position_history.lock().unwrap();
+                    parse_position(&tokens, &mut board, &mut history);
                 }
 
                 "go" => {
@@ -273,9 +277,10 @@ fn search_thread(
 
                 // Search with info callbacks
                 let result_tx_clone = result_tx.clone();
+                let mut history = state.position_history.lock().unwrap().clone();
                 let result = engine.search_with_info(&mut board, &options, move |info: SearchInfo| {
                     let _ = result_tx_clone.send(SearchThreadResult::Info(info.to_uci()));
-                });
+                }, &mut history);
 
                 if let Some(result) = result {
                     let _ = result_tx.send(SearchThreadResult::BestMove {
@@ -288,7 +293,7 @@ fn search_thread(
     }
 }
 
-fn parse_position(tokens: &[&str], board: &mut Board) {
+fn parse_position(tokens: &[&str], board: &mut Board, position_history: &mut Vec<u64>) {
     let mut idx = 1;
 
     if idx < tokens.len() && tokens[idx] == "startpos" {
@@ -305,12 +310,17 @@ fn parse_position(tokens: &[&str], board: &mut Board) {
         *board = Board::from_fen(&fen);
     }
 
+    // Build position history from the starting position
+    position_history.clear();
+    position_history.push(board.zobrist_hash);
+
     if idx < tokens.len() && tokens[idx] == "moves" {
         idx += 1;
         while idx < tokens.len() {
             let move_str = tokens[idx];
             if let Some(mv) = parse_uci_move(board, move_str) {
                 *board = board.execute_move(&mv);
+                position_history.push(board.zobrist_hash);
             }
             idx += 1;
         }
