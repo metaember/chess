@@ -1537,8 +1537,11 @@ pub fn negamax_movepicker(
 
     // Probe transposition table
     let tt_move = tt.get_best_move(board.zobrist_hash).map(|m| CompactMove::from_move(&m));
-    if let Some((score, _)) = tt.probe(board.zobrist_hash, max_depth, alpha, beta) {
-        return (score, tt_move, 0, 0);
+    // Never return TT cutoffs at root (ply 0) — we must always search to get a validated move.
+    if ply > 0 {
+        if let Some((score, _)) = tt.probe(board.zobrist_hash, max_depth, alpha, beta) {
+            return (score, tt_move, 0, 0);
+        }
     }
 
     if max_depth == 0 {
@@ -1964,8 +1967,11 @@ fn negamax_movepicker_with_control(
 
     // Probe transposition table
     let tt_move = tt.get_best_move(board.zobrist_hash).map(|m| CompactMove::from_move(&m));
-    if let Some((score, _)) = tt.probe(board.zobrist_hash, max_depth, alpha, beta) {
-        return Ok((score, tt_move, 0, 0));
+    // Never return TT cutoffs at root (ply 0) — we must always search to get a validated move.
+    if ply > 0 {
+        if let Some((score, _)) = tt.probe(board.zobrist_hash, max_depth, alpha, beta) {
+            return Ok((score, tt_move, 0, 0));
+        }
     }
 
     // At depth 0, drop into quiescence search

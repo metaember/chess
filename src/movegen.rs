@@ -182,6 +182,13 @@ impl<'a> MoveGenerator<'a> {
     /// Generate castling moves
     fn generate_castling_moves(&mut self, king: &Piece) {
         let occupied = self.board.get_occupied();
+        let opponent_attacks = self.board.get_attack_map(self.color.other_color());
+        let king_bb = position_to_bb(&king.position);
+
+        // Can't castle while in check
+        if (king_bb & opponent_attacks) != 0 {
+            return;
+        }
 
         match self.color {
             Color::White => {
@@ -192,7 +199,10 @@ impl<'a> MoveGenerator<'a> {
                     let g1 = sq_to_bb(pos_to_sq(1, 7));
                     let rook_bb = self.board.get_piece_bb(Color::White, PieceType::Rook);
 
-                    if (rook_bb & rook_sq) != 0 && (occupied & (f1 | g1)) == 0 {
+                    if (rook_bb & rook_sq) != 0
+                        && (occupied & (f1 | g1)) == 0
+                        && (opponent_attacks & (f1 | g1)) == 0
+                    {
                         self.moves.push(Move {
                             piece: *king,
                             from: king.position,
@@ -210,7 +220,11 @@ impl<'a> MoveGenerator<'a> {
                     let d1 = sq_to_bb(pos_to_sq(1, 4));
                     let rook_bb = self.board.get_piece_bb(Color::White, PieceType::Rook);
 
-                    if (rook_bb & rook_sq) != 0 && (occupied & (b1 | c1 | d1)) == 0 {
+                    // b1 only needs to be empty, c1 and d1 must be unattacked
+                    if (rook_bb & rook_sq) != 0
+                        && (occupied & (b1 | c1 | d1)) == 0
+                        && (opponent_attacks & (c1 | d1)) == 0
+                    {
                         self.moves.push(Move {
                             piece: *king,
                             from: king.position,
@@ -229,7 +243,10 @@ impl<'a> MoveGenerator<'a> {
                     let g8 = sq_to_bb(pos_to_sq(8, 7));
                     let rook_bb = self.board.get_piece_bb(Color::Black, PieceType::Rook);
 
-                    if (rook_bb & rook_sq) != 0 && (occupied & (f8 | g8)) == 0 {
+                    if (rook_bb & rook_sq) != 0
+                        && (occupied & (f8 | g8)) == 0
+                        && (opponent_attacks & (f8 | g8)) == 0
+                    {
                         self.moves.push(Move {
                             piece: *king,
                             from: king.position,
@@ -247,7 +264,10 @@ impl<'a> MoveGenerator<'a> {
                     let d8 = sq_to_bb(pos_to_sq(8, 4));
                     let rook_bb = self.board.get_piece_bb(Color::Black, PieceType::Rook);
 
-                    if (rook_bb & rook_sq) != 0 && (occupied & (b8 | c8 | d8)) == 0 {
+                    if (rook_bb & rook_sq) != 0
+                        && (occupied & (b8 | c8 | d8)) == 0
+                        && (opponent_attacks & (c8 | d8)) == 0
+                    {
                         self.moves.push(Move {
                             piece: *king,
                             from: king.position,
@@ -865,6 +885,16 @@ impl<'a> CompactMoveGenerator<'a> {
 
     #[inline]
     fn generate_castling(&self, list: &mut MoveList, occupied: u64, king_sq: u8) {
+        // Get opponent's attack map to check castling legality:
+        // King must not be in check, and must not pass through or land on attacked squares
+        let opponent_attacks = self.board.get_attack_map(self.color.other_color());
+        let king_bb = sq_to_bb(king_sq);
+
+        // Can't castle while in check
+        if (king_bb & opponent_attacks) != 0 {
+            return;
+        }
+
         match self.color {
             Color::White => {
                 // Kingside castling (e1 -> g1)
@@ -874,7 +904,11 @@ impl<'a> CompactMoveGenerator<'a> {
                     let rook_sq = sq_to_bb(pos_to_sq(1, 8));
                     let rook_bb = self.board.get_piece_bb(Color::White, PieceType::Rook);
 
-                    if (rook_bb & rook_sq) != 0 && (occupied & (f1 | g1)) == 0 {
+                    // Squares must be empty AND king must not pass through/land on attacked squares
+                    if (rook_bb & rook_sq) != 0
+                        && (occupied & (f1 | g1)) == 0
+                        && (opponent_attacks & (f1 | g1)) == 0
+                    {
                         let to_sq = pos_to_sq(1, 7);
                         list.push(CompactMove::new(
                             king_sq,
@@ -893,7 +927,12 @@ impl<'a> CompactMoveGenerator<'a> {
                     let rook_sq = sq_to_bb(pos_to_sq(1, 1));
                     let rook_bb = self.board.get_piece_bb(Color::White, PieceType::Rook);
 
-                    if (rook_bb & rook_sq) != 0 && (occupied & (b1 | c1 | d1)) == 0 {
+                    // b1 only needs to be empty (rook passes through), not unattacked
+                    // c1 and d1 must be unattacked (king passes through d1 and lands on c1)
+                    if (rook_bb & rook_sq) != 0
+                        && (occupied & (b1 | c1 | d1)) == 0
+                        && (opponent_attacks & (c1 | d1)) == 0
+                    {
                         let to_sq = pos_to_sq(1, 3);
                         list.push(CompactMove::new(
                             king_sq,
@@ -913,7 +952,10 @@ impl<'a> CompactMoveGenerator<'a> {
                     let rook_sq = sq_to_bb(pos_to_sq(8, 8));
                     let rook_bb = self.board.get_piece_bb(Color::Black, PieceType::Rook);
 
-                    if (rook_bb & rook_sq) != 0 && (occupied & (f8 | g8)) == 0 {
+                    if (rook_bb & rook_sq) != 0
+                        && (occupied & (f8 | g8)) == 0
+                        && (opponent_attacks & (f8 | g8)) == 0
+                    {
                         let to_sq = pos_to_sq(8, 7);
                         list.push(CompactMove::new(
                             king_sq,
@@ -932,7 +974,10 @@ impl<'a> CompactMoveGenerator<'a> {
                     let rook_sq = sq_to_bb(pos_to_sq(8, 1));
                     let rook_bb = self.board.get_piece_bb(Color::Black, PieceType::Rook);
 
-                    if (rook_bb & rook_sq) != 0 && (occupied & (b8 | c8 | d8)) == 0 {
+                    if (rook_bb & rook_sq) != 0
+                        && (occupied & (b8 | c8 | d8)) == 0
+                        && (opponent_attacks & (c8 | d8)) == 0
+                    {
                         let to_sq = pos_to_sq(8, 3);
                         list.push(CompactMove::new(
                             king_sq,
@@ -1352,5 +1397,228 @@ impl PinnedPiece {
                 .filter(|p| p != &piece.position)
                 .collect(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::board::Board;
+
+    /// Helper: check if a specific UCI move string is among moves generated by the compact generator
+    fn compact_has_move(board: &Board, color: Color, from_sq: u8, to_sq: u8, move_type: MoveType) -> bool {
+        let gen = CompactMoveGenerator::new(board, color);
+        let mut list = MoveList::new();
+        gen.generate_all(&mut list);
+        for i in 0..list.len() {
+            let mv = list.get(i);
+            if mv.from_sq() == from_sq && mv.to_sq() == to_sq && mv.move_type() == move_type {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Helper: check if a specific castling move is among moves generated by the old-style generator
+    fn legacy_has_castle(board: &Board, color: Color, flag: MoveFlag) -> bool {
+        let mut gen = MoveGenerator::new(board, color);
+        let moves = gen.collect();
+        moves.iter().any(|m| m.move_flag == flag)
+    }
+
+    // =========================================================================
+    // Castling: can't castle THROUGH check (king passes through attacked square)
+    // =========================================================================
+
+    #[test]
+    fn white_cannot_castle_queenside_through_check_d1_attacked() {
+        // Black rook on d8 attacks d1 — king can't pass through d1 for O-O-O
+        // FEN from actual Lichess game Omivc0UO where the bug caused a resignation
+        let board = Board::from_fen("2kr3r/1p2qp1p/p3bp2/2p1n2Q/4P3/1N2P3/PPP1B1PP/R3K2R w KQ - 5 17");
+        let e1 = pos_to_sq(1, 5);
+        let c1 = pos_to_sq(1, 3);
+        let g1 = pos_to_sq(1, 7);
+
+        // Queenside castling should be blocked (d1 attacked by Rd8)
+        assert!(!compact_has_move(&board, Color::White, e1, c1, MoveType::CastleQueenside),
+            "White should NOT be able to castle queenside when d1 is attacked");
+        assert!(!legacy_has_castle(&board, Color::White, MoveFlag::CastleQueenside),
+            "Legacy gen: White should NOT be able to castle queenside when d1 is attacked");
+
+        // Kingside castling should still be allowed (f1, g1 not attacked)
+        assert!(compact_has_move(&board, Color::White, e1, g1, MoveType::CastleKingside),
+            "White SHOULD be able to castle kingside (f1, g1 clear and unattacked)");
+        assert!(legacy_has_castle(&board, Color::White, MoveFlag::CastleKingside),
+            "Legacy gen: White SHOULD be able to castle kingside");
+    }
+
+    #[test]
+    fn white_cannot_castle_kingside_through_check_f1_attacked() {
+        // Black bishop on c4 attacks f1 (e2 pawn removed to clear diagonal)
+        let board = Board::from_fen("r3k2r/pppppppp/8/8/2b5/8/PPPP1PPP/R3K2R w KQkq - 0 1");
+        let e1 = pos_to_sq(1, 5);
+        let g1 = pos_to_sq(1, 7);
+        let c1 = pos_to_sq(1, 3);
+
+        assert!(!compact_has_move(&board, Color::White, e1, g1, MoveType::CastleKingside),
+            "White should NOT castle kingside when f1 is attacked by Bc4");
+        assert!(!legacy_has_castle(&board, Color::White, MoveFlag::CastleKingside),
+            "Legacy: White should NOT castle kingside when f1 is attacked by Bc4");
+
+        // Queenside should be fine (c1, d1 not attacked by Bc4)
+        assert!(compact_has_move(&board, Color::White, e1, c1, MoveType::CastleQueenside),
+            "White SHOULD be able to castle queenside");
+        assert!(legacy_has_castle(&board, Color::White, MoveFlag::CastleQueenside),
+            "Legacy: White SHOULD be able to castle queenside");
+    }
+
+    #[test]
+    fn black_cannot_castle_queenside_through_check_d8_attacked() {
+        // White rook on d1, d2 and d7 pawns removed so d-file is open — d8 attacked
+        let board = Board::from_fen("r3k2r/ppp1pppp/8/8/8/8/PPP1PPPP/3RK2R b Kkq - 0 1");
+        let e8 = pos_to_sq(8, 5);
+        let c8 = pos_to_sq(8, 3);
+        let g8 = pos_to_sq(8, 7);
+
+        assert!(!compact_has_move(&board, Color::Black, e8, c8, MoveType::CastleQueenside),
+            "Black should NOT castle queenside when d8 is attacked by Rd1");
+        assert!(!legacy_has_castle(&board, Color::Black, MoveFlag::CastleQueenside),
+            "Legacy: Black should NOT castle queenside when d8 is attacked");
+
+        // Kingside should be fine
+        assert!(compact_has_move(&board, Color::Black, e8, g8, MoveType::CastleKingside),
+            "Black SHOULD be able to castle kingside");
+        assert!(legacy_has_castle(&board, Color::Black, MoveFlag::CastleKingside),
+            "Legacy: Black SHOULD be able to castle kingside");
+    }
+
+    #[test]
+    fn black_cannot_castle_kingside_through_check_f8_attacked() {
+        // White bishop on c5, e7+f7 pawns removed so diagonal c5-f8 is clear
+        let board = Board::from_fen("r3k2r/pppp2pp/8/2B5/8/8/PPPPPPPP/R3K2R b KQkq - 0 1");
+        let e8 = pos_to_sq(8, 5);
+        let g8 = pos_to_sq(8, 7);
+
+        assert!(!compact_has_move(&board, Color::Black, e8, g8, MoveType::CastleKingside),
+            "Black should NOT castle kingside when f8 is attacked by Bc5");
+        assert!(!legacy_has_castle(&board, Color::Black, MoveFlag::CastleKingside),
+            "Legacy: Black should NOT castle kingside when f8 is attacked");
+    }
+
+    // =========================================================================
+    // Castling: can't castle WHILE in check
+    // =========================================================================
+
+    #[test]
+    fn white_cannot_castle_while_in_check() {
+        // Black rook on e8 gives check to white king on e1
+        let board = Board::from_fen("4r3/8/8/8/8/8/8/R3K2R w KQ - 0 1");
+        let e1 = pos_to_sq(1, 5);
+        let g1 = pos_to_sq(1, 7);
+        let c1 = pos_to_sq(1, 3);
+
+        assert!(!compact_has_move(&board, Color::White, e1, g1, MoveType::CastleKingside),
+            "Can't castle kingside while in check");
+        assert!(!compact_has_move(&board, Color::White, e1, c1, MoveType::CastleQueenside),
+            "Can't castle queenside while in check");
+        assert!(!legacy_has_castle(&board, Color::White, MoveFlag::CastleKingside));
+        assert!(!legacy_has_castle(&board, Color::White, MoveFlag::CastleQueenside));
+    }
+
+    #[test]
+    fn black_cannot_castle_while_in_check() {
+        // White rook on e1 gives check to black king on e8
+        let board = Board::from_fen("r3k2r/8/8/8/8/8/8/4R3 b kq - 0 1");
+        let e8 = pos_to_sq(8, 5);
+        let g8 = pos_to_sq(8, 7);
+        let c8 = pos_to_sq(8, 3);
+
+        assert!(!compact_has_move(&board, Color::Black, e8, g8, MoveType::CastleKingside),
+            "Can't castle kingside while in check");
+        assert!(!compact_has_move(&board, Color::Black, e8, c8, MoveType::CastleQueenside),
+            "Can't castle queenside while in check");
+        assert!(!legacy_has_castle(&board, Color::Black, MoveFlag::CastleKingside));
+        assert!(!legacy_has_castle(&board, Color::Black, MoveFlag::CastleQueenside));
+    }
+
+    // =========================================================================
+    // Castling: can't castle INTO check (destination square attacked)
+    // =========================================================================
+
+    #[test]
+    fn white_cannot_castle_kingside_into_check() {
+        // Black rook on g8, g2 pawn removed so g-file is open — g1 attacked
+        let board = Board::from_fen("6r1/8/8/8/8/8/PPPPPP1P/R3K2R w KQ - 0 1");
+        let e1 = pos_to_sq(1, 5);
+        let g1 = pos_to_sq(1, 7);
+
+        assert!(!compact_has_move(&board, Color::White, e1, g1, MoveType::CastleKingside),
+            "Can't castle kingside into check (g1 attacked)");
+        assert!(!legacy_has_castle(&board, Color::White, MoveFlag::CastleKingside));
+    }
+
+    #[test]
+    fn white_cannot_castle_queenside_into_check() {
+        // Black rook on c8, c2 pawn removed so c-file is open — c1 attacked
+        let board = Board::from_fen("2r5/8/8/8/8/8/PP1PPPPP/R3K2R w KQ - 0 1");
+        let e1 = pos_to_sq(1, 5);
+        let c1 = pos_to_sq(1, 3);
+
+        assert!(!compact_has_move(&board, Color::White, e1, c1, MoveType::CastleQueenside),
+            "Can't castle queenside into check (c1 attacked)");
+        assert!(!legacy_has_castle(&board, Color::White, MoveFlag::CastleQueenside));
+    }
+
+    // =========================================================================
+    // Castling: b-file attack should NOT block queenside castling
+    // =========================================================================
+
+    #[test]
+    fn white_can_castle_queenside_when_b1_attacked() {
+        // b1 attacked but that's fine — only c1 and d1 matter for the king's path
+        let board = Board::from_fen("1r6/8/8/8/8/8/PPPPPPPP/R3K2R w KQ - 0 1");
+        let e1 = pos_to_sq(1, 5);
+        let c1 = pos_to_sq(1, 3);
+
+        assert!(compact_has_move(&board, Color::White, e1, c1, MoveType::CastleQueenside),
+            "White SHOULD castle queenside even when b1 is attacked (rook passes through, not king)");
+        assert!(legacy_has_castle(&board, Color::White, MoveFlag::CastleQueenside));
+    }
+
+    #[test]
+    fn black_can_castle_queenside_when_b8_attacked() {
+        let board = Board::from_fen("r3k2r/pppppppp/8/8/8/8/8/1R6 b kq - 0 1");
+        let e8 = pos_to_sq(8, 5);
+        let c8 = pos_to_sq(8, 3);
+
+        assert!(compact_has_move(&board, Color::Black, e8, c8, MoveType::CastleQueenside),
+            "Black SHOULD castle queenside even when b8 is attacked");
+        assert!(legacy_has_castle(&board, Color::Black, MoveFlag::CastleQueenside));
+    }
+
+    // =========================================================================
+    // Castling: valid castling should work
+    // =========================================================================
+
+    #[test]
+    fn white_can_castle_both_sides_when_clear() {
+        let board = Board::from_fen("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R w KQkq - 0 1");
+        let e1 = pos_to_sq(1, 5);
+
+        assert!(compact_has_move(&board, Color::White, e1, pos_to_sq(1, 7), MoveType::CastleKingside));
+        assert!(compact_has_move(&board, Color::White, e1, pos_to_sq(1, 3), MoveType::CastleQueenside));
+        assert!(legacy_has_castle(&board, Color::White, MoveFlag::CastleKingside));
+        assert!(legacy_has_castle(&board, Color::White, MoveFlag::CastleQueenside));
+    }
+
+    #[test]
+    fn black_can_castle_both_sides_when_clear() {
+        let board = Board::from_fen("r3k2r/pppppppp/8/8/8/8/PPPPPPPP/R3K2R b KQkq - 0 1");
+        let e8 = pos_to_sq(8, 5);
+
+        assert!(compact_has_move(&board, Color::Black, e8, pos_to_sq(8, 7), MoveType::CastleKingside));
+        assert!(compact_has_move(&board, Color::Black, e8, pos_to_sq(8, 3), MoveType::CastleQueenside));
+        assert!(legacy_has_castle(&board, Color::Black, MoveFlag::CastleKingside));
+        assert!(legacy_has_castle(&board, Color::Black, MoveFlag::CastleQueenside));
     }
 }

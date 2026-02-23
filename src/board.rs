@@ -1645,10 +1645,16 @@ impl Board {
         self.make_move(&full_move)
     }
 
-    /// Check if a pseudo-legal compact move is legal.
-    /// A move is legal if making it doesn't leave our king in check.
+    /// Check if a compact move is legal.
+    /// First checks pseudo-legality (piece exists, correct color, reachable destination),
+    /// then makes the move and verifies the king is not left in check.
     #[inline]
     pub fn is_legal_compact(&mut self, mv: &CompactMove) -> bool {
+        // Must be pseudo-legal first (catches unreachable moves like rook moving diagonally)
+        if !self.is_pseudo_legal_compact(mv) {
+            return false;
+        }
+
         let color = self.active_color;
 
         // Make the move
@@ -1737,7 +1743,6 @@ impl Board {
                 if !can_castle {
                     return false;
                 }
-                // Check that f and g squares are empty
                 let f_pos = Position { rank, file: 6 };
                 let g_pos = Position { rank, file: 7 };
                 if self.piece_at_position(&f_pos).is_some()
@@ -1745,6 +1750,7 @@ impl Board {
                 {
                     return false;
                 }
+                return true; // Castling doesn't need reachability check below
             }
             MoveType::CastleQueenside => {
                 let (can_castle, rank) = match self.active_color {
@@ -1754,7 +1760,6 @@ impl Board {
                 if !can_castle {
                     return false;
                 }
-                // Check that b, c, d squares are empty
                 let b_pos = Position { rank, file: 2 };
                 let c_pos = Position { rank, file: 3 };
                 let d_pos = Position { rank, file: 4 };
@@ -1764,8 +1769,76 @@ impl Board {
                 {
                     return false;
                 }
+                return true; // Castling doesn't need reachability check below
             }
             _ => {}
+        }
+
+        // Verify the piece can actually reach the destination square.
+        // This catches TT hash collisions that produce impossible moves
+        // (e.g., a rook "moving" diagonally).
+        let to_bb = 1u64 << to_sq;
+        let occupied = self.get_occupied();
+
+        match piece.piece_type {
+            PieceType::Pawn => {
+                let color_idx = self.active_color as usize;
+                // Pawn captures (including en passant)
+                if mv.is_capture() || mv.is_en_passant() {
+                    if (ATTACK_TABLES.pawn[color_idx][from_sq as usize] & to_bb) == 0 {
+                        return false;
+                    }
+                } else {
+                    // Pawn pushes: single or double
+                    let (single_step, start_rank): (i8, u8) = match self.active_color {
+                        Color::White => (8, 1), // rank index 1 = rank 2
+                        Color::Black => (-8, 6), // rank index 6 = rank 7
+                    };
+                    let single_target = (from_sq as i8 + single_step) as u8;
+                    if to_sq == single_target {
+                        // Single push - OK (already checked destination is empty)
+                    } else {
+                        // Must be double push
+                        let from_rank = from_sq / 8;
+                        if from_rank != start_rank {
+                            return false;
+                        }
+                        let double_target = (from_sq as i8 + 2 * single_step) as u8;
+                        if to_sq != double_target {
+                            return false;
+                        }
+                        // Intermediate square must also be empty
+                        if (occupied & (1u64 << single_target)) != 0 {
+                            return false;
+                        }
+                    }
+                }
+            }
+            PieceType::Knight => {
+                if (ATTACK_TABLES.knight[from_sq as usize] & to_bb) == 0 {
+                    return false;
+                }
+            }
+            PieceType::Bishop => {
+                if (bishop_attacks(from_sq, occupied) & to_bb) == 0 {
+                    return false;
+                }
+            }
+            PieceType::Rook => {
+                if (rook_attacks(from_sq, occupied) & to_bb) == 0 {
+                    return false;
+                }
+            }
+            PieceType::Queen => {
+                if (queen_attacks(from_sq, occupied) & to_bb) == 0 {
+                    return false;
+                }
+            }
+            PieceType::King => {
+                if (ATTACK_TABLES.king[from_sq as usize] & to_bb) == 0 {
+                    return false;
+                }
+            }
         }
 
         true
@@ -1778,6 +1851,7 @@ mod tests {
         Board, Color, Move, MoveFlag, Piece, PieceType, Position, Status, PIECES_CAN_PROMOTE_TO,
         STARTING_POSITION_FEN,
     };
+    use crate::types::{CompactMove, MoveType};
     use crate::movegen::MoveGenerator;
     use pretty_assertions::assert_eq;
 
@@ -3578,5 +3652,103 @@ mod tests {
 
         assert_eq!(b1.zobrist_hash, b2.zobrist_hash, "Same position should have same hash");
         assert_eq!(b1.to_fen(), b2.to_fen());
+    }
+
+    // =======================================================================
+    // is_pseudo_legal_compact reachability tests
+    // =======================================================================
+    // These verify that TT hash collision moves (impossible piece movements)
+    // are correctly rejected. This prevents the engine from playing illegal
+    // moves like rooks moving diagonally.
+
+    #[test]
+    fn pseudo_legal_rejects_rook_diagonal() {
+        // Position from game QzVbY7vl where h1e4 was produced
+        let board = Board::from_fen("rnb1k1nr/pp1pbppp/2p5/4N3/3Pq3/N3P1P1/PPP2P1P/R1BQKB1R w KQkq - 1 7");
+        // h1 has a rook, e4 has a queen — rook can't move diagonally
+        let rook_diagonal = CompactMove::new_quiet(7, 28, PieceType::Rook); // h1 -> e4
+        assert!(!board.is_pseudo_legal_compact(&rook_diagonal),
+            "Rook should not be able to move diagonally from h1 to e4");
+    }
+
+    #[test]
+    fn pseudo_legal_rejects_bishop_orthogonal() {
+        // Bishop on c1 trying to move to c4 (orthogonal, not diagonal)
+        let board = Board::from_fen("4k3/8/8/8/8/8/8/2B1K3 w - - 0 1");
+        let bishop_ortho = CompactMove::new_quiet(2, 26, PieceType::Bishop); // c1 -> c4
+        assert!(!board.is_pseudo_legal_compact(&bishop_ortho),
+            "Bishop should not be able to move orthogonally");
+    }
+
+    #[test]
+    fn pseudo_legal_rejects_knight_wrong_target() {
+        let board = Board::from_fen("4k3/8/8/8/8/8/8/N3K3 w - - 0 1");
+        // Knight on a1 trying to move to a3 (straight line, not L-shape)
+        let knight_straight = CompactMove::new_quiet(0, 16, PieceType::Knight); // a1 -> a3
+        assert!(!board.is_pseudo_legal_compact(&knight_straight),
+            "Knight should not be able to move in a straight line");
+    }
+
+    #[test]
+    fn pseudo_legal_accepts_valid_rook_move() {
+        let board = Board::from_fen("4k3/8/8/8/8/8/8/R3K3 w Q - 0 1");
+        // Rook on a1 to a4 (vertical, valid)
+        let rook_valid = CompactMove::new_quiet(0, 24, PieceType::Rook); // a1 -> a4
+        assert!(board.is_pseudo_legal_compact(&rook_valid),
+            "Rook should be able to move vertically");
+    }
+
+    #[test]
+    fn pseudo_legal_accepts_valid_bishop_move() {
+        let board = Board::from_fen("4k3/8/8/8/8/8/8/2B1K3 w - - 0 1");
+        // Bishop on c1 to f4 (diagonal, valid)
+        let bishop_valid = CompactMove::new_quiet(2, 29, PieceType::Bishop); // c1 -> f4
+        assert!(board.is_pseudo_legal_compact(&bishop_valid),
+            "Bishop should be able to move diagonally");
+    }
+
+    #[test]
+    fn pseudo_legal_rejects_blocked_rook() {
+        // Rook on a1 blocked by pawn on a2
+        let board = Board::from_fen("4k3/8/8/8/8/8/P7/R3K3 w Q - 0 1");
+        let rook_blocked = CompactMove::new_quiet(0, 24, PieceType::Rook); // a1 -> a4
+        assert!(!board.is_pseudo_legal_compact(&rook_blocked),
+            "Rook should not be able to jump over a blocking pawn");
+    }
+
+    #[test]
+    fn pseudo_legal_rejects_pawn_triple_push() {
+        let board = Board::new();
+        // Pawn on e2 trying to move to e5 (three squares)
+        let pawn_triple = CompactMove::new_quiet(12, 36, PieceType::Pawn); // e2 -> e5
+        assert!(!board.is_pseudo_legal_compact(&pawn_triple),
+            "Pawn should not be able to push three squares");
+    }
+
+    #[test]
+    fn pseudo_legal_accepts_pawn_double_push() {
+        let board = Board::new();
+        // Pawn on e2 to e4 (valid double push from starting rank)
+        let pawn_double = CompactMove::new(12, 28, PieceType::Pawn, MoveType::DoublePawnPush, None);
+        assert!(board.is_pseudo_legal_compact(&pawn_double),
+            "Pawn should be able to double push from starting rank");
+    }
+
+    #[test]
+    fn pseudo_legal_rejects_wrong_piece_type() {
+        let board = Board::new();
+        // There's a rook on a1, but we claim it's a bishop
+        let wrong_type = CompactMove::new_quiet(0, 16, PieceType::Bishop); // a1 -> a3 as "bishop"
+        assert!(!board.is_pseudo_legal_compact(&wrong_type),
+            "Should reject move when piece type doesn't match");
+    }
+
+    #[test]
+    fn pseudo_legal_rejects_king_long_move() {
+        let board = Board::from_fen("4k3/8/8/8/8/8/8/4K3 w - - 0 1");
+        // King on e1 trying to move to e3 (two squares, not castling)
+        let king_long = CompactMove::new_quiet(4, 20, PieceType::King); // e1 -> e3
+        assert!(!board.is_pseudo_legal_compact(&king_long),
+            "King should not be able to move two squares (non-castling)");
     }
 }
