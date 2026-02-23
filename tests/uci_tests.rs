@@ -53,6 +53,16 @@ impl UciEngine {
         lines
     }
 
+    /// Read lines until we get a "bestmove" response, skipping info lines
+    fn read_bestmove(&mut self) -> String {
+        loop {
+            let line = self.read_line();
+            if line.starts_with("bestmove") {
+                return line;
+            }
+        }
+    }
+
     fn quit(mut self) {
         self.send("quit");
         let _ = self.child.wait();
@@ -105,7 +115,7 @@ fn test_position_startpos() {
     assert_eq!(engine.read_line(), "readyok");
 
     engine.send("go depth 1");
-    let response = engine.read_line();
+    let response = engine.read_bestmove();
     assert!(response.starts_with("bestmove "));
     assert!(response.len() >= 13); // "bestmove " + at least 4 char move
 
@@ -124,7 +134,7 @@ fn test_position_startpos_with_moves() {
     assert_eq!(engine.read_line(), "readyok");
 
     engine.send("go depth 3");
-    let response = engine.read_line();
+    let response = engine.read_bestmove();
     assert!(response.starts_with("bestmove "));
 
     engine.quit();
@@ -143,7 +153,7 @@ fn test_position_fen() {
     assert_eq!(engine.read_line(), "readyok");
 
     engine.send("go depth 3");
-    let response = engine.read_line();
+    let response = engine.read_bestmove();
     assert!(response.starts_with("bestmove "));
 
     engine.quit();
@@ -158,7 +168,7 @@ fn test_go_depth() {
 
     engine.send("position startpos");
     engine.send("go depth 5");
-    let response = engine.read_line();
+    let response = engine.read_bestmove();
     assert!(response.starts_with("bestmove "));
 
     // Verify move format (e.g., e2e4, g1f3, e7e8q for promotion)
@@ -179,11 +189,13 @@ fn test_go_movetime() {
     engine.send("uci");
     engine.read_until("uciok");
 
-    engine.send("position startpos");
+    // Use a complex middlegame position that's not in any opening book
+    // and has enough pieces to keep the engine busy for the full movetime
+    engine.send("position fen r1b2rk1/2q1bppp/p1n1pn2/1p2P3/3N4/1BN1B3/PPP2PPP/R2Q1RK1 w - - 0 14");
 
     let start = std::time::Instant::now();
     engine.send("go movetime 500");
-    let response = engine.read_line();
+    let response = engine.read_bestmove();
     let elapsed = start.elapsed();
 
     assert!(response.starts_with("bestmove "));
@@ -204,7 +216,7 @@ fn test_go_wtime_btime() {
     engine.send("position startpos");
     engine.send("go wtime 60000 btime 60000 winc 1000 binc 1000");
 
-    let response = engine.read_line();
+    let response = engine.read_bestmove();
     assert!(response.starts_with("bestmove "));
 
     engine.quit();
@@ -220,7 +232,7 @@ fn test_ucinewgame() {
     // Play some moves
     engine.send("position startpos moves e2e4 e7e5");
     engine.send("go depth 3");
-    engine.read_line();
+    engine.read_bestmove();
 
     // Reset
     engine.send("ucinewgame");
@@ -230,7 +242,7 @@ fn test_ucinewgame() {
     // Should work from start position again
     engine.send("position startpos");
     engine.send("go depth 1");
-    let response = engine.read_line();
+    let response = engine.read_bestmove();
     assert!(response.starts_with("bestmove "));
 
     engine.quit();
@@ -247,7 +259,7 @@ fn test_finds_good_move() {
     // Position: Standard opening after 1.e4 e5 - White should play good developing moves
     engine.send("position fen rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2");
     engine.send("go depth 4");
-    let response = engine.read_line();
+    let response = engine.read_bestmove();
 
     // Should find a reasonable move
     assert!(response.starts_with("bestmove "));
@@ -268,7 +280,7 @@ fn test_promotion() {
     // Position where pawn promotion is best
     engine.send("position fen 8/P7/8/8/8/8/8/4K2k w - - 0 1");
     engine.send("go depth 4");
-    let response = engine.read_line();
+    let response = engine.read_bestmove();
 
     assert!(response.starts_with("bestmove "));
     let move_str = response.strip_prefix("bestmove ").unwrap();
@@ -291,7 +303,7 @@ fn test_position_after_moves_sequence() {
     // Italian Game opening
     engine.send("position startpos moves e2e4 e7e5 g1f3 b8c6 f1c4");
     engine.send("go depth 4");
-    let response = engine.read_line();
+    let response = engine.read_bestmove();
     assert!(response.starts_with("bestmove "));
 
     engine.quit();
@@ -307,7 +319,7 @@ fn test_multiple_go_commands() {
     for i in 1..=3 {
         engine.send("position startpos");
         engine.send(&format!("go depth {}", i));
-        let response = engine.read_line();
+        let response = engine.read_bestmove();
         assert!(response.starts_with("bestmove "), "Failed on iteration {}", i);
     }
 
