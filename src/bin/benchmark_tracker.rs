@@ -124,18 +124,18 @@ fn run_benchmarks() -> BenchmarkMetrics {
 }
 
 fn benchmark_perft() -> (f64, f64) {
-    let board = Board::new();
+    let mut board = Board::new();
 
     // Depth 4
     let start = Instant::now();
-    let nodes_4 = perft(&board, 4);
+    let nodes_4 = perft(&mut board, 4);
     let time_4 = start.elapsed().as_secs_f64();
     let nps_4 = nodes_4 as f64 / time_4;
     println!("  Depth 4: {} nodes in {:.2}s ({:.0} nps)", nodes_4, time_4, nps_4);
 
     // Depth 5
     let start = Instant::now();
-    let nodes_5 = perft(&board, 5);
+    let nodes_5 = perft(&mut board, 5);
     let time_5 = start.elapsed().as_secs_f64();
     let nps_5 = nodes_5 as f64 / time_5;
     println!("  Depth 5: {} nodes in {:.2}s ({:.0} nps)", nodes_5, time_5, nps_5);
@@ -143,7 +143,7 @@ fn benchmark_perft() -> (f64, f64) {
     (nps_4, nps_5)
 }
 
-fn perft(board: &Board, depth: u8) -> u64 {
+fn perft(board: &mut Board, depth: u8) -> u64 {
     if depth == 0 {
         return 1;
     }
@@ -160,8 +160,9 @@ fn perft(board: &Board, depth: u8) -> u64 {
 
     let mut nodes = 0;
     for m in moves {
-        let new_board = board.execute_move(&m);
-        nodes += perft(&new_board, depth - 1);
+        let undo = board.make_move(&m);
+        nodes += perft(board, depth - 1);
+        board.unmake_move(&undo);
     }
     nodes
 }
@@ -224,7 +225,7 @@ fn benchmark_game_search() -> ((Vec<f64>, Vec<f64>, Vec<f64>), usize) {
         // Make the best move
         if let Ok(r) = result {
             if let Some(m) = r.best_move {
-                board = board.execute_move(&m);
+                board.make_move(&m);
             } else {
                 break;
             }

@@ -1621,4 +1621,110 @@ mod tests {
         assert!(legacy_has_castle(&board, Color::Black, MoveFlag::CastleKingside));
         assert!(legacy_has_castle(&board, Color::Black, MoveFlag::CastleQueenside));
     }
+
+    // =========================================================================
+    // Fuzz test: random games comparing both generators at every position
+    // =========================================================================
+
+    use std::collections::BTreeSet;
+    use crate::types::{CompactMove, PieceType};
+
+    fn legacy_move_to_uci(m: &crate::types::Move) -> String {
+        let from_file = (b'a' + m.from.file - 1) as char;
+        let from_rank = (b'0' + m.from.rank) as char;
+        let to_file = (b'a' + m.to.file - 1) as char;
+        let to_rank = (b'0' + m.to.rank) as char;
+        let promo = match m.move_flag {
+            MoveFlag::Promotion(PieceType::Queen) => "q",
+            MoveFlag::Promotion(PieceType::Rook) => "r",
+            MoveFlag::Promotion(PieceType::Bishop) => "b",
+            MoveFlag::Promotion(PieceType::Knight) => "n",
+            _ => "",
+        };
+        format!("{}{}{}{}{}", from_file, from_rank, to_file, to_rank, promo)
+    }
+
+    fn get_legacy_uci_moves(board: &Board) -> BTreeSet<String> {
+        let color = board.get_active_color();
+        match board.get_legal_moves(&color) {
+            Ok(moves) => moves.iter().map(|m| legacy_move_to_uci(m)).collect(),
+            Err(_) => BTreeSet::new(),
+        }
+    }
+
+    fn get_compact_uci_moves(board: &mut Board) -> BTreeSet<String> {
+        let color = board.get_active_color();
+        let gen = CompactMoveGenerator::new(board, color);
+        let mut list = MoveList::new();
+        gen.generate_all(&mut list);
+        let mut moves = BTreeSet::new();
+        for i in 0..list.len() {
+            let mv = list.get(i);
+            if board.is_legal_compact(&mv) {
+                moves.insert(mv.to_uci());
+            }
+        }
+        moves
+    }
+
+    /// Simple xorshift64 PRNG for deterministic randomness
+    struct Xorshift64(u64);
+    impl Xorshift64 {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0
+        }
+    }
+
+    #[test]
+    fn fuzz_compact_matches_legacy_random_games() {
+        let mut rng = Xorshift64(0xDEADBEEF_CAFEBABE);
+        let mut total_positions = 0;
+        let num_games = 50;
+
+        for game_idx in 0..num_games {
+            let mut board = Board::new();
+            let mut ply = 0;
+
+            loop {
+                // Compare both generators at every position
+                let legacy = get_legacy_uci_moves(&board);
+                let compact = get_compact_uci_moves(&mut board);
+
+                if legacy != compact {
+                    let only_legacy: Vec<_> = legacy.difference(&compact).collect();
+                    let only_compact: Vec<_> = compact.difference(&legacy).collect();
+                    panic!(
+                        "Game {} ply {}: generators disagree!\nFEN: {}\nOnly legacy: {:?}\nOnly compact: {:?}",
+                        game_idx, ply, board.to_fen(), only_legacy, only_compact
+                    );
+                }
+
+                total_positions += 1;
+
+                if legacy.is_empty() || ply >= 200 {
+                    break; // Game over or draw by move limit
+                }
+
+                // Pick a random legal move from legacy set
+                let move_idx = (rng.next() as usize) % legacy.len();
+                let chosen_uci: String = legacy.iter().nth(move_idx).unwrap().clone();
+
+                // Find and execute the chosen move via legacy generator
+                let color = board.get_active_color();
+                let legal_moves = board.get_legal_moves(&color).unwrap();
+                let chosen_move = legal_moves.iter()
+                    .find(|m| legacy_move_to_uci(m) == chosen_uci)
+                    .expect("chosen move not found");
+                let undo = board.make_move(chosen_move);
+                let _ = undo; // move is made in-place
+                ply += 1;
+            }
+        }
+
+        println!("Fuzz test: {} games, {} total positions compared — all match!",
+                 num_games, total_positions);
+    }
 }

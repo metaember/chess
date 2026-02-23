@@ -126,6 +126,17 @@ Chess bot written in rust
 | **Low** | Parallel search (Lazy SMP) | Speed | `search.rs` | Multi-threaded search with shared transposition table. |
 | **Low** | Replace `ray_to` Vec allocation | Speed | `types.rs:139` | Return fixed-size array or iterator instead of allocating `Vec<Position>`. |
 
+### Board Move APIs
+
+Two ways to apply a move:
+
+| Method | Mechanism | Speed | Use in |
+|--------|-----------|-------|--------|
+| `execute_move(&Move) -> Board` | Clones entire board | ~10x slower | UI, UCI, book lookups, tests |
+| `make_move(&Move) / unmake_move(&UndoInfo)` | In-place mutation | Fast | Search, perft, any hot path |
+
+**Rule**: Never use `execute_move` in performance-critical code.
+
 ### Code Cleanup TODOs
 
 | Location | Description |

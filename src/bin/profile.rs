@@ -1,5 +1,5 @@
 use rust_chess::board::Board;
-use rust_chess::search::{minimax, minimax_no_quiescence, minimax_with_tt, iterative_deepening};
+use rust_chess::search::{minimax, minimax_no_quiescence, minimax_with_tt, iterative_deepening_movepicker};
 use rust_chess::tt::TranspositionTable;
 use std::time::Instant;
 
@@ -56,11 +56,11 @@ fn main() {
     println!("  Best move: {}", result.best_move.unwrap().to_algebraic());
     println!("  {}", tt.info());
 
-    // Depth 5 with iterative deepening
-    println!("\nDepth 5 ITERATIVE DEEPENING (64MB TT):");
+    // Depth 5 with iterative deepening (movepicker)
+    println!("\nDepth 5 ITERATIVE DEEPENING MOVEPICKER (64MB TT):");
     tt.clear();
     let start = Instant::now();
-    let result = iterative_deepening(5, &mut b, &mut tt).unwrap();
+    let result = iterative_deepening_movepicker(&mut b, 5, &mut tt);
     let elapsed = start.elapsed();
     println!("  Time: {:?}", elapsed);
     println!("  Main nodes: {}", result.nodes_searched);
@@ -69,11 +69,11 @@ fn main() {
     println!("  Best move: {}", result.best_move.unwrap().to_algebraic());
     println!("  {}", tt.info());
 
-    // Depth 6 with iterative deepening
-    println!("\nDepth 6 ITERATIVE DEEPENING (64MB TT):");
+    // Depth 6 with iterative deepening (movepicker)
+    println!("\nDepth 6 ITERATIVE DEEPENING MOVEPICKER (64MB TT):");
     tt.clear();
     let start = Instant::now();
-    let result = iterative_deepening(6, &mut b, &mut tt).unwrap();
+    let result = iterative_deepening_movepicker(&mut b, 6, &mut tt);
     let elapsed = start.elapsed();
     println!("  Time: {:?}", elapsed);
     println!("  Main nodes: {}", result.nodes_searched);
@@ -82,11 +82,11 @@ fn main() {
     println!("  Best move: {}", result.best_move.unwrap().to_algebraic());
     println!("  {}", tt.info());
 
-    // Depth 7 with iterative deepening
-    println!("\nDepth 7 ITERATIVE DEEPENING (64MB TT):");
+    // Depth 7 with iterative deepening (movepicker)
+    println!("\nDepth 7 ITERATIVE DEEPENING MOVEPICKER (64MB TT):");
     tt.clear();
     let start = Instant::now();
-    let result = iterative_deepening(7, &mut b, &mut tt).unwrap();
+    let result = iterative_deepening_movepicker(&mut b, 7, &mut tt);
     let elapsed = start.elapsed();
     println!("  Time: {:?}", elapsed);
     println!("  Main nodes: {}", result.nodes_searched);
@@ -95,11 +95,11 @@ fn main() {
     println!("  Best move: {}", result.best_move.unwrap().to_algebraic());
     println!("  {}", tt.info());
 
-    // Depth 8 with iterative deepening
-    println!("\nDepth 8 ITERATIVE DEEPENING (64MB TT):");
+    // Depth 8 with iterative deepening (movepicker)
+    println!("\nDepth 8 ITERATIVE DEEPENING MOVEPICKER (64MB TT):");
     tt.clear();
     let start = Instant::now();
-    let result = iterative_deepening(8, &mut b, &mut tt).unwrap();
+    let result = iterative_deepening_movepicker(&mut b, 8, &mut tt);
     let elapsed = start.elapsed();
     println!("  Time: {:?}", elapsed);
     println!("  Main nodes: {}", result.nodes_searched);

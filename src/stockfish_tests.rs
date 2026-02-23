@@ -4,6 +4,8 @@
 //! our engine generates the same legal moves.
 
 use crate::board::Board;
+use crate::movegen::CompactMoveGenerator;
+use crate::movelist::MoveList;
 use crate::types::{Color, Move, MoveFlag, PieceType, Position};
 use serde::Deserialize;
 use std::collections::BTreeSet;
@@ -59,6 +61,22 @@ fn get_engine_moves(board: &Board) -> BTreeSet<String> {
     }
 }
 
+fn get_compact_engine_moves(board: &mut Board) -> BTreeSet<String> {
+    let color = board.get_active_color();
+    let gen = CompactMoveGenerator::new(board, color);
+    let mut list = MoveList::new();
+    gen.generate_all(&mut list);
+
+    let mut moves = BTreeSet::new();
+    for i in 0..list.len() {
+        let mv = list.get(i);
+        if board.is_legal_compact(&mv) {
+            moves.insert(mv.to_uci());
+        }
+    }
+    moves
+}
+
 fn compare_moves(position_id: &str, fen: &str, expected: &[String]) {
     let board = Board::from_fen(fen);
     let engine_moves = get_engine_moves(&board);
@@ -79,6 +97,33 @@ fn compare_moves(position_id: &str, fen: &str, expected: &[String]) {
         eprintln!("Expected {} moves, got {}", expected_moves.len(), engine_moves.len());
         panic!(
             "Position '{}': {} missing, {} extra moves",
+            position_id,
+            missing.len(),
+            extra.len()
+        );
+    }
+}
+
+fn compare_moves_compact(position_id: &str, fen: &str, expected: &[String]) {
+    let mut board = Board::from_fen(fen);
+    let engine_moves = get_compact_engine_moves(&mut board);
+    let expected_moves: BTreeSet<String> = expected.iter().cloned().collect();
+
+    let missing: Vec<_> = expected_moves.difference(&engine_moves).collect();
+    let extra: Vec<_> = engine_moves.difference(&expected_moves).collect();
+
+    if !missing.is_empty() || !extra.is_empty() {
+        eprintln!("\n=== CompactMoveGen Position: {} ===", position_id);
+        eprintln!("FEN: {}", fen);
+        if !missing.is_empty() {
+            eprintln!("Missing moves (Stockfish has, we don't): {:?}", missing);
+        }
+        if !extra.is_empty() {
+            eprintln!("Extra moves (we have, Stockfish doesn't): {:?}", extra);
+        }
+        eprintln!("Expected {} moves, got {}", expected_moves.len(), engine_moves.len());
+        panic!(
+            "CompactMoveGen '{}': {} missing, {} extra moves",
             position_id,
             missing.len(),
             extra.len()
@@ -172,5 +217,60 @@ mod tests {
         let reference = load_reference_data();
         let pos = reference.positions.iter().find(|p| p.id == "check_simple").unwrap();
         compare_moves(&pos.id, &pos.fen, &pos.legal_moves);
+    }
+
+    // =========================================================================
+    // CompactMoveGenerator validation against all Stockfish reference positions
+    // =========================================================================
+
+    #[test]
+    fn test_all_stockfish_positions_compact() {
+        let reference = load_reference_data();
+        println!("Testing CompactMoveGenerator against: {}", reference.generated_with);
+        println!("Number of positions: {}", reference.positions.len());
+
+        for pos in &reference.positions {
+            print!("Testing compact '{}' ({} moves)... ", pos.id, pos.move_count);
+            compare_moves_compact(&pos.id, &pos.fen, &pos.legal_moves);
+            println!("OK");
+        }
+    }
+
+    // =========================================================================
+    // Cross-validate: both generators must agree on every position
+    // =========================================================================
+
+    #[test]
+    fn test_both_generators_agree_all_positions() {
+        let reference = load_reference_data();
+        for pos in &reference.positions {
+            let legacy_moves = {
+                let board = Board::from_fen(&pos.fen);
+                get_engine_moves(&board)
+            };
+            let compact_moves = {
+                let mut board = Board::from_fen(&pos.fen);
+                get_compact_engine_moves(&mut board)
+            };
+
+            if legacy_moves != compact_moves {
+                let only_legacy: Vec<_> = legacy_moves.difference(&compact_moves).collect();
+                let only_compact: Vec<_> = compact_moves.difference(&legacy_moves).collect();
+                eprintln!("\n=== Generators disagree on '{}' ===", pos.id);
+                eprintln!("FEN: {}", pos.fen);
+                if !only_legacy.is_empty() {
+                    eprintln!("Only in legacy: {:?}", only_legacy);
+                }
+                if !only_compact.is_empty() {
+                    eprintln!("Only in compact: {:?}", only_compact);
+                }
+                panic!(
+                    "Generators disagree on '{}': legacy={}, compact={}",
+                    pos.id,
+                    legacy_moves.len(),
+                    compact_moves.len()
+                );
+            }
+        }
     }
 }

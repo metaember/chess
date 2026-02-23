@@ -25,3 +25,10 @@ This records performance metrics to `benchmark_history.json` and compares agains
 - **Nodes searched**: Fewer nodes = better pruning/move ordering
 
 A good change shows positive percentages for speed metrics and/or fewer nodes searched.
+
+## Board Move APIs
+
+- **`execute_move(&Move) -> Board`** — Clones the entire board. Simple but slow (~10x). Fine for UI code, UCI protocol handlers, book lookups, and tests where convenience matters more than speed.
+- **`make_move(&Move) -> UndoInfo` / `unmake_move(&UndoInfo)`** — In-place mutation. Used in search, perft, and any hot path. Always pair make with unmake.
+
+**Never use `execute_move` in performance-critical code** (search, perft, move generation, evaluation). Use `make_move`/`unmake_move` instead.

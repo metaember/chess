@@ -1,4 +1,4 @@
-use crate::bitboard::{position_to_bb, ATTACK_TABLES, BitboardIter, bishop_attacks, rook_attacks, queen_attacks};
+use crate::bitboard::{position_to_bb, position_to_sq, ATTACK_TABLES, BitboardIter, bishop_attacks, rook_attacks, queen_attacks};
 use crate::evaluate::{get_pst_value, Material, MAX_PHASE, PHASE_WEIGHTS};
 use crate::movegen::{MoveGenerator, PinnedPiece};
 use crate::types::*;
@@ -1425,6 +1425,35 @@ impl Board {
                 }
                 can_move_to
             })
+            // 4.C. En passant discovered check: removing both pawns may expose king on the rank
+            .filter(|m| {
+                if m.move_flag != MoveFlag::EnPassantCapture {
+                    return true;
+                }
+                // The captured pawn is on the same rank as the capturing pawn (m.from)
+                // After EP, both m.from pawn and the captured pawn are removed from this rank.
+                // Check if a horizontal slider (rook/queen) would attack the king.
+                let king_sq = position_to_sq(&my_king.position);
+                let ep_from_sq = position_to_sq(&m.from);
+                let captured_sq = position_to_sq(&m.captured.unwrap().position);
+
+                // Only relevant if king is on the same rank
+                if king_sq / 8 != ep_from_sq / 8 {
+                    return true;
+                }
+
+                // Simulate removal of both pawns from occupied bitboard
+                let occupied_after = self.get_occupied()
+                    & !(1u64 << ep_from_sq)
+                    & !(1u64 << captured_sq);
+
+                // Check if any opponent rook/queen attacks the king along this rank
+                let rook_attacks = rook_attacks(king_sq, occupied_after);
+                let opponent = color.other_color();
+                let enemy_rq = self.get_piece_bb(opponent, PieceType::Rook)
+                    | self.get_piece_bb(opponent, PieceType::Queen);
+                (rook_attacks & enemy_rq) == 0
+            })
             // Filter out castles that go through observed squares
             .filter(|m| match m.move_flag {
                 MoveFlag::CastleKingside => {
@@ -1526,6 +1555,26 @@ impl Board {
                     }
                 }
                 true
+            })
+            // En passant discovered check: removing both pawns may expose king on the rank
+            .filter(|m| {
+                if m.move_flag != MoveFlag::EnPassantCapture {
+                    return true;
+                }
+                let king_sq = position_to_sq(&my_king.position);
+                let ep_from_sq = position_to_sq(&m.from);
+                let captured_sq = position_to_sq(&m.captured.unwrap().position);
+                if king_sq / 8 != ep_from_sq / 8 {
+                    return true;
+                }
+                let occupied_after = self.get_occupied()
+                    & !(1u64 << ep_from_sq)
+                    & !(1u64 << captured_sq);
+                let rook_atks = rook_attacks(king_sq, occupied_after);
+                let opponent = color.other_color();
+                let enemy_rq = self.get_piece_bb(opponent, PieceType::Rook)
+                    | self.get_piece_bb(opponent, PieceType::Queen);
+                (rook_atks & enemy_rq) == 0
             })
             .collect()
     }

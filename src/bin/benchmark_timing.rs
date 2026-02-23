@@ -29,7 +29,6 @@ fn benchmark_depth(depth: u8) {
         let mut moves_played = 0;
 
         loop {
-            // Check for game end
             let color = board.get_active_color();
             match board.get_legal_moves(&color) {
                 Ok(moves) if moves.is_empty() => break,
@@ -58,7 +57,7 @@ fn benchmark_depth(depth: u8) {
             match result {
                 Ok(r) => {
                     if let Some(m) = r.best_move {
-                        board = board.execute_move(&m);
+                        board.make_move(&m);
                         timings.push(elapsed);
                         moves_played += 1;
                     } else {
