@@ -163,6 +163,14 @@ impl ChessEngine {
         self.search_state = SearchState::new();
     }
 
+    /// Check if the current position is a threefold repetition.
+    /// position_history includes the current position as its last entry,
+    /// so count >= 3 means three occurrences (true threefold).
+    fn is_threefold_repetition(board: &Board, position_history: &[u64]) -> bool {
+        let hash = board.zobrist_hash;
+        position_history.iter().filter(|&&h| h == hash).count() >= 3
+    }
+
     /// Try to get a move from the opening book
     pub fn book_move(&self, board: &Board) -> Option<Move> {
         self.book.suggest_move(board, true)
@@ -339,6 +347,39 @@ impl ChessEngine {
     {
         let start = Instant::now();
 
+        // Pre-search draw detection: if the position is already drawn,
+        // pick any legal move instantly instead of wasting clock time.
+        // Only applies to time-controlled games (not analysis or fixed-depth).
+        if options.time_left.is_some() && !options.infinite {
+            let is_drawn = board.check_for_insufficient_material().is_some()
+                || board.check_for_fifty_move_rule().is_some()
+                || Self::is_threefold_repetition(board, position_history);
+
+            if is_drawn {
+                let color = board.get_active_color();
+                if let Ok(moves) = board.get_legal_moves(&color) {
+                    if let Some(mv) = moves.into_iter().next() {
+                        info_callback(SearchInfo {
+                            depth: 1,
+                            score: 0,
+                            nodes: 1,
+                            time_ms: 0,
+                            nps: 0,
+                            pv: CompactMove::from_move(&mv).to_uci(),
+                        });
+                        return Some(EngineResult {
+                            best_move: mv,
+                            score: 0,
+                            from_book: false,
+                            depth_reached: 1,
+                            nodes_searched: 1,
+                            time_ms: 0,
+                        });
+                    }
+                }
+            }
+        }
+
         // Time control setup
         let control = if let Some(mt) = options.movetime {
             Arc::new(SearchControl::new(mt, mt))
@@ -440,6 +481,15 @@ impl ChessEngine {
                         nodes_searched: nodes,
                         quiescent_nodes_searched: qnodes,
                     });
+
+                    // Early termination: if score is 0 and the position is drawn
+                    // by insufficient material, stop deepening — further search
+                    // can't change the outcome and just wastes clock time.
+                    if score == 0 && depth >= 4
+                        && board.check_for_insufficient_material().is_some()
+                    {
+                        break;
+                    }
                 }
                 Err(_) => {
                     break;

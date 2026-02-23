@@ -1910,8 +1910,8 @@ fn negamax_movepicker_with_control(
     control: &SearchControl,
     position_history: &mut Vec<u64>,
 ) -> Result<(i32, Option<CompactMove>, i32, i32), SearchAborted> {
-    // Check if we should abort (periodically)
-    if ply % 1024 == 0 && control.should_stop() {
+    // Check if we should abort (gated by node counter inside should_stop)
+    if control.should_stop() {
         return Err(SearchAborted);
     }
 
