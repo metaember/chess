@@ -35,6 +35,7 @@ WORKDIR /app
 # Copy built artifacts
 COPY --from=rust-builder /build/target/release/web_server ./web_server
 COPY --from=web-builder /web ./web
+COPY book/Cerebellum3Merge.bin ./book/Cerebellum3Merge.bin
 
 EXPOSE 3000
 
