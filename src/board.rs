@@ -1781,8 +1781,10 @@ impl Board {
             }
         }
 
-        // For castling, check that rights are available and squares are clear
+        // For castling, check rights, empty squares, and no check/through-check
         let move_type = mv.move_type();
+        let opponent = self.active_color.other_color();
+        let opponent_attacks = self.get_attack_map(opponent);
         match move_type {
             MoveType::CastleKingside => {
                 let (can_castle, rank) = match self.active_color {
@@ -1792,14 +1794,26 @@ impl Board {
                 if !can_castle {
                     return false;
                 }
+                // Can't castle out of check
+                let king_bb = position_to_bb(&from_pos);
+                if (king_bb & opponent_attacks) != 0 {
+                    return false;
+                }
                 let f_pos = Position { rank, file: 6 };
                 let g_pos = Position { rank, file: 7 };
+                // Squares must be empty
                 if self.piece_at_position(&f_pos).is_some()
                     || self.piece_at_position(&g_pos).is_some()
                 {
                     return false;
                 }
-                return true; // Castling doesn't need reachability check below
+                // Can't castle through or into check
+                let f_bb = position_to_bb(&f_pos);
+                let g_bb = position_to_bb(&g_pos);
+                if ((f_bb | g_bb) & opponent_attacks) != 0 {
+                    return false;
+                }
+                return true;
             }
             MoveType::CastleQueenside => {
                 let (can_castle, rank) = match self.active_color {
@@ -1809,16 +1823,28 @@ impl Board {
                 if !can_castle {
                     return false;
                 }
+                // Can't castle out of check
+                let king_bb = position_to_bb(&from_pos);
+                if (king_bb & opponent_attacks) != 0 {
+                    return false;
+                }
                 let b_pos = Position { rank, file: 2 };
                 let c_pos = Position { rank, file: 3 };
                 let d_pos = Position { rank, file: 4 };
+                // Squares must be empty
                 if self.piece_at_position(&b_pos).is_some()
                     || self.piece_at_position(&c_pos).is_some()
                     || self.piece_at_position(&d_pos).is_some()
                 {
                     return false;
                 }
-                return true; // Castling doesn't need reachability check below
+                // King passes through d and lands on c — both must be unattacked
+                let c_bb = position_to_bb(&c_pos);
+                let d_bb = position_to_bb(&d_pos);
+                if ((c_bb | d_bb) & opponent_attacks) != 0 {
+                    return false;
+                }
+                return true;
             }
             _ => {}
         }
@@ -3800,4 +3826,32 @@ mod tests {
         assert!(!board.is_pseudo_legal_compact(&king_long),
             "King should not be able to move two squares (non-castling)");
     }
+
+    #[test]
+    fn pseudo_legal_rejects_castling_out_of_check() {
+        // Game fOovyP9Y: White tried e1g1 but Re4 gives check
+        let board = Board::from_fen("6k1/p1p2pp1/5n1p/7b/4r3/B1P5/PP3PPP/R3K2R w KQ - 0 21");
+        let castle_ks = CompactMove::new(4, 6, PieceType::King, MoveType::CastleKingside, None);
+        assert!(!board.is_pseudo_legal_compact(&castle_ks),
+            "Can't castle kingside out of check (Re4 attacks e1)");
+    }
+
+    #[test]
+    fn pseudo_legal_rejects_castling_through_check() {
+        // Game aRrRTGwj: Black tried e8g8 but Qc5 attacks f8
+        let board = Board::from_fen("4k2r/p1qb1p2/1rn2n1p/2Q3p1/4p3/2P1P3/PP2BPPP/R1BR2K1 b k - 1 18");
+        let castle_ks = CompactMove::new(60, 62, PieceType::King, MoveType::CastleKingside, None);
+        assert!(!board.is_pseudo_legal_compact(&castle_ks),
+            "Can't castle kingside through check (Qc5 attacks f8)");
+    }
+
+    #[test]
+    fn pseudo_legal_rejects_castling_no_rights() {
+        // No castling rights at all
+        let board = Board::from_fen("4k2r/8/8/8/8/8/8/4K2R w - - 0 1");
+        let castle_ks = CompactMove::new(4, 6, PieceType::King, MoveType::CastleKingside, None);
+        assert!(!board.is_pseudo_legal_compact(&castle_ks),
+            "Can't castle when rights are gone");
+    }
+
 }

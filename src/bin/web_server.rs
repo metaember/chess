@@ -215,7 +215,7 @@ async fn new_game(
         let mut engine = state.engine.write().unwrap();
         let options = SearchOptions::with_depth(depth);
 
-        if let Some(result) = engine.pick_move(&mut board, &options) {
+        if let Some(result) = engine.pick_move(&mut board, &options, &mut Vec::new()) {
             eval_score = Some(result.score);
             board = board.execute_move(&result.best_move);
         }
@@ -373,7 +373,7 @@ async fn make_move(
     let options = SearchOptions::with_depth(game.depth);
     let engine_result = {
         let mut engine = state.engine.write().unwrap();
-        engine.pick_move(&mut game.board, &options)
+        engine.pick_move(&mut game.board, &options, &mut Vec::new())
     };
 
     let (engine_move, eval_score, engine_stats) = match engine_result {
