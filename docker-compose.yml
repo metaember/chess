@@ -3,6 +3,8 @@ services:
     build: .
     container_name: rust-chess
     restart: unless-stopped
+    volumes:
+      - game-data:/app/data
     deploy:
       resources:
         limits:
@@ -20,8 +22,13 @@ services:
       - .env
     environment:
       - LICHESS_BOT_TOKEN=${LICHESS_BOT_TOKEN}
+    volumes:
+      - game-data:/app/data
     deploy:
       resources:
         limits:
           cpus: '1.0'
           memory: 1G
+
+volumes:
+  game-data:

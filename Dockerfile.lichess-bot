@@ -35,6 +35,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY lichess-bot/lichess-bot.py ./
 COPY lichess-bot/extra_game_handlers.py ./
 COPY lichess-bot/homemade.py ./
+COPY lichess-bot/game_logger.py ./
 COPY lichess-bot/lib ./lib
 
 # Patch lichess-bot to handle SIGTERM for graceful Docker shutdown
