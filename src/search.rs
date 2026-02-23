@@ -1449,11 +1449,18 @@ pub fn negamax_movepicker(
 ) -> (i32, Option<CompactMove>, i32, i32) {
     // Returns: (score, best_move, nodes_searched, quiescent_nodes)
 
-    // Repetition detection: check if this position already appeared in
-    // the game history or along the current search path
+    // Draw detection (skip at root so we always return a move)
     if ply > 0 {
-        let current_hash = board.zobrist_hash;
-        if position_history.iter().any(|&h| h == current_hash) {
+        // Repetition
+        if position_history.iter().any(|&h| h == board.zobrist_hash) {
+            return (0, None, 0, 0);
+        }
+        // Fifty-move rule
+        if board.check_for_fifty_move_rule().is_some() {
+            return (0, None, 0, 0);
+        }
+        // Insufficient material
+        if board.check_for_insufficient_material().is_some() {
             return (0, None, 0, 0);
         }
     }
@@ -1908,11 +1915,18 @@ fn negamax_movepicker_with_control(
         return Err(SearchAborted);
     }
 
-    // Repetition detection: check if this position already appeared in
-    // the game history or along the current search path
+    // Draw detection (skip at root so we always return a move)
     if ply > 0 {
-        let current_hash = board.zobrist_hash;
-        if position_history.iter().any(|&h| h == current_hash) {
+        // Repetition
+        if position_history.iter().any(|&h| h == board.zobrist_hash) {
+            return Ok((0, None, 0, 0));
+        }
+        // Fifty-move rule
+        if board.check_for_fifty_move_rule().is_some() {
+            return Ok((0, None, 0, 0));
+        }
+        // Insufficient material
+        if board.check_for_insufficient_material().is_some() {
             return Ok((0, None, 0, 0));
         }
     }
@@ -2812,6 +2826,32 @@ mod test {
             }
             Err(_) => panic!("Search was aborted"),
         }
+    }
+
+    #[test]
+    fn fifty_move_rule_returns_draw() {
+        // FEN with halfmove_clock = 100 (fifty-move rule triggered)
+        let mut board = Board::from_fen("8/8/4k3/8/8/4K3/8/8 w - - 100 80");
+        let mut tt = crate::tt::TranspositionTable::new(16);
+        let mut search_state = SearchState::new();
+
+        let (score, _, _, _) = negamax_movepicker(
+            6, &mut board, MIN_SCORE, MAX_SCORE, &mut tt, &mut search_state, 1, &mut Vec::new(),
+        );
+        assert_eq!(score, 0, "Position with halfmove_clock=100 should be drawn, got {}", score);
+    }
+
+    #[test]
+    fn insufficient_material_returns_draw() {
+        // King vs King — clearly insufficient
+        let mut board = Board::from_fen("8/8/4k3/8/8/4K3/8/8 w - - 0 1");
+        let mut tt = crate::tt::TranspositionTable::new(16);
+        let mut search_state = SearchState::new();
+
+        let (score, _, _, _) = negamax_movepicker(
+            6, &mut board, MIN_SCORE, MAX_SCORE, &mut tt, &mut search_state, 1, &mut Vec::new(),
+        );
+        assert_eq!(score, 0, "K vs K should be drawn, got {}", score);
     }
 
     #[test]
