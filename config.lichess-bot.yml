@@ -59,7 +59,7 @@ greeting:
 
 matchmaking:
   allow_matchmaking: true
-  challenge_timeout: 30
+  challenge_timeout: 10
   opponent_rating_difference: 1500
   challenge_mode: "rated"
   challenge_initial_time:
@@ -71,4 +71,4 @@ matchmaking:
     - 0
     - 2
   opponent_allow_tos_violation: false
-  challenge_filter: "none"  # or "coward" to avoid those who decline often
+  challenge_filter: fine  # learns from declines per game-aspect, avoids wasting cycles
