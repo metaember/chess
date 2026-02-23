@@ -1,0 +1,26 @@
+name: Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Run tests (skip book-dependent tests)
+        run: cargo test -- --skip book::tests::decode_polyglot_move --skip book::tests::polyglot_lookup --skip book::tests::suggest_move --skip book::tests::polyglot_book_produces --skip book::tests::polyglot_hash_with_castling --skip engine::tests::engine_uses_book
