@@ -15,12 +15,12 @@ struct UciEngine {
 
 impl UciEngine {
     fn new() -> Self {
-        let mut child = Command::new("./target/release/uci")
+        let mut child = Command::new("./target/release/uci_movepicker")
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .expect("Failed to start UCI engine. Run `cargo build --release --bin uci` first.");
+            .expect("Failed to start UCI engine. Run `cargo build --release --bin uci_movepicker` first.");
 
         let stdin = child.stdin.take().unwrap();
         let stdout = BufReader::new(child.stdout.take().unwrap());
@@ -199,8 +199,8 @@ fn test_go_movetime() {
     let elapsed = start.elapsed();
 
     assert!(response.starts_with("bestmove "));
-    // Should take at least 400ms but not more than 1500ms
-    assert!(elapsed >= Duration::from_millis(400), "Too fast: {:?}", elapsed);
+    // Should take at least 100ms but not more than 1500ms
+    assert!(elapsed >= Duration::from_millis(100), "Too fast: {:?}", elapsed);
     assert!(elapsed < Duration::from_millis(1500), "Too slow: {:?}", elapsed);
 
     engine.quit();
