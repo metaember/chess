@@ -4,6 +4,8 @@ dev:
 
 # Production deploy
 deploy:
+    git pull --recurse-submodules
+    git submodule update --init
     docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 
 # Stop containers
