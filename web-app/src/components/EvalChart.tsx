@@ -75,8 +75,12 @@ export function EvalChart({ evals, currentPly, onClickPly, height = 120 }: EvalC
     onClickPly(evals[clamped].ply)
   }
 
+  // Dot position as percentages for HTML overlay (avoids preserveAspectRatio="none" distortion)
+  const dotLeftPct = dotX !== null ? (dotX / viewW) * 100 : null
+  const dotTopPct = dotY !== null ? (dotY / height) * 100 : null
+
   return (
-    <div className="w-full bg-card/50 rounded border border-border overflow-hidden">
+    <div className="w-full bg-card/50 rounded border border-border overflow-hidden relative">
       <svg
         viewBox={`0 0 ${viewW} ${height}`}
         preserveAspectRatio="none"
@@ -96,14 +100,15 @@ export function EvalChart({ evals, currentPly, onClickPly, height = 120 }: EvalC
         {/* Eval line */}
         <polyline points={points} fill="none"
           stroke="rgba(255,255,255,0.85)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-
-        {/* Current move dot */}
-        {dotX !== null && dotY !== null && (
-          <circle cx={dotX} cy={dotY} r="4"
-            fill="hsl(var(--primary))" stroke="rgba(0,0,0,0.5)" strokeWidth="1"
-            vectorEffect="non-scaling-stroke" />
-        )}
       </svg>
+
+      {/* Current move dot (HTML overlay to avoid SVG non-scaling distortion) */}
+      {dotLeftPct !== null && dotTopPct !== null && (
+        <div
+          className="absolute w-2.5 h-2.5 rounded-full bg-primary border border-black/50 -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+          style={{ left: `${dotLeftPct}%`, top: `${dotTopPct}%` }}
+        />
+      )}
     </div>
   )
 }
