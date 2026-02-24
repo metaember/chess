@@ -36,6 +36,8 @@ export function EvalBar({ evalCp, evalMate, height = 480 }: EvalBarProps) {
         className="absolute bottom-0 left-0 right-0 bg-zinc-100 transition-all duration-500 ease-out"
         style={{ height: `${whitePct}%` }}
       />
+      {/* Center line (50% mark) */}
+      <div className="absolute left-0 right-0 top-1/2 h-px bg-muted-foreground/40" />
       {/* Score label */}
       <div
         className={`absolute left-0 right-0 text-center text-[9px] font-bold leading-tight ${

@@ -279,6 +279,11 @@ export default function Spectate() {
               </Card>
             )}
 
+            {/* Current eval display */}
+            {detail && (
+              <EvalDisplay evalCp={evalCp} evalMate={evalMate} botColor={detail.bot_color} />
+            )}
+
             {/* Move list with evals */}
             <Card className="border-0 bg-card/50">
               <CardHeader className="p-4 pb-2">
@@ -389,6 +394,39 @@ function MoveList({ evals, currentPly, onClickPly }: {
           </div>
         )
       })}
+    </div>
+  )
+}
+
+function EvalDisplay({ evalCp, evalMate, botColor }: {
+  evalCp: number | null
+  evalMate: number | null
+  botColor: string
+}) {
+  const evalStr = formatEvalForDisplay(evalCp, evalMate)
+  const isBot = botColor === 'white'
+  // Positive cp = white advantage. Bot winning if (white advantage && bot is white) or (black advantage && bot is black)
+  const botWinning = evalCp !== null
+    ? (isBot ? evalCp > 50 : evalCp < -50)
+    : evalMate !== null
+      ? (isBot ? evalMate > 0 : evalMate < 0)
+      : false
+  const botLosing = evalCp !== null
+    ? (isBot ? evalCp < -50 : evalCp > 50)
+    : evalMate !== null
+      ? (isBot ? evalMate < 0 : evalMate > 0)
+      : false
+
+  return (
+    <div className="text-center py-2">
+      <span className={cn(
+        'text-3xl font-bold font-mono',
+        botWinning ? 'text-green-500' :
+        botLosing ? 'text-red-500' :
+        'text-foreground'
+      )}>
+        {evalStr}
+      </span>
     </div>
   )
 }
