@@ -10,39 +10,37 @@ interface EvalChartProps {
 
 const CLAMP = 600 // ±6 pawns in centipawns
 
-export function EvalChart({ evals, currentPly, onClickPly, height = 120 }: EvalChartProps) {
-  const { points, areaAbove, areaBelow } = useMemo(() => {
-    if (evals.length === 0) return { points: '', areaAbove: '', areaBelow: '' }
+function evalToCp(ev: MoveEval): number {
+  if (ev.eval_mate !== null) return ev.eval_mate > 0 ? CLAMP : -CLAMP
+  if (ev.eval_cp !== null) return Math.max(-CLAMP, Math.min(CLAMP, ev.eval_cp))
+  return 0
+}
 
-    const w = 100 // viewBox percentage width
+export function EvalChart({ evals, currentPly, onClickPly, height = 120 }: EvalChartProps) {
+  const { points, areaAbove, areaBelow, pts } = useMemo(() => {
+    if (evals.length === 0) return { points: '', areaAbove: '', areaBelow: '', pts: [] as [number, number][] }
+
+    const w = 100
     const h = height
     const midY = h / 2
     const step = evals.length > 1 ? w / (evals.length - 1) : w
 
     const pts: [number, number][] = evals.map((ev, i) => {
       const x = evals.length > 1 ? i * step : w / 2
-      let cp = 0
-      if (ev.eval_mate !== null) {
-        cp = ev.eval_mate > 0 ? CLAMP : -CLAMP
-      } else if (ev.eval_cp !== null) {
-        cp = Math.max(-CLAMP, Math.min(CLAMP, ev.eval_cp))
-      }
-      // Positive eval = white advantage = above center = lower y
+      const cp = evalToCp(ev)
       const y = midY - (cp / CLAMP) * midY
       return [x, y]
     })
 
     const polyline = pts.map(([x, y]) => `${x},${y}`).join(' ')
 
-    // Area fill: split into above-center (white) and below-center (black)
-    // Above center area (white advantage): from line up to midY
     const abovePts = pts.map(([x, y]) => `${x},${Math.min(y, midY)}`)
     const aboveArea = `${abovePts.join(' ')} ${pts[pts.length - 1][0]},${midY} ${pts[0][0]},${midY}`
 
     const belowPts = pts.map(([x, y]) => `${x},${Math.max(y, midY)}`)
     const belowArea = `${belowPts.join(' ')} ${pts[pts.length - 1][0]},${midY} ${pts[0][0]},${midY}`
 
-    return { points: polyline, areaAbove: aboveArea, areaBelow: belowArea }
+    return { points: polyline, areaAbove: aboveArea, areaBelow: belowArea, pts }
   }, [evals, height])
 
   if (evals.length === 0) {
@@ -57,9 +55,16 @@ export function EvalChart({ evals, currentPly, onClickPly, height = 120 }: EvalC
   const midY = height / 2
   const step = evals.length > 1 ? viewW / (evals.length - 1) : viewW
 
-  // Current ply indicator
+  // Current ply dot
   const currentEvalIdx = currentPly !== null ? evals.findIndex(e => e.ply === currentPly) : -1
-  const indicatorX = currentEvalIdx >= 0 ? currentEvalIdx * step : null
+  // If no exact match, find closest eval at or before currentPly
+  const dotIdx = currentEvalIdx >= 0
+    ? currentEvalIdx
+    : currentPly !== null
+      ? evals.reduce((best, ev, i) => ev.ply <= currentPly ? i : best, -1)
+      : -1
+  const dotX = dotIdx >= 0 ? pts[dotIdx]?.[0] : null
+  const dotY = dotIdx >= 0 ? pts[dotIdx]?.[1] : null
 
   const handleClick = (e: React.MouseEvent<SVGSVGElement>) => {
     if (!onClickPly || evals.length === 0) return
@@ -84,15 +89,19 @@ export function EvalChart({ evals, currentPly, onClickPly, height = 120 }: EvalC
         {/* Black advantage area (below center) */}
         <polygon points={areaBelow} fill="rgba(0,0,0,0.25)" />
 
-        {/* Center line */}
-        <line x1="0" y1={midY} x2={viewW} y2={midY} stroke="currentColor" strokeOpacity="0.2" strokeWidth="0.5" />
+        {/* Zero line */}
+        <line x1="0" y1={midY} x2={viewW} y2={midY}
+          stroke="rgba(255,255,255,0.4)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
 
         {/* Eval line */}
-        <polyline points={points} fill="none" stroke="currentColor" strokeWidth="1" strokeOpacity="0.6" vectorEffect="non-scaling-stroke" />
+        <polyline points={points} fill="none"
+          stroke="rgba(255,255,255,0.85)" strokeWidth="2" vectorEffect="non-scaling-stroke" />
 
-        {/* Current move indicator */}
-        {indicatorX !== null && (
-          <line x1={indicatorX} y1="0" x2={indicatorX} y2={height} stroke="hsl(var(--primary))" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+        {/* Current move dot */}
+        {dotX !== null && dotY !== null && (
+          <circle cx={dotX} cy={dotY} r="4"
+            fill="hsl(var(--primary))" stroke="rgba(0,0,0,0.5)" strokeWidth="1"
+            vectorEffect="non-scaling-stroke" />
         )}
       </svg>
     </div>

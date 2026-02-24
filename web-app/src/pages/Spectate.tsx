@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import { Chess } from 'chess.js'
 import { ChessBoard } from '@/components/ChessBoard'
 import { EvalBar } from '@/components/EvalBar'
 import { EvalChart } from '@/components/EvalChart'
@@ -97,29 +98,50 @@ export default function Spectate() {
   const detail = useGameDetail(selectedGameId)
   const isLive = detail?.status === 'playing'
 
-  // When live and following latest, keep viewPly at null (= latest)
   const evals = detail?.evals ?? []
-  const latestPly = evals.length > 0 ? evals[evals.length - 1].ply : null
+
+  // Build per-ply positions from the UCI move string
+  const positions = useMemo(() => {
+    const movesStr = detail?.moves_uci
+    if (!movesStr) return []
+    const moves = movesStr.trim().split(/\s+/).filter(Boolean)
+    const chess = new Chess()
+    const result: { ply: number; fen: string; moveUci: string }[] = []
+    for (let i = 0; i < moves.length; i++) {
+      try {
+        chess.move({ from: moves[i].slice(0, 2), to: moves[i].slice(2, 4), promotion: moves[i][4] as any })
+        result.push({ ply: i, fen: chess.fen(), moveUci: moves[i] })
+      } catch {
+        break
+      }
+    }
+    return result
+  }, [detail?.moves_uci])
+
+  const totalPlies = positions.length
+  const latestPly = totalPlies > 0 ? totalPlies - 1 : null
   const displayPly = viewPly ?? latestPly
 
-  // Get eval for the display ply
+  // Get eval for the display ply (evals only have bot moves, find closest)
   const currentEval = evals.find(e => e.ply === displayPly)
-  const evalCp = currentEval?.eval_cp ?? null
-  const evalMate = currentEval?.eval_mate ?? null
+  // If no exact match, find the most recent eval at or before this ply
+  const effectiveEval = currentEval ?? [...evals].reverse().find(e => e.ply <= (displayPly ?? Infinity))
+  const evalCp = effectiveEval?.eval_cp ?? null
+  const evalMate = effectiveEval?.eval_mate ?? null
 
-  // Navigation
-  const goFirst = useCallback(() => { if (evals.length > 0) setViewPly(evals[0].ply) }, [evals])
+  // Navigation (step through all plies, not just evals)
+  const goFirst = useCallback(() => { if (totalPlies > 0) setViewPly(0) }, [totalPlies])
   const goPrev = useCallback(() => {
-    if (evals.length === 0) return
-    const curIdx = displayPly !== null ? evals.findIndex(e => e.ply === displayPly) : evals.length - 1
-    if (curIdx > 0) setViewPly(evals[curIdx - 1].ply)
-  }, [evals, displayPly])
+    if (totalPlies === 0) return
+    const cur = displayPly ?? totalPlies - 1
+    if (cur > 0) setViewPly(cur - 1)
+  }, [totalPlies, displayPly])
   const goNext = useCallback(() => {
-    if (evals.length === 0) return
-    const curIdx = displayPly !== null ? evals.findIndex(e => e.ply === displayPly) : evals.length - 1
-    if (curIdx < evals.length - 1) setViewPly(evals[curIdx + 1].ply)
-    else setViewPly(null) // back to latest
-  }, [evals, displayPly])
+    if (totalPlies === 0) return
+    const cur = displayPly ?? totalPlies - 1
+    if (cur < totalPlies - 1) setViewPly(cur + 1)
+    else setViewPly(null)
+  }, [totalPlies, displayPly])
   const goLast = useCallback(() => setViewPly(null), [])
 
   const handleChartClick = useCallback((ply: number) => setViewPly(ply), [])
@@ -142,11 +164,10 @@ export default function Spectate() {
     return () => window.removeEventListener('keydown', handler)
   }, [goFirst, goPrev, goNext, goLast])
 
-  // Determine the FEN to display
-  const displayFen = detail?.fen ?? 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
-
-  // Determine last move for highlighting
-  const lastMoveUci = detail?.last_move_uci
+  // Determine the FEN and last move from position array
+  const currentPosition = displayPly !== null ? positions[displayPly] : null
+  const displayFen = currentPosition?.fen ?? detail?.fen ?? 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+  const lastMoveUci = currentPosition?.moveUci ?? detail?.last_move_uci
   const lastMove = lastMoveUci ? { from: lastMoveUci.slice(0, 2), to: lastMoveUci.slice(2, 4) } : null
 
   // Board orientation: show from bot's perspective

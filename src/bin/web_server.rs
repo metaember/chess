@@ -611,7 +611,8 @@ async fn get_game_detail(
         "SELECT g.game_id, g.lichess_url, g.bot_color, g.opponent_name, g.opponent_rating,
                 g.opponent_is_bot, g.time_control, g.speed, g.mode, g.provenance,
                 g.status, g.result, g.termination, g.started_at, g.finished_at,
-                l.fen, l.last_move_uci, l.moves_uci, l.wtime_ms, l.btime_ms
+                l.fen, l.last_move_uci, COALESCE(l.moves_uci, g.moves_uci),
+                l.wtime_ms, l.btime_ms
          FROM games g
          LEFT JOIN live_state l ON g.game_id = l.game_id
          WHERE g.game_id = ?1",
@@ -775,7 +776,8 @@ mod tests {
             result TEXT DEFAULT '*',
             termination TEXT,
             started_at TEXT,
-            finished_at TEXT
+            finished_at TEXT,
+            moves_uci TEXT
         );
         CREATE TABLE IF NOT EXISTS move_evals (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
