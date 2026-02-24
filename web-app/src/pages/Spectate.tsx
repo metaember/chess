@@ -301,13 +301,13 @@ export default function Spectate() {
               <CardContent className="p-4 pt-1 max-h-64 overflow-y-auto space-y-1">
                 {liveGames.map(g => (
                   <GameRow key={g.game_id} gameId={g.game_id} opponent={g.opponent_name}
-                    rating={g.opponent_rating} result="*" timeControl={g.time_control}
+                    rating={g.opponent_rating} result="*" botColor={g.bot_color} timeControl={g.time_control}
                     time={g.started_at} isLive selected={g.game_id === selectedGameId}
                     onClick={handleGameSelect} />
                 ))}
                 {recentGames.filter(g => !liveGames.some(l => l.game_id === g.game_id)).map(g => (
                   <GameRow key={g.game_id} gameId={g.game_id} opponent={g.opponent_name}
-                    rating={g.opponent_rating} result={g.result} timeControl={g.time_control}
+                    rating={g.opponent_rating} result={g.result} botColor={g.bot_color} timeControl={g.time_control}
                     time={g.started_at} selected={g.game_id === selectedGameId}
                     onClick={handleGameSelect} />
                 ))}
@@ -393,35 +393,42 @@ function MoveList({ evals, currentPly, onClickPly }: {
   )
 }
 
-function GameRow({ gameId, opponent, rating, result, timeControl, time, isLive, selected, onClick }: {
+function GameRow({ gameId, opponent, rating, result, botColor, timeControl, time, isLive, selected, onClick }: {
   gameId: string
   opponent: string
   rating: number | null
   result: string
+  botColor: string
   timeControl: string
   time: string
   isLive?: boolean
   selected: boolean
   onClick: (id: string) => void
 }) {
+  const isWin = (botColor === 'white' && result === '1-0') || (botColor === 'black' && result === '0-1')
+  const isLoss = (botColor === 'white' && result === '0-1') || (botColor === 'black' && result === '1-0')
+
   return (
     <button
       onClick={() => onClick(gameId)}
       className={cn(
-        'w-full text-left flex items-center gap-2 px-2 py-1.5 rounded text-xs hover:bg-muted/50 transition-colors',
+        'w-full text-left flex items-center gap-1.5 px-2 py-1.5 rounded text-xs hover:bg-muted/50 transition-colors whitespace-nowrap',
         selected && 'bg-primary/10'
       )}
     >
       {isLive && <Radio className="w-2.5 h-2.5 text-green-500 animate-pulse flex-shrink-0" />}
-      <span className="flex-1 truncate">{opponent}{rating ? ` (${rating})` : ''}</span>
-      <span className="text-muted-foreground">{timeControl}</span>
+      <span className="flex-1 truncate min-w-0">{opponent}{rating ? ` (${rating})` : ''}</span>
+      <span className="text-muted-foreground flex-shrink-0">{timeControl}</span>
       <span className={cn(
-        'font-medium w-10 text-right',
-        result === '1-0' || result === '0-1' ? 'text-foreground' : 'text-muted-foreground'
+        'font-medium w-10 text-right flex-shrink-0',
+        isLive ? 'text-green-500' :
+        isWin ? 'text-green-500' :
+        isLoss ? 'text-red-500' :
+        'text-foreground'
       )}>
         {isLive ? 'LIVE' : result}
       </span>
-      <span className="text-muted-foreground/50 w-12 text-right">{timeAgo(time)}</span>
+      <span className="text-muted-foreground/50 w-10 text-right flex-shrink-0">{timeAgo(time)}</span>
     </button>
   )
 }

@@ -103,11 +103,11 @@ impl SearchInfo {
         const MATE_THRESHOLD: i32 = 900_000_000;
 
         if self.score > MATE_THRESHOLD {
-            let plies_to_mate = (MAX_SCORE - self.score) / 100;
+            let plies_to_mate = MAX_SCORE - self.score;
             let moves_to_mate = (plies_to_mate + 1) / 2;
             format!("mate {}", moves_to_mate.max(1))
         } else if self.score < -MATE_THRESHOLD {
-            let plies_to_mate = (self.score - MIN_SCORE) / 100;
+            let plies_to_mate = self.score - MIN_SCORE;
             let moves_to_mate = (plies_to_mate + 1) / 2;
             format!("mate -{}", moves_to_mate.max(1))
         } else {
