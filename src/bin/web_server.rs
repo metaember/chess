@@ -738,7 +738,7 @@ async fn main() {
         .route("/api/move", post(make_move))
         .route("/api/live-games", get(get_live_games))
         .route("/api/games", get(get_recent_games))
-        .route("/api/games/{game_id}", get(get_game_detail))
+        .route("/api/games/:game_id", get(get_game_detail))
         .fallback_service(ServeDir::new("web").fallback(ServeFile::new("web/index.html")))
         .layer(cors)
         .with_state(state);
