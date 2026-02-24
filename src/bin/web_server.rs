@@ -528,12 +528,23 @@ struct GamesQuery {
     offset: Option<i64>,
 }
 
+fn find_db_path() -> Option<PathBuf> {
+    ["lichess-bot/data/games.db", "data/games.db"]
+        .iter()
+        .map(PathBuf::from)
+        .find(|p| p.exists())
+}
+
+fn resolve_db_path(db_path: &Option<PathBuf>) -> Option<PathBuf> {
+    db_path.clone().or_else(find_db_path)
+}
+
 fn open_db_readonly(db_path: &Option<PathBuf>) -> Result<Connection, StatusCode> {
-    let path = db_path.as_ref().ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+    let path = resolve_db_path(db_path).ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
     if !path.exists() {
         return Err(StatusCode::SERVICE_UNAVAILABLE);
     }
-    Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+    Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
 }
 
@@ -697,22 +708,18 @@ async fn main() {
     let engine = ChessEngine::new();
     println!("Chess engine ready (opening book loaded).");
 
-    // Look for the SQLite database from the lichess-bot
-    let db_path = ["lichess-bot/data/games.db", "data/games.db"]
-        .iter()
-        .map(PathBuf::from)
-        .find(|p| p.exists());
-
-    if let Some(ref path) = db_path {
+    // db_path is None so the spectator DB is discovered dynamically on each request.
+    // This way it works even if lichess-bot starts after the web server.
+    if let Some(path) = find_db_path() {
         println!("Spectator DB found: {}", path.display());
     } else {
-        println!("No spectator DB found (lichess-bot hasn't run yet). Spectator API will return 503.");
+        println!("Spectator DB not found yet. It will be detected once lichess-bot creates it.");
     }
 
     let state = AppState {
         games: Arc::new(RwLock::new(HashMap::new())),
         engine: Arc::new(RwLock::new(engine)),
-        db_path,
+        db_path: None,
     };
 
     let cors = CorsLayer::new();
