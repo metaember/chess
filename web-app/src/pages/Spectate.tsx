@@ -207,6 +207,7 @@ export default function Spectate() {
                 <EvalChart
                   evals={evals}
                   currentPly={displayPly}
+                  botColor={detail?.bot_color}
                   onClickPly={handleChartClick}
                   height={80}
                 />

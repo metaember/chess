@@ -15,6 +15,7 @@ import { formatEvalForDisplay } from '@/lib/spectate-types'
 interface EvalChartProps {
   evals: MoveEval[]
   currentPly: number | null
+  botColor?: string
   onClickPly?: (ply: number) => void
   height?: number
 }
@@ -37,7 +38,8 @@ interface DataPoint {
   san: string
 }
 
-export function EvalChart({ evals, currentPly, onClickPly, height = 100 }: EvalChartProps) {
+export function EvalChart({ evals, currentPly, botColor, onClickPly, height = 100 }: EvalChartProps) {
+  const isWhiteBot = botColor === 'white'
   const data = useMemo<DataPoint[]>(() => {
     return evals.map((ev, i) => {
       const cp = evalToCp(ev)
@@ -102,11 +104,14 @@ export function EvalChart({ evals, currentPly, onClickPly, height = 100 }: EvalC
               const d = payload[0].payload as DataPoint
               const moveNum = Math.floor(d.ply / 2) + 1
               const side = d.ply % 2 === 0 ? '.' : '...'
+              const botWinning = isWhiteBot ? d.cp > 50 : d.cp < -50
+              const botLosing = isWhiteBot ? d.cp < -50 : d.cp > 50
+              const evalColor = botWinning ? 'text-green-500' : botLosing ? 'text-red-500' : 'text-foreground'
               return (
                 <div className="bg-popover border border-border rounded px-2 py-1 text-xs shadow-lg">
                   <span className="text-muted-foreground">{moveNum}{side}</span>{' '}
                   <span className="font-medium">{d.san}</span>{' '}
-                  <span className="text-primary font-mono">{d.label}</span>
+                  <span className={`font-mono font-semibold ${evalColor}`}>{d.label}</span>
                 </div>
               )
             }}
