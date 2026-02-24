@@ -56,6 +56,8 @@ challenge:
 greeting:
   hello: "Hi! I'm {me}, a Rust chess engine. Good luck!"
   goodbye: "Good game!"
+  hello_spectators: "Welcome! You're watching {me} vs {opponent}. Grab some popcorn. 🍿"
+  goodbye_spectators: "Thanks for watching! Hope you enjoyed the show."
 
 matchmaking:
   allow_matchmaking: true
