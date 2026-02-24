@@ -544,8 +544,17 @@ fn open_db_readonly(db_path: &Option<PathBuf>) -> Result<Connection, StatusCode>
     if !path.exists() {
         return Err(StatusCode::SERVICE_UNAVAILABLE);
     }
-    Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
+    // Must use READ_WRITE (not READ_ONLY) to read WAL-mode databases written by another process.
+    // READ_ONLY connections cannot see data in the WAL that hasn't been checkpointed yet.
+    let conn = Connection::open_with_flags(
+        &path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    // Prevent accidental writes
+    conn.execute_batch("PRAGMA query_only = ON;")
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(conn)
 }
 
 async fn get_live_games(
