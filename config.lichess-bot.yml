@@ -60,7 +60,7 @@ greeting:
 matchmaking:
   allow_matchmaking: true
   challenge_timeout: 10
-  opponent_rating_difference: 1500
+  opponent_rating_difference: 500
   challenge_mode: "rated"
   challenge_initial_time:
     - 180    # 3+0 blitz
