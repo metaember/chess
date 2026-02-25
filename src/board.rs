@@ -61,12 +61,13 @@ pub struct Board {
 
 impl Board {
     pub fn from_fen(fen_string: &str) -> Board {
-        if fen_string.chars().filter(|c| *c == ' ').count() != 5 {
-            panic!("Fen string must have 6 fields, space delimited")
+        let space_count = fen_string.chars().filter(|c| *c == ' ').count();
+        if space_count < 3 || space_count > 5 {
+            panic!("Fen string must have 4-6 fields, space delimited")
         };
         let parts: Vec<&str> = fen_string.splitn(6, " ").collect();
 
-        assert!(parts.len() == 6);
+        assert!(parts.len() >= 4);
         let mut board_to_piece: [[Option<Piece>; 8]; 8] = [[None; 8]; 8];
 
         // Initialize piece bitboards and incremental evaluation
@@ -133,8 +134,8 @@ impl Board {
             Some(Position::from_algebraic(parts[3].get(0..2).unwrap()))
         };
 
-        let halfmove_clock: u32 = parts[4].parse().expect("Halfmove clock should be an u32");
-        let fullmove_clock: u32 = parts[5].parse().expect("Fullmove clock should be a u32");
+        let halfmove_clock: u32 = parts.get(4).and_then(|s| s.parse().ok()).unwrap_or(0);
+        let fullmove_clock: u32 = parts.get(5).and_then(|s| s.parse().ok()).unwrap_or(1);
 
         // Hash side to move
         if active_color == Color::Black {
