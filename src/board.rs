@@ -57,6 +57,10 @@ pub struct Board {
     pst_eg: [i32; 2],
     /// Game phase (0 = endgame, MAX_PHASE = opening/middlegame)
     phase: i32,
+    /// Bishop count per color [White, Black] for bishop pair detection
+    bishop_count: [u8; 2],
+    /// Pawn Zobrist hash (only updated when pawns change) for pawn hash table
+    pawn_hash: u64,
 }
 
 impl Board {
@@ -78,6 +82,8 @@ impl Board {
         let mut pst_eg = [0i32; 2];
         let mut phase = 0i32;
         let mut zobrist_hash: u64 = 0;
+        let mut bishop_count = [0u8; 2];
+        let mut pawn_hash: u64 = 0;
         let mut white_king_position = Position { rank: 1, file: 5 }; // Default, will be set
         let mut black_king_position = Position { rank: 8, file: 5 }; // Default, will be set
 
@@ -100,6 +106,16 @@ impl Board {
                 pst_eg[color_idx] += get_pst_value(p.piece_type, p.color, p.position.rank, p.position.file, true);
                 phase += PHASE_WEIGHTS[piece_idx];
                 zobrist_hash ^= ZOBRIST_KEYS.piece_key(p.color, p.piece_type, &p.position);
+
+                // Track bishop count
+                if p.piece_type == PieceType::Bishop {
+                    bishop_count[color_idx] += 1;
+                }
+
+                // Track pawn hash
+                if p.piece_type == PieceType::Pawn {
+                    pawn_hash ^= ZOBRIST_KEYS.piece_key(p.color, p.piece_type, &p.position);
+                }
 
                 // Track king positions
                 if p.piece_type == PieceType::King {
@@ -186,6 +202,8 @@ impl Board {
             pst_mg,
             pst_eg,
             phase,
+            bishop_count,
+            pawn_hash,
         }
     }
 
@@ -316,6 +334,28 @@ impl Board {
     #[inline]
     pub fn get_phase(&self) -> i32 {
         self.phase
+    }
+
+    /// Get bishop count for a color
+    #[inline]
+    pub fn get_bishop_count(&self, color: Color) -> u8 {
+        self.bishop_count[color as usize]
+    }
+
+    /// Get pawn Zobrist hash (for pawn hash table)
+    #[inline]
+    pub fn get_pawn_hash(&self) -> u64 {
+        self.pawn_hash
+    }
+
+    /// Get king square index (0-63) for a color
+    #[inline]
+    pub fn get_king_square(&self, color: Color) -> u8 {
+        let pos = match color {
+            Color::White => &self.white_king_position,
+            Color::Black => &self.black_king_position,
+        };
+        (pos.rank - 1) * 8 + (pos.file - 1)
     }
 
     /// Get tapered evaluation score (positive = white advantage)
@@ -759,6 +799,8 @@ impl Board {
         let mut pst_eg = [0i32; 2];
         let mut phase = 0i32;
         let mut zobrist_hash: u64 = 0;
+        let mut bishop_count = [0u8; 2];
+        let mut pawn_hash: u64 = 0;
 
         for rank in 0..8 {
             for file in 0..8 {
@@ -777,6 +819,14 @@ impl Board {
 
                     // Update Zobrist hash
                     zobrist_hash ^= ZOBRIST_KEYS.piece_key(piece.color, piece.piece_type, &piece.position);
+
+                    // Track bishop count and pawn hash
+                    if piece.piece_type == PieceType::Bishop {
+                        bishop_count[color_idx] += 1;
+                    }
+                    if piece.piece_type == PieceType::Pawn {
+                        pawn_hash ^= ZOBRIST_KEYS.piece_key(piece.color, piece.piece_type, &piece.position);
+                    }
                 }
             }
         }
@@ -835,6 +885,8 @@ impl Board {
             pst_mg,
             pst_eg,
             phase,
+            bishop_count,
+            pawn_hash,
         }
     }
 
@@ -857,6 +909,8 @@ impl Board {
             pst_mg: self.pst_mg,
             pst_eg: self.pst_eg,
             phase: self.phase,
+            bishop_count: self.bishop_count,
+            pawn_hash: self.pawn_hash,
         };
 
         let color_idx = mv.piece.color as usize;
@@ -867,6 +921,11 @@ impl Board {
         // Incremental eval: remove piece from old position
         self.pst_mg[color_idx] -= get_pst_value(mv.piece.piece_type, mv.piece.color, mv.from.rank, mv.from.file, false);
         self.pst_eg[color_idx] -= get_pst_value(mv.piece.piece_type, mv.piece.color, mv.from.rank, mv.from.file, true);
+
+        // Pawn hash: remove pawn from old position
+        if mv.piece.piece_type == PieceType::Pawn {
+            self.pawn_hash ^= ZOBRIST_KEYS.piece_key(mv.piece.color, PieceType::Pawn, &mv.from);
+        }
 
         // Clear the from square on the board array
         self.board_to_piece[(mv.from.rank - 1) as usize][(mv.from.file - 1) as usize] = None;
@@ -884,6 +943,16 @@ impl Board {
             self.pst_mg[cap_color_idx] -= get_pst_value(captured.piece_type, captured.color, captured.position.rank, captured.position.file, false);
             self.pst_eg[cap_color_idx] -= get_pst_value(captured.piece_type, captured.color, captured.position.rank, captured.position.file, true);
             self.phase -= PHASE_WEIGHTS[cap_piece_idx];
+
+            // Track bishop captures
+            if captured.piece_type == PieceType::Bishop {
+                self.bishop_count[cap_color_idx] -= 1;
+            }
+
+            // Track pawn captures
+            if captured.piece_type == PieceType::Pawn {
+                self.pawn_hash ^= ZOBRIST_KEYS.piece_key(captured.color, PieceType::Pawn, &captured.position);
+            }
 
             // Clear the captured piece's square
             self.board_to_piece[(captured.position.rank - 1) as usize]
@@ -952,6 +1021,13 @@ impl Board {
             self.phase += PHASE_WEIGHTS[piece_type_to_index(promoted_to_type)];
             // Note: pawn phase weight is 0, so no need to subtract
 
+            // Track bishop promotion
+            if promoted_to_type == PieceType::Bishop {
+                self.bishop_count[color_idx] += 1;
+            }
+
+            // Pawn is no longer a pawn after promotion (pawn_hash already removed in "from" step above)
+
             promoted_to_type
         } else {
             mv.piece.piece_type
@@ -963,6 +1039,11 @@ impl Board {
         // Incremental eval: add piece to new position
         self.pst_mg[color_idx] += get_pst_value(final_piece_type, mv.piece.color, mv.to.rank, mv.to.file, false);
         self.pst_eg[color_idx] += get_pst_value(final_piece_type, mv.piece.color, mv.to.rank, mv.to.file, true);
+
+        // Pawn hash: add pawn to new position (only if still a pawn, not promoted)
+        if final_piece_type == PieceType::Pawn {
+            self.pawn_hash ^= ZOBRIST_KEYS.piece_key(mv.piece.color, PieceType::Pawn, &mv.to);
+        }
 
         // Update the destination square on the board array
         let moved_piece = Piece {
@@ -1118,6 +1199,8 @@ impl Board {
         self.pst_mg = undo.pst_mg;
         self.pst_eg = undo.pst_eg;
         self.phase = undo.phase;
+        self.bishop_count = undo.bishop_count;
+        self.pawn_hash = undo.pawn_hash;
 
         // Switch active color back
         self.active_color = self.active_color.other_color();

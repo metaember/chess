@@ -575,6 +575,8 @@ pub struct UndoInfo {
     pub pst_mg: [i32; 2],
     pub pst_eg: [i32; 2],
     pub phase: i32,
+    pub bishop_count: [u8; 2],
+    pub pawn_hash: u64,
 }
 
 /// Information needed to undo a null move (pass to opponent without moving)

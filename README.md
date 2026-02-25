@@ -67,15 +67,15 @@ Chess bot written in rust
 
   ~~Search later moves at reduced depth.~~ Implemented on top of PVS. First 4 moves searched at full depth, remaining quiet moves at reduced depth (depth - 1). Not applied when in check or when move gives check. Combined with PVS null window search for maximum efficiency.
 
-- [ ] **Improved Evaluation Terms** ⚠️ ATTEMPTED
+- [x] **Improved Evaluation Terms** ✓ DONE
 
-  The current eval is material + PST only. Attempted to add bishop pair (+30) and pawn structure (doubled/isolated penalties) but found that accessing `piece_bb` from within `evaluate_board` causes cache misses (piece_bb is 96 bytes away from the incrementally-updated material/PST fields). This caused 200-300% slowdown at depths 5-6 due to the high frequency of evaluation calls in quiescence search. To enable these terms, the solution is either:
-  1. **Incremental tracking**: Add bishop/pawn counts to Board struct, update during make/unmake_move
-  2. **Pawn hash table**: Cache pawn structure scores since pawns move infrequently
+  ~~The eval was material + PST only. Previous attempt to add eval terms failed due to cache misses from accessing `piece_bb` in `evaluate_board`.~~ Solved via incremental tracking (bishop pair) and a pawn hash table (pawn structure). Now includes:
+  - **Bishop pair**: +30cp MG / +50cp EG, tracked incrementally via `bishop_count: [u8; 2]`
+  - **Pawn structure** (cached in 16K-entry pawn hash table): doubled pawns (-10/-15), isolated pawns (-15/-10), passed pawns (5-70 MG, 10-150 EG by rank)
+  - **King safety**: pawn shield bonus (+10/pawn), open file near king penalty (-20/file), phase-weighted
+  - **Rook on open files**: +20 open, +10 semi-open
 
-  Potential improvements (not yet implemented):
-  - **Mobility**: Count pseudo-legal moves per piece, bonus for more active pieces
-  - **King safety**: Bonus for pawn shield in front of castled king, penalty for open files near king
+  Gauntlet results (71 games at 1s+0.1s): 0 losses, 1 win, 70 draws vs old eval. Elo: +5 [+88, -78]. See SOTA comparison below for tuning opportunities.
 
 ### Implementation Priority
 
@@ -93,38 +93,143 @@ Chess bot written in rust
 | 10 | Futility pruning | Strength | Smaller search tree | ✓ Done |
 | 11 | Null move pruning | Strength | Smaller search tree | ✓ Done |
 | 12 | Late Move Reductions (LMR) | Strength | Better node efficiency | ✓ Done |
-| 13 | Improved eval terms | Strength | Better positional play | ⚠️ Attempted |
+| 13 | Improved eval terms | Strength | Better positional play | ✓ Done |
+
+---
+
+## Evaluation vs State of the Art
+
+Comparison of our current evaluation terms against Stockfish (classical, pre-NNUE), Ethereal (~3300 Elo), and Fruit. Values are in centipawns (MG = middlegame, EG = endgame).
+
+### Bishop Pair
+
+| | Ours | Stockfish | Ethereal | Fruit |
+|---|---|---|---|---|
+| **MG** | +30 | ~90 (polynomial) | +22 | +50 |
+| **EG** | +50 | ~90 (single value) | +88 | +50 |
+| **Method** | Flat bonus, count > 1 | Polynomial imbalance, interactions with all piece counts | Flat bonus, checks both square colors | Flat bonus, count-based |
+| **Tracking** | Incremental `bishop_count` | Cached in material hash | Per eval call | Per eval call |
+
+**Gaps**: Our EG value is low (50 vs Ethereal's 88). Bishop pair advantage grows in open endgames. Stockfish's polynomial system means the value scales with opponent pawn count. We should check bishops on both square colors (not just count) to handle promotion edge cases.
+
+### Doubled Pawns
+
+| | Ours | Stockfish 12 | Older Stockfish |
+|---|---|---|---|
+| **MG** | -10 | -11 | -13 to -23 (per file) |
+| **EG** | **-15** | **-55** | -43 to -48 (per file) |
+
+**Gaps**: MG is fine. **EG is far too small** (-15 vs -55). Doubled pawns are crippling in endgames — this is the single biggest value discrepancy. Older Stockfish also varied by file (center worse than edge).
+
+### Isolated Pawns
+
+| | Ours | Stockfish 12 | Older Stockfish |
+|---|---|---|---|
+| **MG** | -15 | -5 base (-20 on open file) | -25 to -60 (per file + opposed) |
+| **EG** | -10 | -17 base (-42 on open file) | -30 to -52 (per file + opposed) |
+
+**Gaps**: Our phase weighting is **backwards** — we penalize more in MG than EG. Stockfish does the opposite: isolated pawns are worse in endgames (easier targets with fewer pieces). We also don't distinguish isolated pawns on **open files** — Stockfish adds "WeakUnopposed" (-15/-25) when no enemy pawn blocks the file.
+
+### Passed Pawns
+
+| Rank (from pawn's perspective) | Ours MG | Ours EG | Stockfish 12 MG | Stockfish 12 EG |
+|---|---|---|---|---|
+| 2 | 5 | 10 | 9 | 28 |
+| 3 | 5 | 10 | 15 | 31 |
+| 4 | 10 | 20 | 17 | 39 |
+| 5 | 20 | 40 | 64 | 70 |
+| 6 | 40 | 80 | 171 | 177 |
+| 7 | 70 | 150 | 277 | 260 |
+
+**Gaps**: Low ranks are roughly OK. **Ranks 5-7 are dramatically undervalued** — our rank 7 passer (70/150) is about half of Stockfish's (277/260). The biggest missing feature is **king proximity scaling**: Stockfish adds huge bonuses when the enemy king is far from the promotion square and the friendly king is close. Formula: `(enemy_king_dist * 5 - friendly_king_dist * 2) * rank_weight`. Also missing: blocker awareness (is the square ahead empty/safe?) and supported passer bonus.
+
+### King Safety
+
+| | Ours | Stockfish (classical) |
+|---|---|---|
+| **Pawn shield** | +10/pawn, max +30 | Per-file, per-rank lookup table (0-141cp penalties) |
+| **Open files** | -20/file near king | Implicit via shelter table + storm danger |
+| **Attack zones** | None | Weighted attacker count (N=77, B=55, R=44, Q=10), min 2 attackers |
+| **Safe checks** | None | Huge danger points (Queen=780, Rook=880, Knight=790, Bishop=435) |
+| **Scoring** | Linear | **Quadratic**: `danger^2 / 4096` MG, `danger / 16` EG |
+| **Pawn storm** | None | Per-rank, per-state tables for advancing enemy pawns |
+
+**Gaps**: This is the area with **the most room for improvement**. Our king safety is extremely simplistic. Stockfish's quadratic scoring means multiple attackers compound super-linearly (3 attackers ~ 9x the penalty of 1). Safe check detection is critical — a rook that can safely check the king adds 880 danger points. The minimum-2-attackers threshold prevents false positives.
+
+### Rook on Open/Semi-Open Files
+
+| | Ours | Stockfish 12 | Ethereal |
+|---|---|---|---|
+| **Open MG** | +20 | **+44** | +34 |
+| **Open EG** | +20 | +20 | +8 |
+| **Semi-open MG** | +10 | +18 | +10 |
+| **Semi-open EG** | +10 | +7 | +9 |
+| **Rook on 7th** | None | Implicit via threats | +42 EG |
+
+**Gaps**: Open file MG is roughly half of Stockfish's (+20 vs +44). Should also add a rook-on-7th-rank bonus (especially in endgame). Bonus is primarily a middlegame term — our flat single value doesn't capture this.
+
+### Missing Eval Terms
+
+Features present in SOTA engines that we don't implement:
+
+| Feature | Stockfish Values | Est. Elo Impact | Difficulty |
+|---|---|---|---|
+| **Mobility** (bishop/rook square counting) | Lookup tables by piece type, 0-27 squares | +40 Elo | Medium* |
+| **King attack zones + quadratic scoring** | `danger^2/4096`, attacker weights | +30-50 Elo | Hard |
+| **King proximity to passed pawns** | `(enemy_dist*5 - friendly_dist*2) * rank_weight` | +15-25 Elo | Easy |
+| **Backward pawns** | -8/-27 base, worse on open file | +10-20 Elo | Easy |
+| **Connected pawns** | 0-85 MG by rank, phalanx/support modifiers | +15-25 Elo | Easy |
+| **Knight/Bishop outposts** | +36/+12 for supported knight on rank 4-6 | +10-15 Elo | Easy |
+| **Safe check detection** | 780-880 danger points per safe check | +10-20 Elo | Medium |
+| **Pawn storm** | Per-rank/state tables for enemy pawns near king | +5-10 Elo | Medium |
+| **Rook on 7th rank** | +42 to +98 EG | +5-10 Elo | Trivial |
+
+### Tuning Priority
+
+Ordered by expected impact and implementation effort:
+
+1. **Fix doubled pawn EG** (-15 -> ~-50) — trivial value change, big correction
+2. **Fix passed pawn ranks 5-7** (roughly double values) — trivial value change
+3. **Add king proximity to passed pawns** — easy, already have `get_king_square()`
+4. **Add mobility** — done (knight-only, see note below)
+5. **Fix isolated pawn phase** (flip MG/EG) + add open-file modifier — easy
+6. **Increase rook open file MG** (+20 -> ~+40) — trivial value change
+7. **Add backward pawn penalty** — easy with existing bitboard masks
+8. **Add connected pawn bonus** — easy, adjacent pawn detection
+9. **Add knight outposts** — easy, pawn attack span check
+10. **King attack zones + quadratic scoring** — hard but highest long-term ceiling
+
+> **Why only knight mobility?** Bishop/rook mobility requires `bishop_attacks()` and `rook_attacks()` which go through magic bitboard lookups. These are already called in `compute_attack_map_static` during `make_move`, but by the time `evaluate_board` runs (millions of calls per search), the magic table data has been evicted from L1/L2 cache. Re-doing those lookups in eval caused **8x per-node slowdown**. Knight attacks use a simple 64-entry precomputed table (`ATTACK_TABLES.knight[]`) that stays hot in cache, so knight mobility is essentially free. A future optimization could piggyback bishop/rook mobility on the existing attack map computation in `recompute_attack_maps()`, but that requires architectural changes to thread eval data through the move/unmake path.
+
+*Sources: [Stockfish classical eval (SF 10-12)](https://github.com/official-stockfish/Stockfish/blob/sf_12/src/evaluate.cpp), [Ethereal](https://github.com/AndyGrant/Ethereal), [Fruit 2.1](https://github.com/Warpten/Fruit-2.1), [Chessprogramming Wiki](https://www.chessprogramming.org/Evaluation), [MadChess mobility measurement](https://www.madchess.net/2020/02/01/madchess-3-0-beta-5c5d4fc-piece-mobility/)*
 
 ---
 
 ## Remaining Optimizations
 
-### High Impact (Do These First)
+### Speed
 
 | Priority | Optimization | Type | Location | Notes |
 |----------|--------------|------|----------|-------|
 | **High** | Remove debug path tracking | Speed | `search.rs:270` | `SearchResult.moves` Vec only needed for debugging. Use `#[cfg(debug_assertions)]` to exclude from release builds. |
-
-### Medium Impact
-
-| Priority | Optimization | Type | Location | Notes |
-|----------|--------------|------|----------|-------|
 | **Medium** | Slim `Move` struct | Speed | `types.rs:325` | Remove redundant `piece: Piece` field (~12 bytes). Can be looked up in O(1) via `board_to_piece`. |
-| **Medium** | Penalize pawn-capture squares | Strength | `evaluate.rs:173` | In move ordering, downgrade moves where the piece lands on a square attacked by enemy pawns. |
-| **Medium** | Bishop pair bonus (incremental) | Strength | `board.rs` | Cache misses blocked previous attempt. Add bishop count to Board struct, update during make/unmake, award +30cp for having both bishops. |
-| **Medium** | Pawn structure via hash table | Strength | `evaluate.rs` | Cache doubled/isolated pawn penalties in hash table. Pawns move rarely, so cache hit rate is high. |
-| **Medium** | Optimize pin-filter nested loop | Speed | `board.rs:1361` | Rewrite O(moves × pins) loop using position-indexed map for O(1) lookup. |
+| **Medium** | Optimize pin-filter nested loop | Speed | `board.rs:1361` | Rewrite O(moves x pins) loop using position-indexed map for O(1) lookup. |
+| **Low** | Replace `ray_to` Vec allocation | Speed | `types.rs:139` | Return fixed-size array or iterator instead of allocating `Vec<Position>`. |
+| **Low** | Parallel search (Lazy SMP) | Speed | `search.rs` | Multi-threaded search with shared transposition table. |
 
-### Lower Priority (Polish)
+### Strength
 
 | Priority | Optimization | Type | Location | Notes |
 |----------|--------------|------|----------|-------|
-| **Low** | King safety evaluation | Strength | `evaluate.rs` | Pawn shield bonus for pawns in front of castled king, penalty for open files near king. |
-| **Low** | Mobility evaluation | Strength | `evaluate.rs` | Count pseudo-legal moves per piece, bonus for more active pieces. |
-| **Low** | Opening book (larger) | Strength | `search.rs` | Polyglot support already integrated. Add larger opening books for broader coverage. |
+| **High** | Tune eval values to SOTA | Strength | `evaluate.rs` | See comparison table above. Doubled EG, passed pawn scaling, isolated phase are all wrong. |
+| **High** | King proximity to passed pawns | Strength | `evaluate.rs` | Scale passed pawn bonus by king distances. Easy, high impact. |
+| **High** | Mobility (bishop/rook) | Strength | `evaluate.rs` | Knight mobility done. Bishop/rook blocked by cache thrashing from magic BB lookups in eval (8x slowdown). Needs architectural change to compute during `recompute_attack_maps`. |
+| **Medium** | Backward pawn penalty | Strength | `evaluate.rs` | Bitboard-based detection using existing masks. |
+| **Medium** | Connected pawn bonus | Strength | `evaluate.rs` | Phalanx + support detection, scaled by rank. |
+| **Medium** | Knight/Bishop outposts | Strength | `evaluate.rs` | Bonus for pieces on squares unreachable by enemy pawns. |
+| **Medium** | King attack zones (quadratic) | Strength | `evaluate.rs` | Count weighted attackers near king, apply `danger^2/4096`. |
+| **Low** | Opening book (larger) | Strength | `search.rs` | Polyglot support already integrated. Add larger opening books. |
 | **Low** | Endgame tablebases | Strength | `search.rs` | Syzygy tablebase support for perfect play in 6-7 piece endings. |
-| **Low** | Parallel search (Lazy SMP) | Speed | `search.rs` | Multi-threaded search with shared transposition table. |
-| **Low** | Replace `ray_to` Vec allocation | Speed | `types.rs:139` | Return fixed-size array or iterator instead of allocating `Vec<Position>`. |
 
 ### Board Move APIs
 

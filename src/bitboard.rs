@@ -55,6 +55,101 @@ pub fn sq_to_position(sq: u8) -> crate::types::Position {
     }
 }
 
+// =============================================================================
+// Evaluation masks: precomputed bitboard masks for pawn structure analysis
+// =============================================================================
+
+/// File masks: all squares on a given file (0=A, 7=H)
+pub const FILE_MASKS: [u64; 8] = {
+    let mut masks = [0u64; 8];
+    let mut f = 0;
+    while f < 8 {
+        let mut r = 0;
+        while r < 8 {
+            masks[f] |= 1u64 << (r * 8 + f);
+            r += 1;
+        }
+        f += 1;
+    }
+    masks
+};
+
+/// Rank masks: all squares on a given rank (0=rank1, 7=rank8)
+pub const RANK_MASKS: [u64; 8] = {
+    let mut masks = [0u64; 8];
+    let mut r = 0;
+    while r < 8 {
+        masks[r] = 0xFFu64 << (r * 8);
+        r += 1;
+    }
+    masks
+};
+
+/// Adjacent file masks: union of the two neighboring file masks.
+/// For file A (0), only file B. For file H (7), only file G.
+pub const ADJACENT_FILE_MASKS: [u64; 8] = {
+    let mut masks = [0u64; 8];
+    let mut f = 0;
+    while f < 8 {
+        if f > 0 {
+            masks[f] |= FILE_MASKS[f - 1];
+        }
+        if f < 7 {
+            masks[f] |= FILE_MASKS[f + 1];
+        }
+        f += 1;
+    }
+    masks
+};
+
+/// Passed pawn masks: for each [color][square], all squares ahead on same + adjacent files.
+/// If `enemy_pawns & PASSED_PAWN_MASKS[color][sq] == 0`, the pawn on `sq` is passed.
+/// Color: 0=White (looks toward rank 8), 1=Black (looks toward rank 1).
+pub const PASSED_PAWN_MASKS: [[u64; 64]; 2] = {
+    let mut masks = [[0u64; 64]; 2];
+    let mut sq = 0usize;
+    while sq < 64 {
+        let rank = sq / 8; // 0-indexed rank
+        let file = sq % 8; // 0-indexed file
+
+        // White: squares ahead = ranks above (rank+1 to 7)
+        let mut r = rank + 1;
+        while r < 8 {
+            masks[0][sq] |= 1u64 << (r * 8 + file);
+            if file > 0 {
+                masks[0][sq] |= 1u64 << (r * 8 + file - 1);
+            }
+            if file < 7 {
+                masks[0][sq] |= 1u64 << (r * 8 + file + 1);
+            }
+            r += 1;
+        }
+
+        // Black: squares ahead = ranks below (0 to rank-1)
+        if rank > 0 {
+            let mut r = 0;
+            while r < rank {
+                masks[1][sq] |= 1u64 << (r * 8 + file);
+                if file > 0 {
+                    masks[1][sq] |= 1u64 << (r * 8 + file - 1);
+                }
+                if file < 7 {
+                    masks[1][sq] |= 1u64 << (r * 8 + file + 1);
+                }
+                r += 1;
+            }
+        }
+
+        sq += 1;
+    }
+    masks
+};
+
+/// Isolated pawn masks: for each file, the two adjacent files (all ranks).
+/// If `friendly_pawns & ISOLATED_PAWN_MASKS[file] == 0`, a pawn on that file is isolated.
+/// Same as ADJACENT_FILE_MASKS but named for clarity in pawn structure context.
+pub const ISOLATED_PAWN_MASKS: [u64; 8] = ADJACENT_FILE_MASKS;
+
 /// Iterate over set bits in a bitboard, returning square indices
 pub struct BitboardIter(pub u64);
 

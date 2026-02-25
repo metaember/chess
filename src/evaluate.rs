@@ -1,3 +1,9 @@
+use std::cell::RefCell;
+
+use crate::bitboard::{
+    BitboardIter, FILE_MASKS, ADJACENT_FILE_MASKS, PASSED_PAWN_MASKS,
+    ATTACK_TABLES,
+};
 use crate::board::Board;
 use crate::types::{Color, Move, MoveFlag, Piece, PieceType};
 
@@ -135,187 +141,467 @@ fn piece_type_to_index(pt: PieceType) -> usize {
     }
 }
 
-/// Get opposite color
-#[inline(always)]
-fn opposite_color(color: Color) -> Color {
-    match color {
-        Color::White => Color::Black,
-        Color::Black => Color::White,
+
+// =============================================================================
+// Pawn Hash Table - caches pawn structure evaluation
+// =============================================================================
+
+const PAWN_HASH_SIZE: usize = 16384; // 16K entries
+
+#[derive(Clone, Copy)]
+struct PawnEntry {
+    key: u64,
+    mg_score: i16,
+    eg_score: i16,
+    white_passed: u64,
+    black_passed: u64,
+}
+
+impl Default for PawnEntry {
+    fn default() -> Self {
+        PawnEntry { key: 0, mg_score: 0, eg_score: 0, white_passed: 0, black_passed: 0 }
     }
 }
 
-/// Evaluate king activity in endgame (centralized king is better)
-fn evaluate_king_activity(board: &Board) -> i32 {
-    let white_king = board.get_king(Color::White);
-    let black_king = board.get_king(Color::Black);
-
-    let white_centralization = king_centralization_bonus(&white_king.position);
-    let black_centralization = king_centralization_bonus(&black_king.position);
-
-    white_centralization - black_centralization
+struct PawnHashTable {
+    entries: Vec<PawnEntry>,
 }
 
-/// Calculate bonus for king centralization (distance from center)
-/// Center squares (d4, d5, e4, e5) get highest bonus
-fn king_centralization_bonus(pos: &crate::types::Position) -> i32 {
-    // Distance from center (d4.5, e4.5 conceptually)
-    let file_dist = ((pos.file as i32) - 4).abs().min(((pos.file as i32) - 5).abs());
-    let rank_dist = ((pos.rank as i32) - 4).abs().min(((pos.rank as i32) - 5).abs());
-    let center_distance = file_dist + rank_dist;
-
-    // Bonus: 40cp for center, decreasing by 10cp per square away
-    40 - (center_distance * 10)
-}
-
-/// Evaluate passed pawns (pawns with no enemy pawns in front or adjacent files)
-fn evaluate_passed_pawns(board: &Board) -> i32 {
-    let white_bonus = evaluate_passed_pawns_for_color(board, Color::White);
-    let black_bonus = evaluate_passed_pawns_for_color(board, Color::Black);
-
-    white_bonus - black_bonus
-}
-
-fn evaluate_passed_pawns_for_color(board: &Board, color: Color) -> i32 {
-    let mut bonus = 0;
-    let pawn_bb = board.get_piece_bb(color, PieceType::Pawn);
-    let enemy_pawn_bb = board.get_piece_bb(opposite_color(color), PieceType::Pawn);
-
-    for rank in 2..=7 {
-        for file in 1..=8 {
-            let square_mask = 1u64 << ((rank - 1) * 8 + (file - 1));
-            if pawn_bb & square_mask != 0 {
-                // We have a pawn here, check if it's passed
-                if is_passed_pawn(rank, file, color, enemy_pawn_bb) {
-                    bonus += passed_pawn_bonus(rank, color);
-                }
-            }
+impl PawnHashTable {
+    fn new() -> Self {
+        PawnHashTable {
+            entries: vec![PawnEntry::default(); PAWN_HASH_SIZE],
         }
     }
 
-    bonus
+    #[inline]
+    fn probe(&self, key: u64) -> Option<&PawnEntry> {
+        let idx = (key as usize) % PAWN_HASH_SIZE;
+        let entry = &self.entries[idx];
+        if entry.key == key {
+            Some(entry)
+        } else {
+            None
+        }
+    }
+
+    #[inline]
+    fn store(&mut self, key: u64, mg_score: i16, eg_score: i16, white_passed: u64, black_passed: u64) {
+        let idx = (key as usize) % PAWN_HASH_SIZE;
+        self.entries[idx] = PawnEntry { key, mg_score, eg_score, white_passed, black_passed };
+    }
 }
 
-/// Check if a pawn is passed (no enemy pawns in front or on adjacent files)
-fn is_passed_pawn(rank: u8, file: u8, color: Color, enemy_pawns: u64) -> bool {
-    let (start_rank, end_rank) = match color {
-        Color::White => (rank + 1, 8),
-        Color::Black => (1, rank.saturating_sub(1)),
+thread_local! {
+    static PAWN_HASH: RefCell<PawnHashTable> = RefCell::new(PawnHashTable::new());
+}
+
+// =============================================================================
+// Evaluation constants
+// =============================================================================
+
+/// Bishop pair bonus (centipawns)
+const BISHOP_PAIR_MG: i32 = 30;
+const BISHOP_PAIR_EG: i32 = 50;
+
+/// Doubled pawn penalty per extra pawn on same file
+const DOUBLED_PAWN_MG: i32 = -10;
+const DOUBLED_PAWN_EG: i32 = -50;
+
+/// Isolated pawn penalty (no friendly pawns on adjacent files)
+const ISOLATED_PAWN_MG: i32 = -5;
+const ISOLATED_PAWN_EG: i32 = -15;
+/// Extra penalty when isolated pawn is on an open file (no enemy pawn blocking)
+const ISOLATED_PAWN_OPEN_MG: i32 = -20;
+const ISOLATED_PAWN_OPEN_EG: i32 = -40;
+
+/// Backward pawn penalty (can't advance, no friendly pawns behind on adjacent files)
+const BACKWARD_PAWN_MG: i32 = -8;
+const BACKWARD_PAWN_EG: i32 = -25;
+
+/// Passed pawn bonus by rank advancement (index 0=rank2, 5=rank7 from pawn's perspective)
+const PASSED_PAWN_MG: [i32; 6] = [10, 15, 20, 60, 150, 250];
+const PASSED_PAWN_EG: [i32; 6] = [25, 30, 40, 70, 170, 260];
+
+/// King safety: pawn shield bonus per pawn
+const PAWN_SHIELD_BONUS: i32 = 10;
+/// King safety: penalty per open file near king
+const KING_OPEN_FILE_PENALTY: i32 = -20;
+
+/// Rook on open/semi-open file (MG/EG split)
+const ROOK_OPEN_FILE_MG: i32 = 40;
+const ROOK_OPEN_FILE_EG: i32 = 20;
+const ROOK_SEMI_OPEN_FILE_MG: i32 = 18;
+const ROOK_SEMI_OPEN_FILE_EG: i32 = 7;
+
+/// Chebyshev (king) distance between two squares (0-indexed, 0-63)
+#[inline]
+fn chebyshev_distance(sq1: u8, sq2: u8) -> u8 {
+    let file1 = (sq1 & 7) as i8;
+    let rank1 = (sq1 >> 3) as i8;
+    let file2 = (sq2 & 7) as i8;
+    let rank2 = (sq2 >> 3) as i8;
+    ((file1 - file2).abs()).max((rank1 - rank2).abs()) as u8
+}
+
+// =============================================================================
+// Pawn structure evaluation (cached via pawn hash table)
+// =============================================================================
+
+/// Evaluate pawn structure for both colors.
+/// Returns (mg_score, eg_score, white_passed_bb, black_passed_bb) from white's perspective.
+fn evaluate_pawn_structure(board: &Board) -> (i32, i32, u64, u64) {
+    let white_pawns = board.get_piece_bb(Color::White, PieceType::Pawn);
+    let black_pawns = board.get_piece_bb(Color::Black, PieceType::Pawn);
+
+    let mut mg = 0i32;
+    let mut eg = 0i32;
+    let mut white_passed = 0u64;
+    let mut black_passed = 0u64;
+
+    // Pawn attack maps for backward pawn detection
+    let white_pawn_attacks = ((white_pawns & !FILE_MASKS[0]) << 7) | ((white_pawns & !FILE_MASKS[7]) << 9);
+    let black_pawn_attacks = ((black_pawns & !FILE_MASKS[7]) >> 7) | ((black_pawns & !FILE_MASKS[0]) >> 9);
+
+    // --- White pawns ---
+    for sq in BitboardIter(white_pawns) {
+        let file = (sq & 7) as usize; // 0-indexed file
+        let rank = (sq >> 3) as usize; // 0-indexed rank
+
+        // Isolated pawn: no friendly pawns on adjacent files
+        let isolated = white_pawns & ADJACENT_FILE_MASKS[file] == 0;
+        if isolated {
+            if black_pawns & FILE_MASKS[file] == 0 {
+                mg += ISOLATED_PAWN_OPEN_MG;
+                eg += ISOLATED_PAWN_OPEN_EG;
+            } else {
+                mg += ISOLATED_PAWN_MG;
+                eg += ISOLATED_PAWN_EG;
+            }
+        } else if rank < 6 {
+            // Backward pawn: not isolated, stop square attacked by enemy pawn,
+            // and no friendly pawn on adjacent files at same rank or behind to support
+            let stop_sq = sq + 8;
+            if black_pawn_attacks & (1u64 << stop_sq) != 0 {
+                // Mask of adjacent file squares at ranks 0..=rank
+                let behind_mask = ADJACENT_FILE_MASKS[file] & ((1u64 << ((rank + 1) * 8)) - 1);
+                if white_pawns & behind_mask == 0 {
+                    mg += BACKWARD_PAWN_MG;
+                    eg += BACKWARD_PAWN_EG;
+                }
+            }
+        }
+
+        // Passed pawn: no enemy pawns ahead on same + adjacent files
+        if black_pawns & PASSED_PAWN_MASKS[0][sq as usize] == 0 {
+            white_passed |= 1u64 << sq;
+            // rank is 0-indexed; pawns on rank 1(idx 1) to rank 6(idx 6) can be passed
+            // advancement index: rank-1 (rank2=idx0, rank7=idx5)
+            let adv = (rank as i32 - 1).clamp(0, 5) as usize;
+            mg += PASSED_PAWN_MG[adv];
+            eg += PASSED_PAWN_EG[adv];
+        }
+    }
+
+    // Doubled pawns (white)
+    for file in 0..8 {
+        let count = (white_pawns & FILE_MASKS[file]).count_ones() as i32;
+        if count > 1 {
+            mg += DOUBLED_PAWN_MG * (count - 1);
+            eg += DOUBLED_PAWN_EG * (count - 1);
+        }
+    }
+
+    // --- Black pawns ---
+    for sq in BitboardIter(black_pawns) {
+        let file = (sq & 7) as usize;
+        let rank = (sq >> 3) as usize;
+
+        // Isolated pawn
+        let isolated = black_pawns & ADJACENT_FILE_MASKS[file] == 0;
+        if isolated {
+            if white_pawns & FILE_MASKS[file] == 0 {
+                mg -= ISOLATED_PAWN_OPEN_MG;
+                eg -= ISOLATED_PAWN_OPEN_EG;
+            } else {
+                mg -= ISOLATED_PAWN_MG;
+                eg -= ISOLATED_PAWN_EG;
+            }
+        } else if rank > 1 {
+            // Backward pawn (black): stop square is sq-8
+            let stop_sq = sq - 8;
+            if white_pawn_attacks & (1u64 << stop_sq) != 0 {
+                // Mask of adjacent file squares at ranks rank..=7
+                let behind_mask = ADJACENT_FILE_MASKS[file] & !((1u64 << (rank * 8)) - 1);
+                if black_pawns & behind_mask == 0 {
+                    mg -= BACKWARD_PAWN_MG;
+                    eg -= BACKWARD_PAWN_EG;
+                }
+            }
+        }
+
+        // Passed pawn (from black's perspective)
+        if white_pawns & PASSED_PAWN_MASKS[1][sq as usize] == 0 {
+            black_passed |= 1u64 << sq;
+            // For black, advancement = (6 - rank), rank7(idx6)->0, rank2(idx1)->5
+            let adv = (6 - rank as i32).clamp(0, 5) as usize;
+            mg -= PASSED_PAWN_MG[adv];
+            eg -= PASSED_PAWN_EG[adv];
+        }
+    }
+
+    // Doubled pawns (black)
+    for file in 0..8 {
+        let count = (black_pawns & FILE_MASKS[file]).count_ones() as i32;
+        if count > 1 {
+            mg -= DOUBLED_PAWN_MG * (count - 1);
+            eg -= DOUBLED_PAWN_EG * (count - 1);
+        }
+    }
+
+    (mg, eg, white_passed, black_passed)
+}
+
+// =============================================================================
+// King safety evaluation
+// =============================================================================
+
+/// Evaluate king safety (pawn shield + open files near king). Returns score from white's perspective.
+/// Weighted by phase (middlegame only).
+#[inline]
+fn evaluate_king_safety(board: &Board) -> i32 {
+    let phase = board.get_phase();
+    if phase == 0 {
+        return 0; // Pure endgame, king safety irrelevant
+    }
+
+    let white_pawns = board.get_piece_bb(Color::White, PieceType::Pawn);
+    let black_pawns = board.get_piece_bb(Color::Black, PieceType::Pawn);
+
+    let white_king_sq = board.get_king_square(Color::White);
+    let black_king_sq = board.get_king_square(Color::Black);
+
+    let white_safety = king_safety_for_color(white_king_sq, white_pawns, Color::White);
+    let black_safety = king_safety_for_color(black_king_sq, black_pawns, Color::Black);
+
+    // Scale by phase (full weight in middlegame, zero in endgame)
+    ((white_safety - black_safety) * phase) / MAX_PHASE
+}
+
+fn king_safety_for_color(king_sq: u8, friendly_pawns: u64, color: Color) -> i32 {
+    let king_file = (king_sq & 7) as usize;
+    let king_rank = (king_sq >> 3) as usize;
+    let mut score = 0i32;
+
+    // Pawn shield: count friendly pawns on king's file and adjacent files,
+    // on the 1-2 ranks in front of the king
+    let shield_ranks: u64 = match color {
+        Color::White => {
+            // Ranks above the king (1-2 ranks forward)
+            let mut mask = 0u64;
+            if king_rank < 7 { mask |= 0xFFu64 << ((king_rank + 1) * 8); }
+            if king_rank < 6 { mask |= 0xFFu64 << ((king_rank + 2) * 8); }
+            mask
+        }
+        Color::Black => {
+            let mut mask = 0u64;
+            if king_rank > 0 { mask |= 0xFFu64 << ((king_rank - 1) * 8); }
+            if king_rank > 1 { mask |= 0xFFu64 << ((king_rank - 2) * 8); }
+            mask
+        }
     };
 
-    if start_rank > end_rank {
-        return true; // No ranks to check
-    }
+    // Files around the king (king file + adjacent)
+    let mut file_mask = FILE_MASKS[king_file];
+    if king_file > 0 { file_mask |= FILE_MASKS[king_file - 1]; }
+    if king_file < 7 { file_mask |= FILE_MASKS[king_file + 1]; }
 
-    let files_to_check = [
-        if file > 1 { Some(file - 1) } else { None },
-        Some(file),
-        if file < 8 { Some(file + 1) } else { None },
-    ];
+    let shield_zone = shield_ranks & file_mask;
+    let shield_pawns = (friendly_pawns & shield_zone).count_ones() as i32;
+    score += shield_pawns * PAWN_SHIELD_BONUS;
 
-    for check_rank in start_rank..=end_rank {
-        for check_file_opt in &files_to_check {
-            if let Some(check_file) = check_file_opt {
-                let square_mask = 1u64 << ((check_rank - 1) * 8 + (check_file - 1));
-                if enemy_pawns & square_mask != 0 {
-                    return false; // Enemy pawn blocks this pawn's advancement
-                }
-            }
+    // Open file penalty: check if king's file or adjacent files have no friendly pawns
+    let start_file = if king_file > 0 { king_file - 1 } else { 0 };
+    let end_file = if king_file < 7 { king_file + 1 } else { 7 };
+    for f in start_file..=end_file {
+        if friendly_pawns & FILE_MASKS[f] == 0 {
+            score += KING_OPEN_FILE_PENALTY;
         }
     }
 
-    true // No enemy pawns found in the way
+    score
 }
 
-/// Calculate bonus for a passed pawn based on how far advanced it is
-fn passed_pawn_bonus(rank: u8, color: Color) -> i32 {
-    let advanced_rank = match color {
-        Color::White => rank,
-        Color::Black => 9 - rank, // Flip for black
-    };
+// =============================================================================
+// Rook on open/semi-open file evaluation
+// =============================================================================
 
-    match advanced_rank {
-        7 => 150, // About to promote!
-        6 => 80,
-        5 => 40,
-        4 => 20,
-        3 => 10,
-        _ => 5,
-    }
-}
+/// Evaluate rooks on open/semi-open files. Returns (mg, eg) from white's perspective.
+#[inline]
+fn evaluate_rooks(board: &Board) -> (i32, i32) {
+    let white_pawns = board.get_piece_bb(Color::White, PieceType::Pawn);
+    let black_pawns = board.get_piece_bb(Color::Black, PieceType::Pawn);
+    let all_pawns = white_pawns | black_pawns;
 
-/// Detect unstoppable passers (pawns that can promote before being caught)
-fn evaluate_unstoppable_passers(board: &Board) -> i32 {
-    let white_bonus = detect_unstoppable_for_color(board, Color::White);
-    let black_bonus = detect_unstoppable_for_color(board, Color::Black);
+    let mut mg = 0i32;
+    let mut eg = 0i32;
 
-    white_bonus - black_bonus
-}
-
-fn detect_unstoppable_for_color(board: &Board, color: Color) -> i32 {
-    let pawn_bb = board.get_piece_bb(color, PieceType::Pawn);
-    let enemy_king = board.get_king(opposite_color(color));
-    let enemy_pawns = board.get_piece_bb(opposite_color(color), PieceType::Pawn);
-
-    for rank in 2..=7 {
-        for file in 1..=8 {
-            let square_mask = 1u64 << ((rank - 1) * 8 + (file - 1));
-            if pawn_bb & square_mask != 0 {
-                // Check if this pawn is unstoppable
-                if is_passed_pawn(rank, file, color, enemy_pawns) {
-                    let promotion_rank = match color {
-                        Color::White => 8,
-                        Color::Black => 1,
-                    };
-
-                    let moves_to_promote = match color {
-                        Color::White => promotion_rank - rank,
-                        Color::Black => rank - promotion_rank,
-                    } as i32;
-
-                    // Distance from enemy king to promotion square
-                    let king_file_dist = (enemy_king.position.file as i32 - file as i32).abs();
-                    let king_rank_dist = (enemy_king.position.rank as i32 - promotion_rank as i32).abs();
-                    let king_distance = king_file_dist.max(king_rank_dist); // Chebyshev distance
-
-                    // Pawn is unstoppable if it can promote before king catches it
-                    // Need at least 2 more moves than pawn to catch (1 to block, 1 extra margin)
-                    if moves_to_promote < king_distance - 1 {
-                        return 300; // Practically winning
-                    }
-                }
-            }
+    // White rooks
+    for sq in BitboardIter(board.get_piece_bb(Color::White, PieceType::Rook)) {
+        let file = (sq & 7) as usize;
+        if all_pawns & FILE_MASKS[file] == 0 {
+            mg += ROOK_OPEN_FILE_MG;
+            eg += ROOK_OPEN_FILE_EG;
+        } else if white_pawns & FILE_MASKS[file] == 0 {
+            mg += ROOK_SEMI_OPEN_FILE_MG;
+            eg += ROOK_SEMI_OPEN_FILE_EG;
         }
     }
 
-    0
+    // Black rooks
+    for sq in BitboardIter(board.get_piece_bb(Color::Black, PieceType::Rook)) {
+        let file = (sq & 7) as usize;
+        if all_pawns & FILE_MASKS[file] == 0 {
+            mg -= ROOK_OPEN_FILE_MG;
+            eg -= ROOK_OPEN_FILE_EG;
+        } else if black_pawns & FILE_MASKS[file] == 0 {
+            mg -= ROOK_SEMI_OPEN_FILE_MG;
+            eg -= ROOK_SEMI_OPEN_FILE_EG;
+        }
+    }
+
+    (mg, eg)
 }
+
+// =============================================================================
+// Mobility evaluation (lookup tables from Stockfish 14 classical eval)
+// =============================================================================
+
+/// Knight mobility bonus by number of accessible squares (0-8)
+/// Scaled from Stockfish 14 values (~1/4 scale to match our centipawn range)
+const KNIGHT_MOB_MG: [i32; 9] = [-15, -13, -3, -1, 1, 3, 5, 7, 9];
+const KNIGHT_MOB_EG: [i32; 9] = [-20, -14, -8, -4, 2, 3, 4, 5, 7];
+
+/// Evaluate piece mobility for both colors.
+/// Returns (mg_score, eg_score) from white's perspective.
+/// Only evaluates knight mobility — bishop/rook magic bitboard lookups are too
+/// expensive to repeat here (they're already done in attack map computation).
+/// Knight attacks use a simple precomputed table lookup (no magic needed).
+#[inline]
+fn evaluate_mobility(board: &Board) -> (i32, i32) {
+    let white_pieces = board.get_pieces_bb(Color::White);
+    let black_pieces = board.get_pieces_bb(Color::Black);
+
+    // Compute enemy pawn attack masks
+    let white_pawns = board.get_piece_bb(Color::White, PieceType::Pawn);
+    let black_pawns = board.get_piece_bb(Color::Black, PieceType::Pawn);
+    let white_pawn_attacks = ((white_pawns & !FILE_MASKS[0]) << 7) | ((white_pawns & !FILE_MASKS[7]) << 9);
+    let black_pawn_attacks = ((black_pawns & !FILE_MASKS[7]) >> 7) | ((black_pawns & !FILE_MASKS[0]) >> 9);
+
+    // Mobility areas: not friendly pieces, not attacked by enemy pawns
+    let white_mob_area = !white_pieces & !black_pawn_attacks;
+    let black_mob_area = !black_pieces & !white_pawn_attacks;
+
+    let mut mg = 0i32;
+    let mut eg = 0i32;
+
+    // White knights
+    for sq in BitboardIter(board.get_piece_bb(Color::White, PieceType::Knight)) {
+        let count = (ATTACK_TABLES.knight[sq as usize] & white_mob_area).count_ones() as usize;
+        mg += KNIGHT_MOB_MG[count.min(8)];
+        eg += KNIGHT_MOB_EG[count.min(8)];
+    }
+
+    // Black knights
+    for sq in BitboardIter(board.get_piece_bb(Color::Black, PieceType::Knight)) {
+        let count = (ATTACK_TABLES.knight[sq as usize] & black_mob_area).count_ones() as usize;
+        mg -= KNIGHT_MOB_MG[count.min(8)];
+        eg -= KNIGHT_MOB_EG[count.min(8)];
+    }
+
+    (mg, eg)
+}
+
+// =============================================================================
+// Main evaluation function
+// =============================================================================
 
 pub fn evaluate_board(board: &Board) -> i32 {
     // Use incrementally maintained evaluation scores (material + PST)
-    let mut unsigned_score = board.get_tapered_score();
+    let phase = board.get_phase().clamp(0, MAX_PHASE);
 
-    // Add endgame-specific evaluation terms
-    let phase = board.get_phase();
-    let endgame_weight = (MAX_PHASE - phase).max(0);
+    // Start with tapered material + PST score
+    let mut mg_score = board.get_material(Color::White) + board.get_pst_mg(Color::White)
+        - board.get_material(Color::Black) - board.get_pst_mg(Color::Black);
+    let mut eg_score = board.get_material(Color::White) + board.get_pst_eg(Color::White)
+        - board.get_material(Color::Black) - board.get_pst_eg(Color::Black);
 
-    // TODO: Endgame evaluation terms disabled - too slow without incremental tracking
-    // These iterate through bitboards on every evaluation call, causing 2-3x slowdown
-    // Need to track incrementally like material/PST scores
-    /*
-    if endgame_weight > 0 {
-        // Only compute endgame terms if we're in endgame (phase < MAX_PHASE)
-        let king_activity = evaluate_king_activity(board);
-        let passed_pawns = evaluate_passed_pawns(board);
-        let unstoppable = evaluate_unstoppable_passers(board);
-
-        // Weight by how far into endgame we are
-        // endgame_weight = 0 -> opening/middlegame, don't apply
-        // endgame_weight = MAX_PHASE -> full endgame, apply 100%
-        unsigned_score += (king_activity * endgame_weight) / MAX_PHASE;
-        unsigned_score += (passed_pawns * endgame_weight) / MAX_PHASE;
-        unsigned_score += unstoppable; // Always apply (it's already huge if detected)
+    // Bishop pair bonus (incremental data, O(1))
+    if board.get_bishop_count(Color::White) >= 2 {
+        mg_score += BISHOP_PAIR_MG;
+        eg_score += BISHOP_PAIR_EG;
     }
-    */
+    if board.get_bishop_count(Color::Black) >= 2 {
+        mg_score -= BISHOP_PAIR_MG;
+        eg_score -= BISHOP_PAIR_EG;
+    }
+
+    // Pawn structure (cached via pawn hash table)
+    let pawn_hash = board.get_pawn_hash();
+    let (pawn_mg, pawn_eg, white_passed, black_passed) = PAWN_HASH.with(|ph| {
+        let mut table = ph.borrow_mut();
+        if let Some(entry) = table.probe(pawn_hash) {
+            (entry.mg_score as i32, entry.eg_score as i32, entry.white_passed, entry.black_passed)
+        } else {
+            let (mg, eg, wp, bp) = evaluate_pawn_structure(board);
+            table.store(pawn_hash, mg as i16, eg as i16, wp, bp);
+            (mg, eg, wp, bp)
+        }
+    });
+    mg_score += pawn_mg;
+    eg_score += pawn_eg;
+
+    // King proximity to passed pawns (endgame bonus, not cached — depends on king positions)
+    let wk = board.get_king_square(Color::White);
+    let bk = board.get_king_square(Color::Black);
+    for sq in BitboardIter(white_passed) {
+        let rank = (sq >> 3) as i32; // 0-indexed
+        let adv = (rank - 1).clamp(0, 5);
+        if adv >= 3 { // only rank 5+ (adv 3 = rank 4 in 0-indexed = rank 5 in chess)
+            let promo_sq = (sq & 7) | 56; // promotion square (rank 8)
+            let enemy_dist = chebyshev_distance(bk, promo_sq as u8);
+            let friendly_dist = chebyshev_distance(wk, promo_sq as u8);
+            let weight = 5 * adv - 13;
+            eg_score += (enemy_dist as i32 * 5 - friendly_dist as i32 * 2) * weight;
+        }
+    }
+    for sq in BitboardIter(black_passed) {
+        let rank = (sq >> 3) as i32;
+        let adv = (6 - rank).clamp(0, 5);
+        if adv >= 3 {
+            let promo_sq = sq & 7; // promotion square (rank 1)
+            let enemy_dist = chebyshev_distance(wk, promo_sq as u8);
+            let friendly_dist = chebyshev_distance(bk, promo_sq as u8);
+            let weight = 5 * adv - 13;
+            eg_score -= (enemy_dist as i32 * 5 - friendly_dist as i32 * 2) * weight;
+        }
+    }
+
+    // Piece mobility (computed each call — depends on all piece positions)
+    let (mob_mg, mob_eg) = evaluate_mobility(board);
+    mg_score += mob_mg;
+    eg_score += mob_eg;
+
+    // Rook on open/semi-open files
+    let (rook_mg, rook_eg) = evaluate_rooks(board);
+    mg_score += rook_mg;
+    eg_score += rook_eg;
+
+    // Taper the score
+    let mut unsigned_score = (mg_score * phase + eg_score * (MAX_PHASE - phase)) / MAX_PHASE;
+
+    // King safety (middlegame-weighted, computed each call)
+    unsigned_score += evaluate_king_safety(board);
 
     if board.get_active_color() == Color::White {
         unsigned_score
@@ -324,10 +610,74 @@ pub fn evaluate_board(board: &Board) -> i32 {
     }
 }
 
-/// Evaluate board by computing material from scratch (for verification)
-pub fn evaluate_board_slow(board: &Board) -> i32 {
+/// Evaluate board by computing material from scratch (for test verification).
+/// Includes all eval terms (same as evaluate_board) but recomputes material+PST from scratch.
+#[cfg(test)]
+fn debug_slow_evaluate_board(board: &Board) -> i32 {
     let material = Material::compute_material(board);
-    let unsigned_score = material.get_tapered_score();
+    let phase = material.phase.clamp(0, MAX_PHASE);
+
+    let mut mg_score = material.white_material + material.white_pst_mg
+        - material.black_material - material.black_pst_mg;
+    let mut eg_score = material.white_material + material.white_pst_eg
+        - material.black_material - material.black_pst_eg;
+
+    // Bishop pair (recount from bitboards)
+    if board.get_piece_bb(Color::White, PieceType::Bishop).count_ones() >= 2 {
+        mg_score += BISHOP_PAIR_MG;
+        eg_score += BISHOP_PAIR_EG;
+    }
+    if board.get_piece_bb(Color::Black, PieceType::Bishop).count_ones() >= 2 {
+        mg_score -= BISHOP_PAIR_MG;
+        eg_score -= BISHOP_PAIR_EG;
+    }
+
+    // Pawn structure (recompute from scratch, no hash table)
+    let (pawn_mg, pawn_eg, white_passed, black_passed) = evaluate_pawn_structure(board);
+    mg_score += pawn_mg;
+    eg_score += pawn_eg;
+
+    // King proximity to passed pawns
+    let wk = board.get_king_square(Color::White);
+    let bk = board.get_king_square(Color::Black);
+    for sq in BitboardIter(white_passed) {
+        let rank = (sq >> 3) as i32;
+        let adv = (rank - 1).clamp(0, 5);
+        if adv >= 3 {
+            let promo_sq = (sq & 7) | 56;
+            let enemy_dist = chebyshev_distance(bk, promo_sq as u8);
+            let friendly_dist = chebyshev_distance(wk, promo_sq as u8);
+            let weight = 5 * adv - 13;
+            eg_score += (enemy_dist as i32 * 5 - friendly_dist as i32 * 2) * weight;
+        }
+    }
+    for sq in BitboardIter(black_passed) {
+        let rank = (sq >> 3) as i32;
+        let adv = (6 - rank).clamp(0, 5);
+        if adv >= 3 {
+            let promo_sq = sq & 7;
+            let enemy_dist = chebyshev_distance(wk, promo_sq as u8);
+            let friendly_dist = chebyshev_distance(bk, promo_sq as u8);
+            let weight = 5 * adv - 13;
+            eg_score -= (enemy_dist as i32 * 5 - friendly_dist as i32 * 2) * weight;
+        }
+    }
+
+    // Piece mobility
+    let (mob_mg, mob_eg) = evaluate_mobility(board);
+    mg_score += mob_mg;
+    eg_score += mob_eg;
+
+    // Rook on open/semi-open files
+    let (rook_mg, rook_eg) = evaluate_rooks(board);
+    mg_score += rook_mg;
+    eg_score += rook_eg;
+
+    let mut unsigned_score = (mg_score * phase + eg_score * (MAX_PHASE - phase)) / MAX_PHASE;
+
+    // King safety
+    unsigned_score += evaluate_king_safety(board);
+
     if board.get_active_color() == Color::White {
         unsigned_score
     } else {
@@ -751,7 +1101,7 @@ mod tests {
             let undo = board.make_move(&mv);
 
             let fast_eval = evaluate_board(&board);
-            let slow_eval = evaluate_board_slow(&board);
+            let slow_eval = debug_slow_evaluate_board(&board);
 
             assert_eq!(
                 fast_eval, slow_eval,
@@ -762,7 +1112,7 @@ mod tests {
             // Also verify after unmake
             board.unmake_move(&undo);
             let fast_eval_after_unmake = evaluate_board(&board);
-            let slow_eval_after_unmake = evaluate_board_slow(&board);
+            let slow_eval_after_unmake = debug_slow_evaluate_board(&board);
             assert_eq!(
                 fast_eval_after_unmake, slow_eval_after_unmake,
                 "Incremental eval {} != slow eval {} after unmake of {} -> {}",
@@ -786,7 +1136,7 @@ mod tests {
 
         let undo = board.make_move(capture_move);
         let fast_eval = evaluate_board(&board);
-        let slow_eval = evaluate_board_slow(&board);
+        let slow_eval = debug_slow_evaluate_board(&board);
 
         assert_eq!(
             fast_eval, slow_eval,
@@ -796,7 +1146,7 @@ mod tests {
 
         board.unmake_move(&undo);
         let fast_eval_unmake = evaluate_board(&board);
-        let slow_eval_unmake = evaluate_board_slow(&board);
+        let slow_eval_unmake = debug_slow_evaluate_board(&board);
 
         assert_eq!(
             fast_eval_unmake, slow_eval_unmake,
@@ -817,7 +1167,7 @@ mod tests {
 
         let undo = board.make_move(castle_move);
         let fast_eval = evaluate_board(&board);
-        let slow_eval = evaluate_board_slow(&board);
+        let slow_eval = debug_slow_evaluate_board(&board);
 
         assert_eq!(
             fast_eval, slow_eval,
@@ -827,7 +1177,7 @@ mod tests {
 
         board.unmake_move(&undo);
         let fast_eval_unmake = evaluate_board(&board);
-        let slow_eval_unmake = evaluate_board_slow(&board);
+        let slow_eval_unmake = debug_slow_evaluate_board(&board);
 
         assert_eq!(
             fast_eval_unmake, slow_eval_unmake,
