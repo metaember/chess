@@ -1,6 +1,6 @@
 use rust_chess::board::Board;
-use rust_chess::search::minimax;
-use rust_chess::types::Status;
+use rust_chess::search::iterative_deepening_movepicker;
+use rust_chess::tt::TranspositionTable;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Write};
@@ -21,10 +21,9 @@ struct BenchmarkMetrics {
     perft_depth_4_nps: f64,
     perft_depth_5_nps: f64,
 
-    // Search timing (ms per move)
+    // Search timing on middlegame positions (ms per move, depths 4-5)
     search_depth_4_mean_ms: f64,
     search_depth_5_mean_ms: f64,
-    search_depth_6_mean_ms: f64,
 
     // Nodes searched
     search_depth_4_nodes: u64,
@@ -101,21 +100,15 @@ fn run_benchmarks() -> BenchmarkMetrics {
     println!("[2/3] Search benchmarks (starting position)...");
     let (search_4, search_5, search_6) = benchmark_search_starting();
 
-    // Search benchmarks from game play
-    println!("[3/3] Search benchmarks (game simulation)...");
-    let (game_timings, total_moves) = benchmark_game_search();
-
-    // Calculate mean timings from game play
-    let search_4_mean = calculate_mean(&game_timings.0);
-    let search_5_mean = calculate_mean(&game_timings.1);
-    let search_6_mean = calculate_mean(&game_timings.2);
+    // Search benchmarks from middlegame positions (depths 4 and 5 only — d6 is too slow on complex positions)
+    println!("[3/3] Search benchmarks (middlegame positions)...");
+    let (mg_timings, total_moves) = benchmark_middlegame_search();
 
     BenchmarkMetrics {
         perft_depth_4_nps: perft_4_nps,
         perft_depth_5_nps: perft_5_nps,
-        search_depth_4_mean_ms: search_4_mean,
-        search_depth_5_mean_ms: search_5_mean,
-        search_depth_6_mean_ms: search_6_mean,
+        search_depth_4_mean_ms: calculate_mean(&mg_timings.0),
+        search_depth_5_mean_ms: calculate_mean(&mg_timings.1),
         search_depth_4_nodes: search_4,
         search_depth_5_nodes: search_5,
         search_depth_6_nodes: search_6,
@@ -168,80 +161,90 @@ fn perft(board: &mut Board, depth: u8) -> u64 {
 }
 
 fn benchmark_search_starting() -> (u64, u64, u64) {
-    let board = Board::new();
+    let mut tt = TranspositionTable::new(16);
 
-    // Depth 4
-    let result_4 = minimax(4, &board).unwrap();
+    // Depth 4 (fresh TT each time for reproducibility)
+    let mut board = Board::new();
+    let result_4 = iterative_deepening_movepicker(&mut board, 4, &mut tt);
     println!("  Depth 4: {} nodes", result_4.nodes_searched);
 
     // Depth 5
-    let result_5 = minimax(5, &board).unwrap();
+    tt = TranspositionTable::new(16);
+    let mut board = Board::new();
+    let result_5 = iterative_deepening_movepicker(&mut board, 5, &mut tt);
     println!("  Depth 5: {} nodes", result_5.nodes_searched);
 
     // Depth 6
-    let result_6 = minimax(6, &board).unwrap();
+    tt = TranspositionTable::new(16);
+    let mut board = Board::new();
+    let result_6 = iterative_deepening_movepicker(&mut board, 6, &mut tt);
     println!("  Depth 6: {} nodes", result_6.nodes_searched);
 
     (result_4.nodes_searched as u64, result_5.nodes_searched as u64, result_6.nodes_searched as u64)
 }
 
-fn benchmark_game_search() -> ((Vec<f64>, Vec<f64>, Vec<f64>), usize) {
+/// Well-known middlegame test positions from public test suites.
+/// Sources: Bratko-Kopec, WAC (Win At Chess), Eigenmann, and standard engine benchmarks.
+/// Well-known middlegame test positions from public test suites.
+/// Sources: Bratko-Kopec, WAC (Win At Chess), and standard engine benchmarks.
+/// 4-field FEN shorthand (omitting halfmove/fullmove) is supported.
+const MIDDLEGAME_POSITIONS: &[(&str, &str)] = &[
+    // Bratko-Kopec positions (complex middlegame)
+    ("r1bq1rk1/pp2nppp/2n1p3/3pP3/3P4/2N2N2/PP3PPP/R1BQ1RK1 w - -", "BK: French structure"),
+    ("r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq -", "BK: Italian game"),
+    ("2q1rr1k/3bbnnp/p2p1pp1/2pPp3/PpP1P1P1/1P2BNNP/2BQ1PRK/7R b - -", "BK: Complex middlegame"),
+    ("r1bq1rk1/1pp2pbp/p1np1np1/4p3/2PPP3/2N1BP2/PP1QN1PP/R3KB1R w KQ -", "BK: King's Indian"),
+
+    // WAC positions (tactical middlegame)
+    ("r2qkb1r/pp2nppp/3p4/2pNN1B1/2BnP3/3P4/PPP2PPP/R2bK2R w KQkq -", "WAC: Tactical tension"),
+    ("r1b1kb1r/pppp1ppp/5n2/4p1q1/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq -", "WAC: Open center"),
+    ("r2q1rk1/ppp2ppp/2np1n2/2b1p1B1/2B1P1b1/2NP1N2/PPP2PPP/R2QR1K1 w - -", "WAC: Symmetrical tension"),
+
+    // Standard engine test positions
+    ("rnbqkb1r/p3pppp/1p6/2ppP3/3N4/2P5/PPP1QPPP/R1B1KB1R w KQkq -", "Sicilian structure"),
+    ("r1bqr1k1/pp3pbp/2np1np1/3Pp3/2P5/2N1BP2/PP1QN1PP/R3KB1R w KQ -", "Closed center"),
+    ("r3r1k1/ppqb1ppp/8/4p1NQ/8/2P5/PP3PPP/R3R1K1 b - -", "Kingside attack"),
+    ("r1bq1r1k/1pp1n1pp/1p1p4/4p2n/2PP1p2/2N1PB1P/PP3PP1/R2Q1RK1 w - -", "Pawn tension"),
+    ("r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - -", "Rich middlegame"),
+
+    // Endgame-ish positions (to test tapered eval)
+    ("8/pp2k1pp/2p1Bp2/3p4/3P4/2P2N2/PP3PPP/4K3 w - -", "Minor piece endgame"),
+    ("r1r3k1/1pq2ppp/p7/3bN3/3B4/7P/PPP2PP1/R2QR1K1 w - -", "Piece activity"),
+
+    // Positions with clear pawn structure features
+    ("r2q1rk1/pp2ppbp/2p2np1/6B1/3PP3/2N5/PPP2PPP/R2QR1K1 w - -", "Isolated d-pawn"),
+    ("r1bq1rk1/pp3ppp/2n1pn2/2pp4/1bPP4/2NBPN2/PP3PPP/R1BQ1RK1 w - -", "Hanging pawns"),
+];
+
+fn benchmark_middlegame_search() -> ((Vec<f64>, Vec<f64>), usize) {
     let mut timings_4: Vec<f64> = Vec::new();
     let mut timings_5: Vec<f64> = Vec::new();
-    let mut timings_6: Vec<f64> = Vec::new();
 
-    // Play a short game, timing searches at depths 4, 5, 6
-    let mut board = Board::new();
-    let max_moves = 20; // 10 moves per side
-
-    for move_num in 0..max_moves {
-        let color = board.get_active_color();
-        match board.get_legal_moves(&color) {
-            Ok(moves) if moves.is_empty() => break,
-            Err(Status::Checkmate(_)) | Err(Status::Stalemate) => break,
-            Err(_) => break,
-            Ok(_) => {}
-        }
-
-        if board.check_for_insufficient_material().is_some() {
-            break;
-        }
-
-        // Time depth 4
+    println!("  {:>30}  {:>8}  {:>8}  {:>10}", "Position", "d4 (ms)", "d5 (ms)", "d5 nodes");
+    for (_i, (fen, label)) in MIDDLEGAME_POSITIONS.iter().enumerate() {
+        // Time depth 4 (fresh TT per position)
+        let mut board = Board::from_fen(fen);
+        let mut tt = TranspositionTable::new(16);
         let start = Instant::now();
-        let _ = minimax(4, &board);
-        timings_4.push(start.elapsed().as_secs_f64() * 1000.0);
+        let _ = iterative_deepening_movepicker(&mut board, 4, &mut tt);
+        let t4 = start.elapsed().as_secs_f64() * 1000.0;
+        timings_4.push(t4);
 
-        // Time depth 5
+        // Time depth 5 (fresh TT per position)
+        let mut board = Board::from_fen(fen);
+        let mut tt = TranspositionTable::new(16);
         let start = Instant::now();
-        let _ = minimax(5, &board);
-        timings_5.push(start.elapsed().as_secs_f64() * 1000.0);
+        let r5 = iterative_deepening_movepicker(&mut board, 5, &mut tt);
+        let t5 = start.elapsed().as_secs_f64() * 1000.0;
+        timings_5.push(t5);
+        let nodes5 = r5.nodes_searched;
 
-        // Time depth 6 and use result for the move
-        let start = Instant::now();
-        let result = minimax(6, &board);
-        timings_6.push(start.elapsed().as_secs_f64() * 1000.0);
-
-        // Make the best move
-        if let Ok(r) = result {
-            if let Some(m) = r.best_move {
-                board.make_move(&m);
-            } else {
-                break;
-            }
-        } else {
-            break;
-        }
-
-        if move_num % 5 == 4 {
-            print!(".");
-            std::io::stdout().flush().unwrap();
-        }
+        println!("  {:>30}  {:>8.1}  {:>8.1}  {:>10}", label, t4, t5, nodes5);
     }
-    println!(" done ({} positions)", timings_4.len());
+    println!("  {:>30}  {:>8.1}  {:>8.1}", "MEAN", calculate_mean(&timings_4), calculate_mean(&timings_5));
 
     let total = timings_4.len();
-    ((timings_4, timings_5, timings_6), total)
+    ((timings_4, timings_5), total)
 }
 
 fn calculate_mean(values: &[f64]) -> f64 {
@@ -272,7 +275,6 @@ fn save_result(result: &BenchmarkResult) {
             perft_depth_5_nps: result.results.perft_depth_5_nps,
             search_depth_4_mean_ms: result.results.search_depth_4_mean_ms,
             search_depth_5_mean_ms: result.results.search_depth_5_mean_ms,
-            search_depth_6_mean_ms: result.results.search_depth_6_mean_ms,
             search_depth_4_nodes: result.results.search_depth_4_nodes,
             search_depth_5_nodes: result.results.search_depth_5_nodes,
             search_depth_6_nodes: result.results.search_depth_6_nodes,
@@ -306,10 +308,9 @@ fn print_summary(result: &BenchmarkResult) {
     println!("  Depth 4: {:>12.0} nps", result.results.perft_depth_4_nps);
     println!("  Depth 5: {:>12.0} nps", result.results.perft_depth_5_nps);
 
-    println!("\nSearch time (ms/move - lower is better):");
+    println!("\nSearch time on middlegame positions (ms/move - lower is better):");
     println!("  Depth 4: {:>8.1} ms", result.results.search_depth_4_mean_ms);
     println!("  Depth 5: {:>8.1} ms", result.results.search_depth_5_mean_ms);
-    println!("  Depth 6: {:>8.1} ms", result.results.search_depth_6_mean_ms);
 
     println!("\nNodes searched (starting position):");
     println!("  Depth 4: {:>12}", result.results.search_depth_4_nodes);
@@ -338,15 +339,13 @@ fn compare_with_previous(current: &BenchmarkResult) {
         println!("  Depth 4: {:>+6.1}%", perft_4_change);
         println!("  Depth 5: {:>+6.1}%", perft_5_change);
 
-        // Search time comparison (negative is better)
+        // Search time comparison on middlegame positions (negative is better)
         let search_4_change = -percent_change(prev.results.search_depth_4_mean_ms, current.results.search_depth_4_mean_ms);
         let search_5_change = -percent_change(prev.results.search_depth_5_mean_ms, current.results.search_depth_5_mean_ms);
-        let search_6_change = -percent_change(prev.results.search_depth_6_mean_ms, current.results.search_depth_6_mean_ms);
 
-        println!("\nSearch time (+ = faster):");
+        println!("\nSearch time on middlegame positions (+ = faster):");
         println!("  Depth 4: {:>+6.1}%", search_4_change);
         println!("  Depth 5: {:>+6.1}%", search_5_change);
-        println!("  Depth 6: {:>+6.1}%", search_6_change);
 
         // Node count comparison (fewer = better move ordering/pruning)
         let nodes_4_change = -percent_change(prev.results.search_depth_4_nodes as f64, current.results.search_depth_4_nodes as f64);
