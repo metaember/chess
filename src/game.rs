@@ -56,9 +56,10 @@ impl Game {
             let search_result = if use_book {
                 search_with_book(self.max_depth, &self.board, &book.as_ref().unwrap())
             } else {
-                minimax(self.max_depth, &self.board)
-            }
-            .unwrap();
+                let mut board = self.board.clone();
+                let mut tt = crate::tt::TranspositionTable::new(16);
+                iterative_deepening_movepicker(&mut board, self.max_depth, &mut tt)
+            };
             let elaped = now.elapsed().as_secs_f32();
 
             let selected_move = match search_result.best_move {

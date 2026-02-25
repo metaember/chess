@@ -2,7 +2,7 @@ use std::cell::UnsafeCell;
 
 use crate::bitboard::{
     BitboardIter, FILE_MASKS, ADJACENT_FILE_MASKS, PASSED_PAWN_MASKS,
-    ATTACK_TABLES,
+    ATTACK_TABLES, bishop_attacks, rook_attacks,
 };
 use crate::board::Board;
 use crate::types::{Color, Move, MoveFlag, Piece, PieceType};
@@ -223,10 +223,26 @@ const BACKWARD_PAWN_EG: i32 = -25;
 const PASSED_PAWN_MG: [i32; 6] = [10, 15, 20, 60, 150, 250];
 const PASSED_PAWN_EG: [i32; 6] = [25, 30, 40, 70, 170, 260];
 
+/// Connected pawn bonus by rank (phalanx or supported)
+/// Index 0=rank2, 5=rank7 from pawn's perspective
+const CONNECTED_PAWN_MG: [i32; 6] = [3, 4, 6, 10, 20, 30];
+const CONNECTED_PAWN_EG: [i32; 6] = [4, 5, 8, 12, 25, 35];
+
 /// King safety: pawn shield bonus per pawn
 const PAWN_SHIELD_BONUS: i32 = 10;
 /// King safety: penalty per open file near king
 const KING_OPEN_FILE_PENALTY: i32 = -20;
+/// King attack zone weights: penalty based on number of enemy attack squares in king zone
+/// Indexed by attack count (0..=14), quadratic-ish growth
+const KING_ATTACK_PENALTY: [i32; 16] = [0, 0, 2, 6, 12, 20, 30, 42, 56, 70, 82, 92, 100, 106, 110, 112];
+
+/// Outpost bonus for knight/bishop on an advanced square:
+/// - defended by a friendly pawn
+/// - cannot be attacked by enemy pawns (no enemy pawn on adjacent files ahead)
+const KNIGHT_OUTPOST_MG: i32 = 20;
+const KNIGHT_OUTPOST_EG: i32 = 12;
+const BISHOP_OUTPOST_MG: i32 = 10;
+const BISHOP_OUTPOST_EG: i32 = 6;
 
 /// Rook on open/semi-open file (MG/EG split)
 const ROOK_OPEN_FILE_MG: i32 = 40;
@@ -257,35 +273,54 @@ fn evaluate_pawn_structure(white_pawns: u64, black_pawns: u64) -> (i32, i32, u64
     let mut white_passed = 0u64;
     let mut black_passed = 0u64;
 
-    // Pawn attack maps for backward pawn detection
+    // Pawn attack maps for backward pawn detection and connected pawn detection
     let white_pawn_attacks = ((white_pawns & !FILE_MASKS[0]) << 7) | ((white_pawns & !FILE_MASKS[7]) << 9);
     let black_pawn_attacks = ((black_pawns & !FILE_MASKS[7]) >> 7) | ((black_pawns & !FILE_MASKS[0]) >> 9);
+
+    // Phalanx: pawn with a neighbor on the same rank (adjacent file)
+    let white_phalanx = white_pawns & (((white_pawns & !FILE_MASKS[7]) << 1) | ((white_pawns & !FILE_MASKS[0]) >> 1));
+    let black_phalanx = black_pawns & (((black_pawns & !FILE_MASKS[7]) << 1) | ((black_pawns & !FILE_MASKS[0]) >> 1));
+
+    // Supported: pawn that is defended by a friendly pawn
+    let white_supported = white_pawns & white_pawn_attacks;
+    let black_supported = black_pawns & black_pawn_attacks;
+
+    // Connected = phalanx OR supported
+    let white_connected = white_phalanx | white_supported;
+    let black_connected = black_phalanx | black_supported;
 
     // --- White pawns ---
     for sq in BitboardIter(white_pawns) {
         let file = (sq & 7) as usize; // 0-indexed file
         let rank = (sq >> 3) as usize; // 0-indexed rank
 
-        // Isolated pawn: no friendly pawns on adjacent files
-        let isolated = white_pawns & ADJACENT_FILE_MASKS[file] == 0;
-        if isolated {
-            if black_pawns & FILE_MASKS[file] == 0 {
-                mg += ISOLATED_PAWN_OPEN_MG;
-                eg += ISOLATED_PAWN_OPEN_EG;
-            } else {
-                mg += ISOLATED_PAWN_MG;
-                eg += ISOLATED_PAWN_EG;
-            }
-        } else if rank < 6 {
-            // Backward pawn: not isolated, stop square attacked by enemy pawn,
-            // and no friendly pawn on adjacent files at same rank or behind to support
-            let stop_sq = sq + 8;
-            if black_pawn_attacks & (1u64 << stop_sq) != 0 {
-                // Mask of adjacent file squares at ranks 0..=rank
-                let behind_mask = ADJACENT_FILE_MASKS[file] & ((1u64 << ((rank + 1) * 8)) - 1);
-                if white_pawns & behind_mask == 0 {
-                    mg += BACKWARD_PAWN_MG;
-                    eg += BACKWARD_PAWN_EG;
+        // Connected pawn bonus
+        if white_connected & (1u64 << sq) != 0 {
+            let adv = (rank as i32 - 1).clamp(0, 5) as usize;
+            mg += CONNECTED_PAWN_MG[adv];
+            eg += CONNECTED_PAWN_EG[adv];
+        } else {
+            // Isolated pawn: no friendly pawns on adjacent files
+            let isolated = white_pawns & ADJACENT_FILE_MASKS[file] == 0;
+            if isolated {
+                if black_pawns & FILE_MASKS[file] == 0 {
+                    mg += ISOLATED_PAWN_OPEN_MG;
+                    eg += ISOLATED_PAWN_OPEN_EG;
+                } else {
+                    mg += ISOLATED_PAWN_MG;
+                    eg += ISOLATED_PAWN_EG;
+                }
+            } else if rank < 6 {
+                // Backward pawn: not isolated, stop square attacked by enemy pawn,
+                // and no friendly pawn on adjacent files at same rank or behind to support
+                let stop_sq = sq + 8;
+                if black_pawn_attacks & (1u64 << stop_sq) != 0 {
+                    // Mask of adjacent file squares at ranks 0..=rank
+                    let behind_mask = ADJACENT_FILE_MASKS[file] & ((1u64 << ((rank + 1) * 8)) - 1);
+                    if white_pawns & behind_mask == 0 {
+                        mg += BACKWARD_PAWN_MG;
+                        eg += BACKWARD_PAWN_EG;
+                    }
                 }
             }
         }
@@ -315,25 +350,32 @@ fn evaluate_pawn_structure(white_pawns: u64, black_pawns: u64) -> (i32, i32, u64
         let file = (sq & 7) as usize;
         let rank = (sq >> 3) as usize;
 
-        // Isolated pawn
-        let isolated = black_pawns & ADJACENT_FILE_MASKS[file] == 0;
-        if isolated {
-            if white_pawns & FILE_MASKS[file] == 0 {
-                mg -= ISOLATED_PAWN_OPEN_MG;
-                eg -= ISOLATED_PAWN_OPEN_EG;
-            } else {
-                mg -= ISOLATED_PAWN_MG;
-                eg -= ISOLATED_PAWN_EG;
-            }
-        } else if rank > 1 {
-            // Backward pawn (black): stop square is sq-8
-            let stop_sq = sq - 8;
-            if white_pawn_attacks & (1u64 << stop_sq) != 0 {
-                // Mask of adjacent file squares at ranks rank..=7
-                let behind_mask = ADJACENT_FILE_MASKS[file] & !((1u64 << (rank * 8)) - 1);
-                if black_pawns & behind_mask == 0 {
-                    mg -= BACKWARD_PAWN_MG;
-                    eg -= BACKWARD_PAWN_EG;
+        // Connected pawn bonus
+        if black_connected & (1u64 << sq) != 0 {
+            let adv = (6 - rank as i32).clamp(0, 5) as usize;
+            mg -= CONNECTED_PAWN_MG[adv];
+            eg -= CONNECTED_PAWN_EG[adv];
+        } else {
+            // Isolated pawn
+            let isolated = black_pawns & ADJACENT_FILE_MASKS[file] == 0;
+            if isolated {
+                if white_pawns & FILE_MASKS[file] == 0 {
+                    mg -= ISOLATED_PAWN_OPEN_MG;
+                    eg -= ISOLATED_PAWN_OPEN_EG;
+                } else {
+                    mg -= ISOLATED_PAWN_MG;
+                    eg -= ISOLATED_PAWN_EG;
+                }
+            } else if rank > 1 {
+                // Backward pawn (black): stop square is sq-8
+                let stop_sq = sq - 8;
+                if white_pawn_attacks & (1u64 << stop_sq) != 0 {
+                    // Mask of adjacent file squares at ranks rank..=7
+                    let behind_mask = ADJACENT_FILE_MASKS[file] & !((1u64 << (rank * 8)) - 1);
+                    if black_pawns & behind_mask == 0 {
+                        mg -= BACKWARD_PAWN_MG;
+                        eg -= BACKWARD_PAWN_EG;
+                    }
                 }
             }
         }
@@ -364,22 +406,27 @@ fn evaluate_pawn_structure(white_pawns: u64, black_pawns: u64) -> (i32, i32, u64
 // King safety evaluation
 // =============================================================================
 
-/// Evaluate king safety (pawn shield + open files near king). Returns score from white's perspective.
+/// Evaluate king safety (pawn shield + open files + attack zones). Returns score from white's perspective.
 /// Weighted by phase (middlegame only).
 #[inline]
-fn evaluate_king_safety(phase: i32, white_pawns: u64, black_pawns: u64, wk: u8, bk: u8) -> i32 {
+fn evaluate_king_safety(
+    phase: i32,
+    white_pawns: u64, black_pawns: u64,
+    wk: u8, bk: u8,
+    white_attack_map: u64, black_attack_map: u64,
+) -> i32 {
     if phase == 0 {
         return 0; // Pure endgame, king safety irrelevant
     }
 
-    let white_safety = king_safety_for_color(wk, white_pawns, Color::White);
-    let black_safety = king_safety_for_color(bk, black_pawns, Color::Black);
+    let white_safety = king_safety_for_color(wk, white_pawns, Color::White, black_attack_map);
+    let black_safety = king_safety_for_color(bk, black_pawns, Color::Black, white_attack_map);
 
     // Scale by phase (full weight in middlegame, zero in endgame)
     ((white_safety - black_safety) * phase) / MAX_PHASE
 }
 
-fn king_safety_for_color(king_sq: u8, friendly_pawns: u64, color: Color) -> i32 {
+fn king_safety_for_color(king_sq: u8, friendly_pawns: u64, color: Color, enemy_attack_map: u64) -> i32 {
     let king_file = (king_sq & 7) as usize;
     let king_rank = (king_sq >> 3) as usize;
     let mut score = 0i32;
@@ -420,7 +467,80 @@ fn king_safety_for_color(king_sq: u8, friendly_pawns: u64, color: Color) -> i32 
         }
     }
 
+    // King attack zone: count enemy attacks into the king's 3x3 neighborhood
+    let king_zone = ATTACK_TABLES.king[king_sq as usize] | (1u64 << king_sq);
+    let attack_count = (enemy_attack_map & king_zone).count_ones() as usize;
+    score -= KING_ATTACK_PENALTY[attack_count.min(15)];
+
     score
+}
+
+// =============================================================================
+// Outpost evaluation
+// =============================================================================
+
+/// Evaluate knight/bishop outposts. Returns (mg, eg) from white's perspective.
+#[inline]
+fn evaluate_outposts(board: &Board, white_pawns: u64, black_pawns: u64) -> (i32, i32) {
+    let white_pawn_attacks = ((white_pawns & !FILE_MASKS[0]) << 7) | ((white_pawns & !FILE_MASKS[7]) << 9);
+    let black_pawn_attacks = ((black_pawns & !FILE_MASKS[7]) >> 7) | ((black_pawns & !FILE_MASKS[0]) >> 9);
+
+    let mut mg = 0i32;
+    let mut eg = 0i32;
+
+    // White knights/bishops: outpost = defended by white pawn + no black pawn on adjacent files ahead
+    for sq in BitboardIter(board.get_piece_bb(Color::White, PieceType::Knight)) {
+        if white_pawn_attacks & (1u64 << sq) != 0 {
+            let file = (sq & 7) as usize;
+            let rank = (sq >> 3) as usize;
+            // No black pawn on adjacent files at ranks > this piece's rank
+            let ranks_ahead: u64 = if rank < 7 { !((1u64 << ((rank + 1) * 8)) - 1) } else { 0 };
+            if black_pawns & ADJACENT_FILE_MASKS[file] & ranks_ahead == 0 {
+                mg += KNIGHT_OUTPOST_MG;
+                eg += KNIGHT_OUTPOST_EG;
+            }
+        }
+    }
+
+    for sq in BitboardIter(board.get_piece_bb(Color::White, PieceType::Bishop)) {
+        if white_pawn_attacks & (1u64 << sq) != 0 {
+            let file = (sq & 7) as usize;
+            let rank = (sq >> 3) as usize;
+            let ranks_ahead: u64 = if rank < 7 { !((1u64 << ((rank + 1) * 8)) - 1) } else { 0 };
+            if black_pawns & ADJACENT_FILE_MASKS[file] & ranks_ahead == 0 {
+                mg += BISHOP_OUTPOST_MG;
+                eg += BISHOP_OUTPOST_EG;
+            }
+        }
+    }
+
+    // Black knights/bishops: outpost = defended by black pawn + no white pawn on adjacent files ahead (toward rank 1)
+    for sq in BitboardIter(board.get_piece_bb(Color::Black, PieceType::Knight)) {
+        if black_pawn_attacks & (1u64 << sq) != 0 {
+            let file = (sq & 7) as usize;
+            let rank = (sq >> 3) as usize;
+            // No white pawn on adjacent files at ranks < this piece's rank (toward rank 0)
+            let ranks_ahead: u64 = if rank > 0 { (1u64 << (rank * 8)) - 1 } else { 0 };
+            if white_pawns & ADJACENT_FILE_MASKS[file] & ranks_ahead == 0 {
+                mg -= KNIGHT_OUTPOST_MG;
+                eg -= KNIGHT_OUTPOST_EG;
+            }
+        }
+    }
+
+    for sq in BitboardIter(board.get_piece_bb(Color::Black, PieceType::Bishop)) {
+        if black_pawn_attacks & (1u64 << sq) != 0 {
+            let file = (sq & 7) as usize;
+            let rank = (sq >> 3) as usize;
+            let ranks_ahead: u64 = if rank > 0 { (1u64 << (rank * 8)) - 1 } else { 0 };
+            if white_pawns & ADJACENT_FILE_MASKS[file] & ranks_ahead == 0 {
+                mg -= BISHOP_OUTPOST_MG;
+                eg -= BISHOP_OUTPOST_EG;
+            }
+        }
+    }
+
+    (mg, eg)
 }
 
 // =============================================================================
@@ -471,15 +591,21 @@ fn evaluate_rooks(board: &Board, white_pawns: u64, black_pawns: u64) -> (i32, i3
 const KNIGHT_MOB_MG: [i32; 9] = [-15, -13, -3, -1, 1, 3, 5, 7, 9];
 const KNIGHT_MOB_EG: [i32; 9] = [-20, -14, -8, -4, 2, 3, 4, 5, 7];
 
+/// Bishop mobility bonus by number of accessible squares (0-13)
+const BISHOP_MOB_MG: [i32; 14] = [-15, -11, -6, -2, 2, 5, 7, 9, 10, 11, 12, 12, 13, 13];
+const BISHOP_MOB_EG: [i32; 14] = [-23, -14, -7, -2, 2, 5, 8, 11, 13, 14, 14, 14, 14, 14];
+
+/// Rook mobility bonus by number of accessible squares (0-14)
+const ROOK_MOB_MG: [i32; 15] = [-9, -6, -3, -1, 0, 1, 3, 4, 5, 6, 7, 8, 8, 9, 9];
+const ROOK_MOB_EG: [i32; 15] = [-15, -8, -4, 0, 2, 5, 7, 9, 11, 12, 12, 13, 13, 13, 13];
+
 /// Evaluate piece mobility for both colors.
 /// Returns (mg_score, eg_score) from white's perspective.
-/// Only evaluates knight mobility — bishop/rook magic bitboard lookups are too
-/// expensive to repeat here (they're already done in attack map computation).
-/// Knight attacks use a simple precomputed table lookup (no magic needed).
 #[inline]
 fn evaluate_mobility(board: &Board, white_pawns: u64, black_pawns: u64) -> (i32, i32) {
     let white_pieces = board.get_pieces_bb(Color::White);
     let black_pieces = board.get_pieces_bb(Color::Black);
+    let occupied = board.get_occupied();
 
     // Compute enemy pawn attack masks
     let white_pawn_attacks = ((white_pawns & !FILE_MASKS[0]) << 7) | ((white_pawns & !FILE_MASKS[7]) << 9);
@@ -504,6 +630,34 @@ fn evaluate_mobility(board: &Board, white_pawns: u64, black_pawns: u64) -> (i32,
         let count = (ATTACK_TABLES.knight[sq as usize] & black_mob_area).count_ones() as usize;
         mg -= KNIGHT_MOB_MG[count.min(8)];
         eg -= KNIGHT_MOB_EG[count.min(8)];
+    }
+
+    // White bishops
+    for sq in BitboardIter(board.get_piece_bb(Color::White, PieceType::Bishop)) {
+        let count = (bishop_attacks(sq, occupied) & white_mob_area).count_ones() as usize;
+        mg += BISHOP_MOB_MG[count.min(13)];
+        eg += BISHOP_MOB_EG[count.min(13)];
+    }
+
+    // Black bishops
+    for sq in BitboardIter(board.get_piece_bb(Color::Black, PieceType::Bishop)) {
+        let count = (bishop_attacks(sq, occupied) & black_mob_area).count_ones() as usize;
+        mg -= BISHOP_MOB_MG[count.min(13)];
+        eg -= BISHOP_MOB_EG[count.min(13)];
+    }
+
+    // White rooks
+    for sq in BitboardIter(board.get_piece_bb(Color::White, PieceType::Rook)) {
+        let count = (rook_attacks(sq, occupied) & white_mob_area).count_ones() as usize;
+        mg += ROOK_MOB_MG[count.min(14)];
+        eg += ROOK_MOB_EG[count.min(14)];
+    }
+
+    // Black rooks
+    for sq in BitboardIter(board.get_piece_bb(Color::Black, PieceType::Rook)) {
+        let count = (rook_attacks(sq, occupied) & black_mob_area).count_ones() as usize;
+        mg -= ROOK_MOB_MG[count.min(14)];
+        eg -= ROOK_MOB_EG[count.min(14)];
     }
 
     (mg, eg)
@@ -584,6 +738,11 @@ pub fn evaluate_board(board: &Board) -> i32 {
     mg_score += mob_mg;
     eg_score += mob_eg;
 
+    // Outposts
+    let (out_mg, out_eg) = evaluate_outposts(board, white_pawns, black_pawns);
+    mg_score += out_mg;
+    eg_score += out_eg;
+
     // Rook on open/semi-open files
     let (rook_mg, rook_eg) = evaluate_rooks(board, white_pawns, black_pawns);
     mg_score += rook_mg;
@@ -593,7 +752,9 @@ pub fn evaluate_board(board: &Board) -> i32 {
     let mut unsigned_score = (mg_score * phase + eg_score * (MAX_PHASE - phase)) / MAX_PHASE;
 
     // King safety (middlegame-weighted, computed each call)
-    unsigned_score += evaluate_king_safety(phase, white_pawns, black_pawns, wk, bk);
+    let white_attack_map = board.get_attack_map(Color::White);
+    let black_attack_map = board.get_attack_map(Color::Black);
+    unsigned_score += evaluate_king_safety(phase, white_pawns, black_pawns, wk, bk, white_attack_map, black_attack_map);
 
     if board.get_active_color() == Color::White {
         unsigned_score
@@ -664,6 +825,11 @@ fn debug_slow_evaluate_board(board: &Board) -> i32 {
     mg_score += mob_mg;
     eg_score += mob_eg;
 
+    // Outposts
+    let (out_mg, out_eg) = evaluate_outposts(board, white_pawns, black_pawns);
+    mg_score += out_mg;
+    eg_score += out_eg;
+
     // Rook on open/semi-open files
     let (rook_mg, rook_eg) = evaluate_rooks(board, white_pawns, black_pawns);
     mg_score += rook_mg;
@@ -672,7 +838,9 @@ fn debug_slow_evaluate_board(board: &Board) -> i32 {
     let mut unsigned_score = (mg_score * phase + eg_score * (MAX_PHASE - phase)) / MAX_PHASE;
 
     // King safety
-    unsigned_score += evaluate_king_safety(phase, white_pawns, black_pawns, wk, bk);
+    let white_attack_map = board.get_attack_map(Color::White);
+    let black_attack_map = board.get_attack_map(Color::Black);
+    unsigned_score += evaluate_king_safety(phase, white_pawns, black_pawns, wk, bk, white_attack_map, black_attack_map);
 
     if board.get_active_color() == Color::White {
         unsigned_score
