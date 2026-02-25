@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::UnsafeCell;
 
 use crate::bitboard::{
     BitboardIter, FILE_MASKS, ADJACENT_FILE_MASKS, PASSED_PAWN_MASKS,
@@ -193,7 +193,7 @@ impl PawnHashTable {
 }
 
 thread_local! {
-    static PAWN_HASH: RefCell<PawnHashTable> = RefCell::new(PawnHashTable::new());
+    static PAWN_HASH: UnsafeCell<PawnHashTable> = UnsafeCell::new(PawnHashTable::new());
 }
 
 // =============================================================================
@@ -250,9 +250,7 @@ fn chebyshev_distance(sq1: u8, sq2: u8) -> u8 {
 
 /// Evaluate pawn structure for both colors.
 /// Returns (mg_score, eg_score, white_passed_bb, black_passed_bb) from white's perspective.
-fn evaluate_pawn_structure(board: &Board) -> (i32, i32, u64, u64) {
-    let white_pawns = board.get_piece_bb(Color::White, PieceType::Pawn);
-    let black_pawns = board.get_piece_bb(Color::Black, PieceType::Pawn);
+fn evaluate_pawn_structure(white_pawns: u64, black_pawns: u64) -> (i32, i32, u64, u64) {
 
     let mut mg = 0i32;
     let mut eg = 0i32;
@@ -369,20 +367,13 @@ fn evaluate_pawn_structure(board: &Board) -> (i32, i32, u64, u64) {
 /// Evaluate king safety (pawn shield + open files near king). Returns score from white's perspective.
 /// Weighted by phase (middlegame only).
 #[inline]
-fn evaluate_king_safety(board: &Board) -> i32 {
-    let phase = board.get_phase();
+fn evaluate_king_safety(phase: i32, white_pawns: u64, black_pawns: u64, wk: u8, bk: u8) -> i32 {
     if phase == 0 {
         return 0; // Pure endgame, king safety irrelevant
     }
 
-    let white_pawns = board.get_piece_bb(Color::White, PieceType::Pawn);
-    let black_pawns = board.get_piece_bb(Color::Black, PieceType::Pawn);
-
-    let white_king_sq = board.get_king_square(Color::White);
-    let black_king_sq = board.get_king_square(Color::Black);
-
-    let white_safety = king_safety_for_color(white_king_sq, white_pawns, Color::White);
-    let black_safety = king_safety_for_color(black_king_sq, black_pawns, Color::Black);
+    let white_safety = king_safety_for_color(wk, white_pawns, Color::White);
+    let black_safety = king_safety_for_color(bk, black_pawns, Color::Black);
 
     // Scale by phase (full weight in middlegame, zero in endgame)
     ((white_safety - black_safety) * phase) / MAX_PHASE
@@ -438,9 +429,7 @@ fn king_safety_for_color(king_sq: u8, friendly_pawns: u64, color: Color) -> i32 
 
 /// Evaluate rooks on open/semi-open files. Returns (mg, eg) from white's perspective.
 #[inline]
-fn evaluate_rooks(board: &Board) -> (i32, i32) {
-    let white_pawns = board.get_piece_bb(Color::White, PieceType::Pawn);
-    let black_pawns = board.get_piece_bb(Color::Black, PieceType::Pawn);
+fn evaluate_rooks(board: &Board, white_pawns: u64, black_pawns: u64) -> (i32, i32) {
     let all_pawns = white_pawns | black_pawns;
 
     let mut mg = 0i32;
@@ -488,13 +477,11 @@ const KNIGHT_MOB_EG: [i32; 9] = [-20, -14, -8, -4, 2, 3, 4, 5, 7];
 /// expensive to repeat here (they're already done in attack map computation).
 /// Knight attacks use a simple precomputed table lookup (no magic needed).
 #[inline]
-fn evaluate_mobility(board: &Board) -> (i32, i32) {
+fn evaluate_mobility(board: &Board, white_pawns: u64, black_pawns: u64) -> (i32, i32) {
     let white_pieces = board.get_pieces_bb(Color::White);
     let black_pieces = board.get_pieces_bb(Color::Black);
 
     // Compute enemy pawn attack masks
-    let white_pawns = board.get_piece_bb(Color::White, PieceType::Pawn);
-    let black_pawns = board.get_piece_bb(Color::Black, PieceType::Pawn);
     let white_pawn_attacks = ((white_pawns & !FILE_MASKS[0]) << 7) | ((white_pawns & !FILE_MASKS[7]) << 9);
     let black_pawn_attacks = ((black_pawns & !FILE_MASKS[7]) >> 7) | ((black_pawns & !FILE_MASKS[0]) >> 9);
 
@@ -546,14 +533,21 @@ pub fn evaluate_board(board: &Board) -> i32 {
         eg_score -= BISHOP_PAIR_EG;
     }
 
+    // Hoist common lookups used by multiple sub-functions
+    let white_pawns = board.get_piece_bb(Color::White, PieceType::Pawn);
+    let black_pawns = board.get_piece_bb(Color::Black, PieceType::Pawn);
+    let wk = board.get_king_square(Color::White);
+    let bk = board.get_king_square(Color::Black);
+
     // Pawn structure (cached via pawn hash table)
     let pawn_hash = board.get_pawn_hash();
+    // SAFETY: single-threaded access within thread_local, no re-entrant calls
     let (pawn_mg, pawn_eg, white_passed, black_passed) = PAWN_HASH.with(|ph| {
-        let mut table = ph.borrow_mut();
+        let table = unsafe { &mut *ph.get() };
         if let Some(entry) = table.probe(pawn_hash) {
             (entry.mg_score as i32, entry.eg_score as i32, entry.white_passed, entry.black_passed)
         } else {
-            let (mg, eg, wp, bp) = evaluate_pawn_structure(board);
+            let (mg, eg, wp, bp) = evaluate_pawn_structure(white_pawns, black_pawns);
             table.store(pawn_hash, mg as i16, eg as i16, wp, bp);
             (mg, eg, wp, bp)
         }
@@ -562,8 +556,6 @@ pub fn evaluate_board(board: &Board) -> i32 {
     eg_score += pawn_eg;
 
     // King proximity to passed pawns (endgame bonus, not cached — depends on king positions)
-    let wk = board.get_king_square(Color::White);
-    let bk = board.get_king_square(Color::Black);
     for sq in BitboardIter(white_passed) {
         let rank = (sq >> 3) as i32; // 0-indexed
         let adv = (rank - 1).clamp(0, 5);
@@ -588,12 +580,12 @@ pub fn evaluate_board(board: &Board) -> i32 {
     }
 
     // Piece mobility (computed each call — depends on all piece positions)
-    let (mob_mg, mob_eg) = evaluate_mobility(board);
+    let (mob_mg, mob_eg) = evaluate_mobility(board, white_pawns, black_pawns);
     mg_score += mob_mg;
     eg_score += mob_eg;
 
     // Rook on open/semi-open files
-    let (rook_mg, rook_eg) = evaluate_rooks(board);
+    let (rook_mg, rook_eg) = evaluate_rooks(board, white_pawns, black_pawns);
     mg_score += rook_mg;
     eg_score += rook_eg;
 
@@ -601,7 +593,7 @@ pub fn evaluate_board(board: &Board) -> i32 {
     let mut unsigned_score = (mg_score * phase + eg_score * (MAX_PHASE - phase)) / MAX_PHASE;
 
     // King safety (middlegame-weighted, computed each call)
-    unsigned_score += evaluate_king_safety(board);
+    unsigned_score += evaluate_king_safety(phase, white_pawns, black_pawns, wk, bk);
 
     if board.get_active_color() == Color::White {
         unsigned_score
@@ -632,14 +624,18 @@ fn debug_slow_evaluate_board(board: &Board) -> i32 {
         eg_score -= BISHOP_PAIR_EG;
     }
 
+    // Hoist common lookups
+    let white_pawns = board.get_piece_bb(Color::White, PieceType::Pawn);
+    let black_pawns = board.get_piece_bb(Color::Black, PieceType::Pawn);
+    let wk = board.get_king_square(Color::White);
+    let bk = board.get_king_square(Color::Black);
+
     // Pawn structure (recompute from scratch, no hash table)
-    let (pawn_mg, pawn_eg, white_passed, black_passed) = evaluate_pawn_structure(board);
+    let (pawn_mg, pawn_eg, white_passed, black_passed) = evaluate_pawn_structure(white_pawns, black_pawns);
     mg_score += pawn_mg;
     eg_score += pawn_eg;
 
     // King proximity to passed pawns
-    let wk = board.get_king_square(Color::White);
-    let bk = board.get_king_square(Color::Black);
     for sq in BitboardIter(white_passed) {
         let rank = (sq >> 3) as i32;
         let adv = (rank - 1).clamp(0, 5);
@@ -664,19 +660,19 @@ fn debug_slow_evaluate_board(board: &Board) -> i32 {
     }
 
     // Piece mobility
-    let (mob_mg, mob_eg) = evaluate_mobility(board);
+    let (mob_mg, mob_eg) = evaluate_mobility(board, white_pawns, black_pawns);
     mg_score += mob_mg;
     eg_score += mob_eg;
 
     // Rook on open/semi-open files
-    let (rook_mg, rook_eg) = evaluate_rooks(board);
+    let (rook_mg, rook_eg) = evaluate_rooks(board, white_pawns, black_pawns);
     mg_score += rook_mg;
     eg_score += rook_eg;
 
     let mut unsigned_score = (mg_score * phase + eg_score * (MAX_PHASE - phase)) / MAX_PHASE;
 
     // King safety
-    unsigned_score += evaluate_king_safety(board);
+    unsigned_score += evaluate_king_safety(phase, white_pawns, black_pawns, wk, bk);
 
     if board.get_active_color() == Color::White {
         unsigned_score

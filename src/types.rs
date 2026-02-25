@@ -577,6 +577,11 @@ pub struct UndoInfo {
     pub phase: i32,
     pub bishop_count: [u8; 2],
     pub pawn_hash: u64,
+    /// Previous attack maps (restored instead of recomputed in unmake)
+    pub white_attack_map: u64,
+    pub black_attack_map: u64,
+    /// Previous per-color occupancy bitboards
+    pub color_bb: [u64; 2],
 }
 
 /// Information needed to undo a null move (pass to opponent without moving)

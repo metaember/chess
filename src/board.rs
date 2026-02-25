@@ -1,4 +1,4 @@
-use crate::bitboard::{position_to_bb, position_to_sq, ATTACK_TABLES, BitboardIter, bishop_attacks, rook_attacks, queen_attacks};
+use crate::bitboard::{position_to_bb, position_to_sq, ATTACK_TABLES, BitboardIter, bishop_attacks, rook_attacks, queen_attacks, FILE_MASKS};
 use crate::evaluate::{get_pst_value, Material, MAX_PHASE, PHASE_WEIGHTS};
 use crate::movegen::{MoveGenerator, PinnedPiece};
 use crate::types::*;
@@ -44,6 +44,10 @@ pub struct Board {
     piece_bb: [[u64; 6]; 2],
     /// All occupied squares
     occupied: u64,
+    /// Per-color occupancy bitboards (cached union of all piece_bb for that color)
+    color_bb: [u64; 2],
+    /// Cached king square indices (0-63), avoids Position-to-index conversion
+    king_sq: [u8; 2],
     /// Attack maps: all squares attacked by each color (cached, recomputed on move)
     white_attack_map: u64,
     black_attack_map: u64,
@@ -77,6 +81,8 @@ impl Board {
         // Initialize piece bitboards and incremental evaluation
         let mut piece_bb = [[0u64; 6]; 2];
         let mut occupied = 0u64;
+        let mut color_bb = [0u64; 2];
+        let mut king_sq = [0u8; 2];
         let mut material = [0i32; 2];
         let mut pst_mg = [0i32; 2];
         let mut pst_eg = [0i32; 2];
@@ -101,6 +107,7 @@ impl Board {
                 let piece_idx = piece_type_to_index(p.piece_type);
                 piece_bb[color_idx][piece_idx] |= sq_bb;
                 occupied |= sq_bb;
+                color_bb[color_idx] |= sq_bb;
                 material[color_idx] += Material::piece_to_material(p.piece_type);
                 pst_mg[color_idx] += get_pst_value(p.piece_type, p.color, p.position.rank, p.position.file, false);
                 pst_eg[color_idx] += get_pst_value(p.piece_type, p.color, p.position.rank, p.position.file, true);
@@ -117,8 +124,9 @@ impl Board {
                     pawn_hash ^= ZOBRIST_KEYS.piece_key(p.color, p.piece_type, &p.position);
                 }
 
-                // Track king positions
+                // Track king positions and cached square index
                 if p.piece_type == PieceType::King {
+                    king_sq[color_idx] = (p.position.rank - 1) * 8 + (p.position.file - 1);
                     match p.color {
                         Color::White => white_king_position = p.position,
                         Color::Black => black_king_position = p.position,
@@ -178,8 +186,8 @@ impl Board {
         }
 
         // Compute initial attack maps
-        let white_attack_map = Self::compute_attack_map_static(&piece_bb, occupied, Color::White, Some(black_king_position));
-        let black_attack_map = Self::compute_attack_map_static(&piece_bb, occupied, Color::Black, Some(white_king_position));
+        let white_attack_map = Self::compute_attack_map_fast(&piece_bb, occupied, 0, 1u64 << king_sq[1]);
+        let black_attack_map = Self::compute_attack_map_fast(&piece_bb, occupied, 1, 1u64 << king_sq[0]);
 
         Board {
             active_color,
@@ -196,6 +204,8 @@ impl Board {
             zobrist_hash,
             piece_bb,
             occupied,
+            color_bb,
+            king_sq,
             white_attack_map,
             black_attack_map,
             material,
@@ -267,18 +277,66 @@ impl Board {
 
     /// Recompute attack maps for both colors (call after position changes)
     fn recompute_attack_maps(&mut self) {
-        self.white_attack_map = Self::compute_attack_map_static(
+        let bk_bb = 1u64 << self.king_sq[1];
+        let wk_bb = 1u64 << self.king_sq[0];
+        self.white_attack_map = Self::compute_attack_map_fast(
             &self.piece_bb,
             self.occupied,
-            Color::White,
-            Some(self.black_king_position),
+            0,
+            bk_bb,
         );
-        self.black_attack_map = Self::compute_attack_map_static(
+        self.black_attack_map = Self::compute_attack_map_fast(
             &self.piece_bb,
             self.occupied,
-            Color::Black,
-            Some(self.white_king_position),
+            1,
+            wk_bb,
         );
+    }
+
+    /// Fast attack map computation using color index and pre-computed king bitboard
+    #[inline]
+    fn compute_attack_map_fast(
+        piece_bb: &[[u64; 6]; 2],
+        occupied: u64,
+        color_idx: usize,
+        opponent_king_bb: u64,
+    ) -> u64 {
+        let occupied_no_king = occupied & !opponent_king_bb;
+        let pieces = &piece_bb[color_idx];
+
+        // Pawn attacks (bulk bitshift, no per-square loop)
+        let pawns = pieces[0];
+        let mut attacks = if color_idx == 0 {
+            // White: attacks go up-left (<<7) and up-right (<<9)
+            ((pawns & !FILE_MASKS[0]) << 7) | ((pawns & !FILE_MASKS[7]) << 9)
+        } else {
+            // Black: attacks go down-left (>>9) and down-right (>>7)
+            ((pawns & !FILE_MASKS[7]) >> 7) | ((pawns & !FILE_MASKS[0]) >> 9)
+        };
+
+        // Rook attacks (magic bitboards)
+        for sq in BitboardIter(pieces[1]) {
+            attacks |= rook_attacks(sq, occupied_no_king);
+        }
+        // Knight attacks
+        for sq in BitboardIter(pieces[2]) {
+            attacks |= ATTACK_TABLES.knight[sq as usize];
+        }
+        // Bishop attacks (magic bitboards)
+        for sq in BitboardIter(pieces[3]) {
+            attacks |= bishop_attacks(sq, occupied_no_king);
+        }
+        // Queen attacks (magic bitboards)
+        for sq in BitboardIter(pieces[4]) {
+            attacks |= queen_attacks(sq, occupied_no_king);
+        }
+        // King attacks (exactly 1 king, avoid iterator overhead)
+        if pieces[5] != 0 {
+            let king_sq = pieces[5].trailing_zeros() as u8;
+            attacks |= ATTACK_TABLES.king[king_sq as usize];
+        }
+
+        attacks
     }
 
     /// Get the attack map for a given color
@@ -302,12 +360,10 @@ impl Board {
         self.piece_bb[color as usize][piece_type_to_index(piece_type)]
     }
 
-    /// Get all pieces bitboard for a specific color
+    /// Get all pieces bitboard for a specific color (cached, O(1))
     #[inline]
     pub fn get_pieces_bb(&self, color: Color) -> u64 {
-        let c = color as usize;
-        self.piece_bb[c][0] | self.piece_bb[c][1] | self.piece_bb[c][2] |
-        self.piece_bb[c][3] | self.piece_bb[c][4] | self.piece_bb[c][5]
+        self.color_bb[color as usize]
     }
 
     // === Incremental evaluation getters ===
@@ -348,14 +404,10 @@ impl Board {
         self.pawn_hash
     }
 
-    /// Get king square index (0-63) for a color
+    /// Get king square index (0-63) for a color (cached, O(1))
     #[inline]
     pub fn get_king_square(&self, color: Color) -> u8 {
-        let pos = match color {
-            Color::White => &self.white_king_position,
-            Color::Black => &self.black_king_position,
-        };
-        (pos.rank - 1) * 8 + (pos.file - 1)
+        self.king_sq[color as usize]
     }
 
     /// Get tapered evaluation score (positive = white advantage)
@@ -794,6 +846,8 @@ impl Board {
         // Compute piece bitboards, incremental evaluation, and Zobrist hash from board_to_piece
         let mut piece_bb = [[0u64; 6]; 2];
         let mut occupied = 0u64;
+        let mut color_bb = [0u64; 2];
+        let mut king_sq = [0u8; 2];
         let mut material = [0i32; 2];
         let mut pst_mg = [0i32; 2];
         let mut pst_eg = [0i32; 2];
@@ -810,6 +864,7 @@ impl Board {
                     let piece_idx = piece_type_to_index(piece.piece_type);
                     piece_bb[color_idx][piece_idx] |= sq_bb;
                     occupied |= sq_bb;
+                    color_bb[color_idx] |= sq_bb;
 
                     // Update incremental evaluation
                     material[color_idx] += Material::piece_to_material(piece.piece_type);
@@ -826,6 +881,9 @@ impl Board {
                     }
                     if piece.piece_type == PieceType::Pawn {
                         pawn_hash ^= ZOBRIST_KEYS.piece_key(piece.color, piece.piece_type, &piece.position);
+                    }
+                    if piece.piece_type == PieceType::King {
+                        king_sq[color_idx] = (piece.position.rank - 1) * 8 + (piece.position.file - 1);
                     }
                 }
             }
@@ -852,8 +910,8 @@ impl Board {
         }
 
         // Compute attack maps
-        let white_attack_map = Self::compute_attack_map_static(&piece_bb, occupied, Color::White, Some(black_king_position));
-        let black_attack_map = Self::compute_attack_map_static(&piece_bb, occupied, Color::Black, Some(white_king_position));
+        let white_attack_map = Self::compute_attack_map_fast(&piece_bb, occupied, 0, 1u64 << king_sq[1]);
+        let black_attack_map = Self::compute_attack_map_fast(&piece_bb, occupied, 1, 1u64 << king_sq[0]);
 
         Board {
             active_color: new_active_color,
@@ -879,6 +937,8 @@ impl Board {
             zobrist_hash,
             piece_bb,
             occupied,
+            color_bb,
+            king_sq,
             white_attack_map,
             black_attack_map,
             material,
@@ -911,6 +971,9 @@ impl Board {
             phase: self.phase,
             bishop_count: self.bishop_count,
             pawn_hash: self.pawn_hash,
+            white_attack_map: self.white_attack_map,
+            black_attack_map: self.black_attack_map,
+            color_bb: self.color_bb,
         };
 
         let color_idx = mv.piece.color as usize;
@@ -1102,11 +1165,12 @@ impl Board {
             }
         }
 
-        // Update king positions
+        // Update king positions and cached king square index
         if mv.piece.piece_type == PieceType::King {
+            let new_king_sq = (mv.to.rank - 1) * 8 + (mv.to.file - 1);
             match mv.piece.color {
-                Color::White => self.white_king_position = mv.to,
-                Color::Black => self.black_king_position = mv.to,
+                Color::White => { self.white_king_position = mv.to; self.king_sq[0] = new_king_sq; }
+                Color::Black => { self.black_king_position = mv.to; self.king_sq[1] = new_king_sq; }
             }
         }
 
@@ -1150,6 +1214,7 @@ impl Board {
         let original_piece_idx = piece_type_to_index(mv.piece.piece_type);
         self.piece_bb[color_idx][original_piece_idx] &= !from_bb;
         self.occupied &= !from_bb;
+        self.color_bb[color_idx] &= !from_bb;
 
         // Handle captured piece
         if let Some(captured) = mv.captured {
@@ -1158,6 +1223,7 @@ impl Board {
             let cap_piece_idx = piece_type_to_index(captured.piece_type);
             self.piece_bb[cap_color_idx][cap_piece_idx] &= !cap_bb;
             self.occupied &= !cap_bb;
+            self.color_bb[cap_color_idx] &= !cap_bb;
         }
 
         // Handle castling rook
@@ -1174,12 +1240,14 @@ impl Board {
             self.piece_bb[color_idx][rook_idx] |= new_rook_bb;
             self.occupied &= !old_rook_bb;
             self.occupied |= new_rook_bb;
+            self.color_bb[color_idx] = (self.color_bb[color_idx] & !old_rook_bb) | new_rook_bb;
         }
 
         // Add piece to new square (with correct piece type for promotion)
         let final_piece_idx = piece_type_to_index(final_piece_type);
         self.piece_bb[color_idx][final_piece_idx] |= to_bb;
         self.occupied |= to_bb;
+        self.color_bb[color_idx] |= to_bb;
 
         // Recompute attack maps
         self.recompute_attack_maps();
@@ -1202,6 +1270,11 @@ impl Board {
         self.bishop_count = undo.bishop_count;
         self.pawn_hash = undo.pawn_hash;
 
+        // Restore attack maps and color occupancy (avoids expensive recomputation)
+        self.white_attack_map = undo.white_attack_map;
+        self.black_attack_map = undo.black_attack_map;
+        self.color_bb = undo.color_bb;
+
         // Switch active color back
         self.active_color = self.active_color.other_color();
 
@@ -1216,11 +1289,12 @@ impl Board {
         // Restore en passant target
         self.en_passant_target = undo.en_passant_target;
 
-        // Restore king position
+        // Restore king position and cached king square index
         if mv.piece.piece_type == PieceType::King {
+            let old_king_sq = (mv.from.rank - 1) * 8 + (mv.from.file - 1);
             match mv.piece.color {
-                Color::White => self.white_king_position = mv.from,
-                Color::Black => self.black_king_position = mv.from,
+                Color::White => { self.white_king_position = mv.from; self.king_sq[0] = old_king_sq; }
+                Color::Black => { self.black_king_position = mv.from; self.king_sq[1] = old_king_sq; }
             }
         }
 
@@ -1318,8 +1392,7 @@ impl Board {
             self.occupied |= cap_bb;
         }
 
-        // Recompute attack maps
-        self.recompute_attack_maps();
+        // Attack maps and color_bb already restored from UndoInfo above
     }
 
     /// Get the vector of all legal moves for side `color`. This accounts for checks, pins, etc.
@@ -1717,7 +1790,7 @@ impl Board {
     /// This is O(1) instead of O(n_pieces) since we use precomputed bitboards
     #[inline]
     pub fn is_in_check(&self, color: Color) -> bool {
-        let king_bb = position_to_bb(&self.get_king_position(color));
+        let king_bb = 1u64 << self.king_sq[color as usize];
         let opponent_attacks = match color {
             Color::White => self.black_attack_map,
             Color::Black => self.white_attack_map,
