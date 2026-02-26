@@ -471,15 +471,18 @@ const ROOK_BITS: [u8; 64] = [
 
 /// Magic bitboard attack lookup tables
 pub struct MagicTables {
-    /// Bishop attack tables. Indexed by: bishop_attacks[square][magic_index]
-    /// Uses "fancy" magic bitboards with per-square table sizes
-    pub bishop_attacks: Vec<Vec<u64>>,
-    /// Rook attack tables
-    pub rook_attacks: Vec<Vec<u64>>,
+    /// Flat bishop attack table. Per-square slice starts at bishop_offsets[sq].
+    bishop_attacks: Vec<u64>,
+    /// Start index into bishop_attacks for each square
+    bishop_offsets: [usize; 64],
+    /// Flat rook attack table. Per-square slice starts at rook_offsets[sq].
+    rook_attacks: Vec<u64>,
+    /// Start index into rook_attacks for each square
+    rook_offsets: [usize; 64],
     /// Bishop occupancy masks (relevant squares that can block)
-    pub bishop_masks: [u64; 64],
+    bishop_masks: [u64; 64],
     /// Rook occupancy masks
-    pub rook_masks: [u64; 64],
+    rook_masks: [u64; 64],
 }
 
 impl MagicTables {
@@ -488,24 +491,42 @@ impl MagicTables {
         let mut bishop_masks = [0u64; 64];
         let mut rook_masks = [0u64; 64];
 
-        // Compute occupancy masks (excluding edges since blockers on edges don't affect anything beyond)
         for sq in 0..64 {
             bishop_masks[sq] = Self::bishop_mask(sq as u8);
             rook_masks[sq] = Self::rook_mask(sq as u8);
         }
 
-        // Build attack tables
-        let mut bishop_attacks = Vec::with_capacity(64);
-        let mut rook_attacks = Vec::with_capacity(64);
-
+        // Compute per-square offsets into the flat arrays (prefix sum of 2^bits)
+        let mut bishop_offsets = [0usize; 64];
+        let mut rook_offsets = [0usize; 64];
+        let mut bishop_total = 0usize;
+        let mut rook_total = 0usize;
         for sq in 0..64 {
-            bishop_attacks.push(Self::init_bishop_attacks(sq as u8, bishop_masks[sq]));
-            rook_attacks.push(Self::init_rook_attacks(sq as u8, rook_masks[sq]));
+            bishop_offsets[sq] = bishop_total;
+            rook_offsets[sq] = rook_total;
+            bishop_total += 1 << BISHOP_BITS[sq];
+            rook_total += 1 << ROOK_BITS[sq];
+        }
+
+        // Allocate flat contiguous arrays and fill per-square slices
+        let mut bishop_attacks = vec![0u64; bishop_total];
+        let mut rook_attacks = vec![0u64; rook_total];
+
+        for sq in 0..64u8 {
+            let b_off = bishop_offsets[sq as usize];
+            let b_size = 1 << BISHOP_BITS[sq as usize];
+            Self::init_bishop_attacks_into(sq, bishop_masks[sq as usize], &mut bishop_attacks[b_off..b_off + b_size]);
+
+            let r_off = rook_offsets[sq as usize];
+            let r_size = 1 << ROOK_BITS[sq as usize];
+            Self::init_rook_attacks_into(sq, rook_masks[sq as usize], &mut rook_attacks[r_off..r_off + r_size]);
         }
 
         MagicTables {
             bishop_attacks,
+            bishop_offsets,
             rook_attacks,
+            rook_offsets,
             bishop_masks,
             rook_masks,
         }
@@ -620,52 +641,40 @@ impl MagicTables {
         })
     }
 
-    /// Initialize bishop attack table for a square
-    fn init_bishop_attacks(sq: u8, mask: u64) -> Vec<u64> {
+    /// Fill bishop attack slice for a square into a pre-allocated flat buffer
+    fn init_bishop_attacks_into(sq: u8, mask: u64, out: &mut [u64]) {
         let bits = BISHOP_BITS[sq as usize];
-        let size = 1 << bits;
-        let mut attacks = vec![0u64; size];
         let magic = BISHOP_MAGICS[sq as usize];
-
         for occupied in Self::all_subsets(mask) {
             let index = ((occupied.wrapping_mul(magic)) >> (64 - bits)) as usize;
-            attacks[index] = Self::bishop_attacks_slow(sq, occupied);
+            out[index] = Self::bishop_attacks_slow(sq, occupied);
         }
-        attacks
     }
 
-    /// Initialize rook attack table for a square
-    fn init_rook_attacks(sq: u8, mask: u64) -> Vec<u64> {
+    /// Fill rook attack slice for a square into a pre-allocated flat buffer
+    fn init_rook_attacks_into(sq: u8, mask: u64, out: &mut [u64]) {
         let bits = ROOK_BITS[sq as usize];
-        let size = 1 << bits;
-        let mut attacks = vec![0u64; size];
         let magic = ROOK_MAGICS[sq as usize];
-
         for occupied in Self::all_subsets(mask) {
             let index = ((occupied.wrapping_mul(magic)) >> (64 - bits)) as usize;
-            attacks[index] = Self::rook_attacks_slow(sq, occupied);
+            out[index] = Self::rook_attacks_slow(sq, occupied);
         }
-        attacks
     }
 
     /// Get bishop attacks using magic lookup
     #[inline(always)]
     pub fn bishop_attacks(&self, sq: u8, occupied: u64) -> u64 {
-        let mask = self.bishop_masks[sq as usize];
-        let magic = BISHOP_MAGICS[sq as usize];
-        let bits = BISHOP_BITS[sq as usize];
-        let index = (((occupied & mask).wrapping_mul(magic)) >> (64 - bits)) as usize;
-        self.bishop_attacks[sq as usize][index]
+        let sq = sq as usize;
+        let index = (((occupied & self.bishop_masks[sq]).wrapping_mul(BISHOP_MAGICS[sq])) >> (64 - BISHOP_BITS[sq])) as usize;
+        self.bishop_attacks[self.bishop_offsets[sq] + index]
     }
 
     /// Get rook attacks using magic lookup
     #[inline(always)]
     pub fn rook_attacks(&self, sq: u8, occupied: u64) -> u64 {
-        let mask = self.rook_masks[sq as usize];
-        let magic = ROOK_MAGICS[sq as usize];
-        let bits = ROOK_BITS[sq as usize];
-        let index = (((occupied & mask).wrapping_mul(magic)) >> (64 - bits)) as usize;
-        self.rook_attacks[sq as usize][index]
+        let sq = sq as usize;
+        let index = (((occupied & self.rook_masks[sq]).wrapping_mul(ROOK_MAGICS[sq])) >> (64 - ROOK_BITS[sq])) as usize;
+        self.rook_attacks[self.rook_offsets[sq] + index]
     }
 
     /// Get queen attacks (combines bishop and rook)

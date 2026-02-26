@@ -266,7 +266,7 @@ fn chebyshev_distance(sq1: u8, sq2: u8) -> u8 {
 
 /// Evaluate pawn structure for both colors.
 /// Returns (mg_score, eg_score, white_passed_bb, black_passed_bb) from white's perspective.
-fn evaluate_pawn_structure(white_pawns: u64, black_pawns: u64) -> (i32, i32, u64, u64) {
+pub fn evaluate_pawn_structure(white_pawns: u64, black_pawns: u64) -> (i32, i32, u64, u64) {
 
     let mut mg = 0i32;
     let mut eg = 0i32;
@@ -481,7 +481,7 @@ fn king_safety_for_color(king_sq: u8, friendly_pawns: u64, color: Color, enemy_a
 
 /// Evaluate knight/bishop outposts. Returns (mg, eg) from white's perspective.
 #[inline]
-fn evaluate_outposts(board: &Board, white_pawns: u64, black_pawns: u64) -> (i32, i32) {
+pub fn evaluate_outposts(board: &Board, white_pawns: u64, black_pawns: u64) -> (i32, i32) {
     let white_pawn_attacks = ((white_pawns & !FILE_MASKS[0]) << 7) | ((white_pawns & !FILE_MASKS[7]) << 9);
     let black_pawn_attacks = ((black_pawns & !FILE_MASKS[7]) >> 7) | ((black_pawns & !FILE_MASKS[0]) >> 9);
 
@@ -549,7 +549,7 @@ fn evaluate_outposts(board: &Board, white_pawns: u64, black_pawns: u64) -> (i32,
 
 /// Evaluate rooks on open/semi-open files. Returns (mg, eg) from white's perspective.
 #[inline]
-fn evaluate_rooks(board: &Board, white_pawns: u64, black_pawns: u64) -> (i32, i32) {
+pub fn evaluate_rooks(board: &Board, white_pawns: u64, black_pawns: u64) -> (i32, i32) {
     let all_pawns = white_pawns | black_pawns;
 
     let mut mg = 0i32;
@@ -602,7 +602,7 @@ const ROOK_MOB_EG: [i32; 15] = [-15, -8, -4, 0, 2, 5, 7, 9, 11, 12, 12, 13, 13, 
 /// Evaluate piece mobility for both colors.
 /// Returns (mg_score, eg_score) from white's perspective.
 #[inline]
-fn evaluate_mobility(board: &Board, white_pawns: u64, black_pawns: u64) -> (i32, i32) {
+pub fn evaluate_mobility(board: &Board, white_pawns: u64, black_pawns: u64) -> (i32, i32) {
     let white_pieces = board.get_pieces_bb(Color::White);
     let black_pieces = board.get_pieces_bb(Color::Black);
     let occupied = board.get_occupied();
