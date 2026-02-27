@@ -38,7 +38,7 @@ enum UciCommand {
 #[derive(Debug)]
 enum SearchThreadResult {
     BestMove {
-        best_move: Move,
+        best_move: Option<Move>,
         ponder_move: Option<Move>,
     },
     Info(String),
@@ -174,14 +174,21 @@ fn main() {
                 best_move,
                 ponder_move,
             } => {
-                if let Some(ponder) = ponder_move {
-                    println!(
-                        "bestmove {} ponder {}",
-                        move_to_uci(&best_move),
-                        move_to_uci(&ponder)
-                    );
-                } else {
-                    println!("bestmove {}", move_to_uci(&best_move));
+                match best_move {
+                    None => {
+                        println!("bestmove (none)");
+                    }
+                    Some(ref mv) => {
+                        if let Some(ponder) = ponder_move {
+                            println!(
+                                "bestmove {} ponder {}",
+                                move_to_uci(mv),
+                                move_to_uci(&ponder)
+                            );
+                        } else {
+                            println!("bestmove {}", move_to_uci(mv));
+                        }
+                    }
                 }
                 stdout.flush().unwrap();
             }
@@ -232,7 +239,7 @@ fn search_thread(
                 let mut engine = state.engine.lock().unwrap();
                 if let Some(book_move) = engine.book_move(&board) {
                     let _ = result_tx.send(SearchThreadResult::BestMove {
-                        best_move: book_move,
+                        best_move: Some(book_move),
                         ponder_move: None,
                     });
                     continue;
@@ -282,12 +289,13 @@ fn search_thread(
                     let _ = result_tx_clone.send(SearchThreadResult::Info(info.to_uci()));
                 }, &mut history);
 
-                if let Some(result) = result {
-                    let _ = result_tx.send(SearchThreadResult::BestMove {
-                        best_move: result.best_move,
-                        ponder_move: None,
-                    });
-                }
+                // Always send bestmove — UCI requires it even on checkmate/stalemate.
+                // If the search returned nothing (no legal moves), send None so the
+                // output loop emits "bestmove (none)".
+                let _ = result_tx.send(SearchThreadResult::BestMove {
+                    best_move: result.map(|r| r.best_move),
+                    ponder_move: None,
+                });
             }
         }
     }
