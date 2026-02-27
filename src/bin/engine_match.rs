@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -99,10 +100,15 @@ impl MatchStats {
     }
 }
 
+// Timeout for engine to respond to UCI handshake or produce a move.
+// Generous: 30s covers even very slow positions; a real deadlock is infinite.
+const ENGINE_TIMEOUT_SECS: u64 = 30;
+
 struct UciEngine {
     process: Child,
     stdin: std::process::ChildStdin,
-    stdout: BufReader<std::process::ChildStdout>,
+    receiver: mpsc::Receiver<String>,
+    _reader_thread: thread::JoinHandle<()>,
 }
 
 impl UciEngine {
@@ -117,10 +123,28 @@ impl UciEngine {
         let stdin = process.stdin.take().unwrap();
         let stdout = BufReader::new(process.stdout.take().unwrap());
 
+        let (tx, rx) = mpsc::channel();
+        let reader_thread = thread::spawn(move || {
+            let mut buf = stdout;
+            let mut line = String::new();
+            loop {
+                line.clear();
+                match buf.read_line(&mut line) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {
+                        if tx.send(line.clone()).is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+
         let mut engine = Self {
             process,
             stdin,
-            stdout,
+            receiver: rx,
+            _reader_thread: reader_thread,
         };
 
         // Initialize UCI
@@ -140,12 +164,11 @@ impl UciEngine {
     }
 
     fn wait_for(&mut self, expected: &str) -> Result<(), String> {
-        let mut line = String::new();
+        let timeout = Duration::from_secs(ENGINE_TIMEOUT_SECS);
         loop {
-            line.clear();
-            self.stdout
-                .read_line(&mut line)
-                .map_err(|e| format!("Read failed: {}", e))?;
+            let line = self.receiver
+                .recv_timeout(timeout)
+                .map_err(|_| format!("Timeout waiting for '{}'", expected))?;
             if line.trim().starts_with(expected) {
                 return Ok(());
             }
@@ -159,14 +182,15 @@ impl UciEngine {
             wtime, btime, winc, binc
         ))?;
 
-        let mut line = String::new();
         let mut last_score: Option<i32> = None;
+        // Allow 30s beyond whatever clock the engine has — a hung engine never
+        // returns bestmove, so this is only hit on a real deadlock.
+        let timeout = Duration::from_secs(ENGINE_TIMEOUT_SECS);
 
         loop {
-            line.clear();
-            self.stdout
-                .read_line(&mut line)
-                .map_err(|e| format!("Read failed: {}", e))?;
+            let line = self.receiver
+                .recv_timeout(timeout)
+                .map_err(|_| "Move timeout: engine did not return bestmove".to_string())?;
 
             // Parse score from info lines
             if line.starts_with("info") && line.contains("score cp") {
@@ -206,6 +230,9 @@ impl UciEngine {
 
     fn quit(&mut self) {
         let _ = self.send("quit");
+        // Give it a moment to exit cleanly; kill if it doesn't.
+        thread::sleep(Duration::from_millis(100));
+        let _ = self.process.kill();
         let _ = self.process.wait();
     }
 }
