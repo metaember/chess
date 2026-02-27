@@ -587,17 +587,17 @@ pub fn evaluate_rooks(board: &Board, white_pawns: u64, black_pawns: u64) -> (i32
 // =============================================================================
 
 /// Knight mobility bonus by number of accessible squares (0-8)
-/// Scaled from Stockfish 14 values (~1/4 scale to match our centipawn range)
-const KNIGHT_MOB_MG: [i32; 9] = [-15, -13, -3, -1, 1, 3, 5, 7, 9];
-const KNIGHT_MOB_EG: [i32; 9] = [-20, -14, -8, -4, 2, 3, 4, 5, 7];
+/// Stockfish 14 classical values scaled to our 100cp pawn (SF pawn ~126cp MG / 208cp EG)
+const KNIGHT_MOB_MG: [i32; 9] = [-49, -42, -10, -3, 2, 10, 17, 22, 26];
+const KNIGHT_MOB_EG: [i32; 9] = [-39, -27, -14, -7, 4, 7, 11, 13, 16];
 
 /// Bishop mobility bonus by number of accessible squares (0-13)
-const BISHOP_MOB_MG: [i32; 14] = [-15, -11, -6, -2, 2, 5, 7, 9, 10, 11, 12, 12, 13, 13];
-const BISHOP_MOB_EG: [i32; 14] = [-23, -14, -7, -2, 2, 5, 8, 11, 13, 14, 14, 14, 14, 14];
+const BISHOP_MOB_MG: [i32; 14] = [-38, -16, 13, 21, 30, 40, 43, 50, 50, 54, 64, 64, 72, 77];
+const BISHOP_MOB_EG: [i32; 14] = [-28, -11, -1, 6, 12, 20, 26, 27, 31, 35, 37, 41, 42, 47];
 
 /// Rook mobility bonus by number of accessible squares (0-14)
-const ROOK_MOB_MG: [i32; 15] = [-9, -6, -3, -1, 0, 1, 3, 4, 5, 6, 7, 8, 8, 9, 9];
-const ROOK_MOB_EG: [i32; 15] = [-15, -8, -4, 0, 2, 5, 7, 9, 11, 12, 12, 13, 13, 13, 13];
+const ROOK_MOB_MG: [i32; 15] = [-47, -16, 2, 2, 2, 9, 17, 24, 32, 32, 32, 32, 38, 45, 45];
+const ROOK_MOB_EG: [i32; 15] = [-37, -8, 11, 19, 34, 47, 49, 58, 64, 67, 76, 79, 81, 81, 83];
 
 /// Evaluate piece mobility for both colors.
 /// Returns (mg_score, eg_score) from white's perspective.
