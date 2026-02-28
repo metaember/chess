@@ -5,13 +5,18 @@ import { EvalBar } from '@/components/EvalBar'
 import { EvalChart } from '@/components/EvalChart'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { ExternalLink, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Radio } from 'lucide-react'
+import { ExternalLink, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Radio, Volume2, VolumeOff } from 'lucide-react'
 import { useParams } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import type { GameDetail, GameListItem, LiveGameSummary, MoveEval } from '@/lib/spectate-types'
 import { formatEvalForDisplay, provenanceLabel, timeAgo } from '@/lib/spectate-types'
 
 const API_BASE = ''
+
+function playSound(file: string) {
+  const audio = new Audio(`/sounds/${file}`)
+  audio.play().catch(() => {})
+}
 
 function useLiveGames() {
   const [liveGames, setLiveGames] = useState<LiveGameSummary[]>([])
@@ -71,6 +76,12 @@ export default function Spectate() {
   const [selectedGameId, setSelectedGameId] = useState<string | null>(routeGameId ?? null)
   const [viewPly, setViewPly] = useState<number | null>(null) // null = latest
   const autoFollowRef = useRef(true)
+
+  // Sound toggles (persisted in localStorage)
+  const [gameSounds, setGameSounds] = useState(() => localStorage.getItem('gameSounds') === 'true')
+  const [moveSounds, setMoveSounds] = useState(() => localStorage.getItem('moveSounds') === 'true')
+  useEffect(() => { localStorage.setItem('gameSounds', String(gameSounds)) }, [gameSounds])
+  useEffect(() => { localStorage.setItem('moveSounds', String(moveSounds)) }, [moveSounds])
 
   // Sync route param into state
   useEffect(() => {
@@ -164,6 +175,66 @@ export default function Spectate() {
     return () => window.removeEventListener('keydown', handler)
   }, [goFirst, goPrev, goNext, goLast])
 
+  // --- Sound triggers ---
+  const prevPliesRef = useRef(totalPlies)
+  const prevLiveGameIdsRef = useRef<Set<string>>(new Set())
+  const prevStatusRef = useRef<string | null>(null)
+
+  // Move sounds: play on new ply when watching live
+  useEffect(() => {
+    const prevPlies = prevPliesRef.current
+    prevPliesRef.current = totalPlies
+    if (!moveSounds || viewPly !== null || totalPlies <= prevPlies || totalPlies === 0) return
+
+    const lastPos = positions[totalPlies - 1]
+    if (!lastPos) return
+
+    // Replay position before the last move to determine move type
+    const chess = new Chess()
+    if (totalPlies >= 2) {
+      chess.load(positions[totalPlies - 2].fen)
+    }
+    const uci = lastPos.moveUci
+    try {
+      const result = chess.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] as any })
+      if (chess.isCheck()) {
+        playSound('Check.mp3')
+      } else if (result?.captured) {
+        playSound('Capture.mp3')
+      } else {
+        playSound('Move.mp3')
+      }
+    } catch {
+      playSound('Move.mp3')
+    }
+  }, [totalPlies, moveSounds, viewPly, positions])
+
+  // Game start sound: new game appears in live list
+  useEffect(() => {
+    const currentIds = new Set(liveGames.map(g => g.game_id))
+    const prevIds = prevLiveGameIdsRef.current
+    if (gameSounds && prevIds.size > 0) {
+      for (const id of currentIds) {
+        if (!prevIds.has(id)) {
+          playSound('GameStart.mp3')
+          break
+        }
+      }
+    }
+    prevLiveGameIdsRef.current = currentIds
+  }, [liveGames, gameSounds])
+
+  // Game end sound: status transitions from playing to finished
+  useEffect(() => {
+    const prevStatus = prevStatusRef.current
+    prevStatusRef.current = detail?.status ?? null
+    if (!gameSounds || !detail || prevStatus !== 'playing' || detail.status === 'playing') return
+
+    const botWon = (detail.bot_color === 'white' && detail.result === '1-0') ||
+                   (detail.bot_color === 'black' && detail.result === '0-1')
+    playSound(botWon ? 'Victory.mp3' : 'Defeat.mp3')
+  }, [detail?.status, detail?.result, detail?.bot_color, gameSounds])
+
   // Determine the FEN and last move from position array
   const currentPosition = displayPly !== null ? positions[displayPly] : null
   const displayFen = currentPosition?.fen ?? detail?.fen ?? 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
@@ -181,6 +252,28 @@ export default function Spectate() {
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
             <span className="text-primary">Rust</span> Chess <span className="text-muted-foreground">Spectator</span>
           </h1>
+          <div className="flex items-center justify-center gap-2 mt-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setGameSounds(s => !s)}
+              className={cn('h-7 gap-1 text-xs', !gameSounds && 'text-muted-foreground')}
+              title={gameSounds ? 'Mute game sounds' : 'Enable game sounds'}
+            >
+              {gameSounds ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeOff className="w-3.5 h-3.5" />}
+              Game
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setMoveSounds(s => !s)}
+              className={cn('h-7 gap-1 text-xs', !moveSounds && 'text-muted-foreground')}
+              title={moveSounds ? 'Mute move sounds' : 'Enable move sounds'}
+            >
+              {moveSounds ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeOff className="w-3.5 h-3.5" />}
+              Moves
+            </Button>
+          </div>
         </header>
 
         <div className="flex-1 flex flex-col lg:flex-row gap-6 lg:gap-8 items-start lg:justify-center">
